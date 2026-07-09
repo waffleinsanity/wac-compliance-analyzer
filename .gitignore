@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+node_modules/
+data/chroma/
+data/wac_app.db
+data/*.db
+.DS_Store
+*.log
+.env
+.pytest_cache/

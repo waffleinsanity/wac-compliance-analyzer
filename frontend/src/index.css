@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-glow: radial-gradient(1200px 600px at 10% -10%, rgba(61, 127, 150, 0.18), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(176, 138, 82, 0.16), transparent 50%),
+    linear-gradient(180deg, #f4f7f5 0%, #e8efe9 100%);
+  --bg-glow-dark: radial-gradient(1200px 600px at 10% -10%, rgba(61, 127, 150, 0.22), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(176, 138, 82, 0.12), transparent 50%),
+    linear-gradient(180deg, #111c17 0%, #0c1411 100%);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Source Sans 3', Segoe UI, sans-serif;
+  background: var(--bg-glow);
+  background-attachment: fixed;
+}
+
+html.dark body {
+  background: var(--bg-glow-dark);
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-ink-200/80 bg-white/80 shadow-panel backdrop-blur-md
+      dark:border-ink-700/80 dark:bg-ink-900/70;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+      transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
+      focus-visible:outline-tide-500 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-ink-800 text-ink-50 hover:bg-ink-700 dark:bg-cedar-500 dark:text-ink-950
+      dark:hover:bg-cedar-400;
+  }
+  .btn-secondary {
+    @apply btn border border-ink-300 bg-white/70 text-ink-800 hover:bg-ink-100
+      dark:border-ink-600 dark:bg-ink-800/60 dark:text-ink-100 dark:hover:bg-ink-700;
+  }
+  .input {
+    @apply w-full rounded-xl border border-ink-300 bg-white/90 px-3 py-2 text-sm text-ink-900
+      outline-none ring-tide-500/30 placeholder:text-ink-400 focus:ring-2
+      dark:border-ink-600 dark:bg-ink-950/60 dark:text-ink-50;
+  }
+  .label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-300;
+  }
+}
