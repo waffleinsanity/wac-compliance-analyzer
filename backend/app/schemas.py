@@ -93,6 +93,98 @@ class AnalyzeResponse(BaseModel):
     analysis_id: int | None = None
 
 
+class InvestigationRequest(BaseModel):
+    text: str = ""
+    selected_wacs: list[str] = Field(default_factory=list)
+    include_informational: bool = True
+    investigation_date: str | None = None
+    case_id: str | None = None
+    facility_address: str | None = None
+    credential_number: str | None = None
+
+
+class FacilityInfo(BaseModel):
+    facility_address: str = "Washington State"
+    credential_number: str = ""
+    medicare_number: str = "N/A"
+    shell_number: str = "N/A"
+    investigation_dates: str = ""
+    state_licensing_priority: str = ""
+    federal_certification_priority: str = ""
+
+
+class RegulatorySubsection(BaseModel):
+    label: str = ""
+    cite: str
+    snippet: str = ""
+    reason: str = ""
+
+
+class RegulatoryFrameworkEntry(BaseModel):
+    wac_code: str
+    wac_title: str
+    chapter: str
+    matched_subsections: list[RegulatorySubsection] = Field(default_factory=list)
+
+
+class WACComparison(BaseModel):
+    wac_id: str
+    code: str
+    title: str
+    chapter: str
+    hierarchy_path: str
+    wac_text: str
+    wac_summary: str
+    complaint_excerpts: list[str] = []
+    allegation_draft: str
+    matched_subsections: list[str] = Field(default_factory=list)
+    finding: ComplianceFinding | None = None
+
+
+class InvestigationAllegation(BaseModel):
+    case_category: str = "BHA"
+    wac_code: str
+    wac_title: str
+    allegation_text: str
+    status: str | None = None
+    confidence: float | None = None
+    matched_subsections: list[str] = Field(default_factory=list)
+
+
+class InvestigationConclusion(BaseModel):
+    wac_code: str
+    allegation_text: str
+    result: str = "Pending Investigation"
+    deficiency_cited: bool = False
+    deficiency_details: str = ""
+
+
+class InvestigationReport(BaseModel):
+    title: str = "Investigative Report"
+    subtitle: str = "State Investigation"
+    investigation_date: str
+    case_id: str | None = None
+    facility_info: FacilityInfo
+    intake_details: str
+    allegation_preamble: str
+    authority_statement: str = ""
+    regulatory_framework: list[RegulatoryFrameworkEntry] = Field(default_factory=list)
+    allegations: list[InvestigationAllegation]
+    investigative_process: list[str] = []
+    evidentiary_examples: list[str] = Field(default_factory=list)
+    summary_of_findings: str = ""
+    conclusions: list[InvestigationConclusion] = []
+    actions: str = "[To be determined after investigation]"
+    comparisons: list[WACComparison]
+    findings: list[ComplianceFinding]
+    report_text: str
+    selected_count: int
+    duration_ms: float
+    analysis_id: int | None = None
+    document_preview: str
+    recommended_subsections: list[str] = Field(default_factory=list)
+
+
 class TriggerPhraseCreate(BaseModel):
     wac_id: str
     phrase: str = Field(min_length=2, max_length=500)

@@ -8,18 +8,27 @@ import {
   Tags,
   UserRound,
 } from 'lucide-react'
-import { api, type AnalyzeResponse, type WACNode } from './api'
+import { api, type InvestigationReport, type WACNode } from './api'
 import { useAuth } from './auth'
 import { useTheme } from './theme'
 import { AuthModal } from './components/AuthModal'
 import { FavoritesSidebar } from './components/FavoritesSidebar'
-import { InputArea } from './components/InputArea'
-import { ResultsDisplay } from './components/ResultsDisplay'
+import { ComplaintStep } from './components/ComplaintStep'
+import { InvestigationReportEditor } from './components/InvestigationReportEditor'
+import { ReviewStep } from './components/ReviewStep'
 import { StatsDashboard } from './components/StatsDashboard'
 import { TriggerPhraseManager } from './components/TriggerPhraseManager'
 import { WACSelectionPanel } from './components/WACSelectionPanel'
+import { WorkflowStepper, type WorkflowStep } from './components/WorkflowStepper'
 
 type Tab = 'analyze' | 'triggers' | 'stats'
+
+function todayMMDDYYYY() {
+  const d = new Date()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${mm}/${dd}/${d.getFullYear()}`
+}
 
 export default function App() {
   const { user, logout } = useAuth()
@@ -29,8 +38,13 @@ export default function App() {
   const [wacs, setWacs] = useState<WACNode[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [text, setText] = useState('')
+  const [caseId, setCaseId] = useState('')
+  const [investigationDate, setInvestigationDate] = useState(todayMMDDYYYY())
+  const [facilityAddress, setFacilityAddress] = useState('')
+  const [credentialNumber, setCredentialNumber] = useState('')
   const [examples, setExamples] = useState<{ name: string }[]>([])
-  const [result, setResult] = useState<AnalyzeResponse | null>(null)
+  const [report, setReport] = useState<InvestigationReport | null>(null)
+  const [step, setStep] = useState<WorkflowStep>('intake')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [includeInformational, setIncludeInformational] = useState(true)
@@ -77,49 +91,41 @@ export default function App() {
   const loadExample = async (name: string) => {
     const res = await api.exampleText(name)
     setText(res.text)
-    // Auto-select mentioned WACs from example
     const mentioned = Array.from(res.text.matchAll(/246-(?:341|337)-\d{3,4}/g)).map((m) => m[0])
     const ids = wacs.filter((w) => mentioned.includes(w.code)).map((w) => w.id)
     if (ids.length) setSelected(new Set(ids))
   }
 
-  const runAnalyze = async () => {
+  const extractFile = async (file: File) => {
     setBusy(true)
     setError('')
     try {
-      const res = await api.analyze(text, Array.from(selected), includeInformational)
-      setResult(res)
+      const res = await api.extract(file)
+      setText(res.text)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Analysis failed')
+      setError(e instanceof Error ? e.message : 'Extract failed')
     } finally {
       setBusy(false)
     }
   }
 
-  const upload = async (files: FileList) => {
+  const runInvestigate = async () => {
     setBusy(true)
     setError('')
     try {
-      const list = Array.from(files)
-      if (list.length === 1) {
-        const res = await api.analyzeUpload(list[0], Array.from(selected), includeInformational)
-        // Also put extracted preview into textarea via document_preview is short; re-read not available
-        // For UX, if user only wanted text load without analyze when no selection — still analyze if selected
-        setResult(res)
-        if (!text.trim()) setText(res.document_preview)
-      } else {
-        const batch = await api.analyzeBatch(list, Array.from(selected), includeInformational)
-        // Merge findings
-        const merged: AnalyzeResponse = {
-          findings: batch.results.flatMap((r) => r.findings),
-          document_preview: batch.results.map((r) => r.document_preview).join('\n---\n'),
-          selected_count: selected.size,
-          duration_ms: batch.results.reduce((a, r) => a + r.duration_ms, 0),
-        }
-        setResult(merged)
-      }
+      const res = await api.investigate({
+        text,
+        selected_wacs: Array.from(selected),
+        include_informational: includeInformational,
+        case_id: caseId || undefined,
+        investigation_date: investigationDate || undefined,
+        facility_address: facilityAddress || undefined,
+        credential_number: credentialNumber || undefined,
+      })
+      setReport(res)
+      setStep('compare')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Upload failed')
+      setError(e instanceof Error ? e.message : 'Investigation failed')
     } finally {
       setBusy(false)
     }
@@ -149,7 +155,7 @@ export default function App() {
           <nav className="hidden items-center gap-1 rounded-2xl bg-ink-100 p-1 dark:bg-ink-900 md:flex">
             {(
               [
-                ['analyze', 'Analyze', BookMarked],
+                ['analyze', 'Investigate', BookMarked],
                 ['triggers', 'Triggers', Tags],
                 ['stats', 'Stats', BarChart3],
               ] as const
@@ -189,7 +195,7 @@ export default function App() {
         <div className="flex gap-1 overflow-x-auto px-4 pb-3 md:hidden">
           {(
             [
-              ['analyze', 'Analyze'],
+              ['analyze', 'Investigate'],
               ['triggers', 'Triggers'],
               ['stats', 'Stats'],
             ] as const
@@ -216,16 +222,22 @@ export default function App() {
         )}
 
         {tab === 'analyze' && (
-          <div className="grid animate-rise gap-4 xl:grid-cols-[280px_1fr_1.1fr]">
-            <div className="space-y-4">
-              <FavoritesSidebar
-                favorites={favorites}
-                selected={selected}
-                onSelect={(id) => {
-                  if (!selected.has(id)) toggle(id)
-                }}
-              />
-              <div className="hidden xl:block">
+          <div className="animate-rise space-y-4">
+            <WorkflowStepper
+              step={step}
+              onStepChange={setStep}
+              canCompare={!!report}
+              canReport={!!report}
+            />
+            <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
+              <div className="space-y-4">
+                <FavoritesSidebar
+                  favorites={favorites}
+                  selected={selected}
+                  onSelect={(id) => {
+                    if (!selected.has(id)) toggle(id)
+                  }}
+                />
                 <WACSelectionPanel
                   wacs={wacs}
                   selected={selected}
@@ -233,30 +245,37 @@ export default function App() {
                   onToggleFavorite={toggleFavorite}
                 />
               </div>
-            </div>
-            <div className="space-y-4">
-              <div className="xl:hidden">
-                <WACSelectionPanel
-                  wacs={wacs}
-                  selected={selected}
-                  onToggle={toggle}
-                  onToggleFavorite={toggleFavorite}
-                />
+              <div className="min-h-[70vh]">
+                {step === 'intake' && (
+                  <ComplaintStep
+                    text={text}
+                    onTextChange={setText}
+                    caseId={caseId}
+                    onCaseIdChange={setCaseId}
+                    investigationDate={investigationDate}
+                    onInvestigationDateChange={setInvestigationDate}
+                    facilityAddress={facilityAddress}
+                    onFacilityAddressChange={setFacilityAddress}
+                    credentialNumber={credentialNumber}
+                    onCredentialNumberChange={setCredentialNumber}
+                    examples={examples}
+                    onLoadExample={loadExample}
+                    onExtractFile={extractFile}
+                    onAnalyze={() => void runInvestigate()}
+                    selectedCount={selected.size}
+                    busy={busy}
+                    includeInformational={includeInformational}
+                    onIncludeInformational={setIncludeInformational}
+                  />
+                )}
+                {step === 'compare' && report && (
+                  <ReviewStep report={report} onContinue={() => setStep('report')} />
+                )}
+                {step === 'report' && report && (
+                  <InvestigationReportEditor report={report} onChange={setReport} />
+                )}
               </div>
-              <InputArea
-                text={text}
-                onTextChange={setText}
-                examples={examples}
-                onLoadExample={loadExample}
-                onAnalyze={runAnalyze}
-                onUpload={upload}
-                busy={busy}
-                selectedCount={selected.size}
-                includeInformational={includeInformational}
-                onIncludeInformational={setIncludeInformational}
-              />
             </div>
-            <ResultsDisplay result={result} />
           </div>
         )}
 
@@ -274,7 +293,7 @@ export default function App() {
       </main>
 
       <footer className="mx-auto max-w-[1600px] px-4 pb-8 text-center text-xs text-ink-400">
-        Self-contained local analysis for WAC 246-341 & 246-337 · No external LLM APIs · Optional official web validation
+        Investigative Report drafting for WAC 246-341 & 246-337 · PDF-sourced subsection authority · Optional official web validation
       </footer>
 
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
