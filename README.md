@@ -1,15 +1,15 @@
 # WAC Compliance Analyzer
 
-Self-contained web application for Washington Administrative Code (WAC) **246-341** and **246-337** compliance analysis.
+Self-contained web application for Washington Administrative Code (WAC) **246-341** and **246-337** investigative report drafting and compliance analysis.
 
 ## Features
 
 - Hierarchical PDF ingestion (code → (1) → (a) → (i)) into SQLite + ChromaDB
-- Checkbox WAC authorization directory with search, favorites, and expand/collapse chapters
-- Local RAG-style analysis (no external LLM APIs) with five output templates
-- Auto-generated + user-customizable trigger phrases (JWT auth)
-- Example DOCX loading, multi-file upload/batch analysis
-- Dark/light/system theme, statistics dashboard, optional official-site validation
+- Complaint / allegation intake with case metadata
+- Multi-select WAC authorization directory (search, favorites)
+- PDF-sourced subsection matching and formal allegation drafting
+- Investigation Report template: Regulatory Framework, allegations, 5 evidentiary examples, process, conclusions
+- Local compliance findings (five output templates) · trigger phrases · stats · optional official-site validation
 
 ## Quick start
 
@@ -43,25 +43,20 @@ API docs: http://127.0.0.1:8000/docs
 |------|---------|
 | `data/source/WAC 246-341.pdf` | Behavioral health agency licensing |
 | `data/source/WAC 246-337.pdf` | Residential treatment facility |
-| `data/examples/Example 1-5.docx` | Sample investigative reports |
+| `data/examples/Example 1-5.docx` | Sample investigative reports (style / themes) |
 
-## Output templates
+## Investigation workflow
 
-1. Full Compliance  
-2. Non-Compliance  
-3. Partial Compliance  
-4. Informational Reference  
-5. Insufficient Information  
+1. **Intake** — paste complaint, set case/facility fields, select authorized WACs  
+2. **Compare** — review matched PDF subsections, complaint excerpts, allegation drafts  
+3. **Report** — edit IR template (regulatory framework, allegations, 5 evidentiary examples) and export  
+
+Allegation duties are derived **only** from ingested WAC PDF text. Example DOCX files guide intake voice and themes, not subsection applicability.
 
 ## Architecture
 
 - **FastAPI** async API + JWT sessions  
 - **PyMuPDF** / **python-docx** document parsing  
 - **ChromaDB** hierarchical metadata store  
-- **TF-IDF** local retrieval + regulatory cue scoring  
+- **TF-IDF** local subsection ranking + regulatory cue scoring  
 - **React + Vite + Tailwind** UI  
-
-Optional validation endpoints hit:
-
-- https://app.leg.wa.gov/WAC/default.aspx?cite=246-341&full=true  
-- https://app.leg.wa.gov/WAC/default.aspx?cite=246-337&full=true  

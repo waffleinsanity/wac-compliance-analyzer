@@ -52,6 +52,98 @@ export type AnalyzeResponse = {
   analysis_id?: number | null
 }
 
+export type FacilityInfo = {
+  facility_address: string
+  credential_number: string
+  medicare_number?: string
+  shell_number?: string
+  investigation_dates: string
+  state_licensing_priority?: string
+  federal_certification_priority?: string
+}
+
+export type RegulatorySubsection = {
+  label: string
+  cite: string
+  snippet: string
+  reason?: string
+}
+
+export type RegulatoryFrameworkEntry = {
+  wac_code: string
+  wac_title: string
+  chapter: string
+  matched_subsections: RegulatorySubsection[]
+}
+
+export type WACComparison = {
+  wac_id: string
+  code: string
+  title: string
+  chapter: string
+  hierarchy_path: string
+  wac_text: string
+  wac_summary: string
+  complaint_excerpts: string[]
+  allegation_draft: string
+  matched_subsections?: string[]
+  finding?: ComplianceFinding | null
+}
+
+export type InvestigationAllegation = {
+  case_category: string
+  wac_code: string
+  wac_title: string
+  allegation_text: string
+  status?: string | null
+  confidence?: number | null
+  matched_subsections?: string[]
+}
+
+export type InvestigationConclusion = {
+  wac_code: string
+  allegation_text: string
+  result: string
+  deficiency_cited?: boolean
+  deficiency_details?: string
+}
+
+export type InvestigationReport = {
+  title: string
+  subtitle: string
+  investigation_date: string
+  case_id?: string | null
+  facility_info: FacilityInfo
+  intake_details: string
+  allegation_preamble: string
+  authority_statement: string
+  regulatory_framework: RegulatoryFrameworkEntry[]
+  allegations: InvestigationAllegation[]
+  investigative_process: string[]
+  evidentiary_examples: string[]
+  summary_of_findings: string
+  conclusions: InvestigationConclusion[]
+  actions: string
+  comparisons: WACComparison[]
+  findings: ComplianceFinding[]
+  report_text: string
+  selected_count: number
+  duration_ms: number
+  analysis_id?: number | null
+  document_preview: string
+  recommended_subsections?: string[]
+}
+
+export type InvestigationRequest = {
+  text: string
+  selected_wacs: string[]
+  include_informational?: boolean
+  investigation_date?: string
+  case_id?: string
+  facility_address?: string
+  credential_number?: string
+}
+
 export type StatsOut = {
   total_analyses: number
   total_wac_codes: number
@@ -159,6 +251,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ text, selected_wacs, include_informational }),
     }),
+  investigate: (payload: InvestigationRequest) =>
+    request<InvestigationReport>('/api/investigate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  extract: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<{ filename: string; text: string }>('/api/extract', { method: 'POST', body: form })
+  },
   analyzeUpload: async (file: File, selected_wacs: string[], include_informational = true) => {
     const form = new FormData()
     form.append('file', file)

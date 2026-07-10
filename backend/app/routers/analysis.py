@@ -13,6 +13,8 @@ from app.rag.store import wac_store
 from app.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    InvestigationReport,
+    InvestigationRequest,
     StatsOut,
     TriggerPhraseCreate,
     TriggerPhraseOut,
@@ -21,8 +23,11 @@ from app.schemas import (
 )
 from app.services.analyzer import analyze_document, batch_analyze
 from app.services.documents import extract_text_from_bytes, extract_text_from_path
+from app.services.investigation import build_investigation_report
+from app.services.template_corpus import corpus_stats, load_example_texts
 from app.services.validation import validate_against_official
 from app.config import settings
+import re as _re
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -47,6 +52,41 @@ async def analyze(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/investigate", response_model=InvestigationReport)
+async def investigate(
+    payload: InvestigationRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+):
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="Complaint / allegation text is required")
+    if not payload.selected_wacs:
+        raise HTTPException(status_code=400, detail="Select at least one authorized WAC")
+    try:
+        return build_investigation_report(
+            db=db,
+            complaint_text=payload.text,
+            selected_wacs=payload.selected_wacs,
+            user_id=user.id if user else None,
+            investigation_date=payload.investigation_date,
+            case_id=payload.case_id,
+            include_informational=payload.include_informational,
+            facility_address=payload.facility_address,
+            credential_number=payload.credential_number,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/extract")
+async def extract_text(file: UploadFile = File(...)):
+    data = await file.read()
+    text = extract_text_from_bytes(file.filename or "upload.txt", data)
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Could not extract text from file")
+    return {"filename": file.filename, "text": text}
 
 
 @router.post("/analyze/upload", response_model=AnalyzeResponse)
@@ -254,9 +294,23 @@ def ingest(force: bool = False, db: Session = Depends(get_db)):
 
 @router.get("/health")
 def health():
+    stats = corpus_stats()
     return {
         "status": "ok",
         "wac_nodes": len(wac_store.nodes),
         "wac_codes": len(wac_store.get_code_nodes()),
         "ready": wac_store.ready,
+        **stats,
+    }
+
+
+@router.get("/templates")
+def templates():
+    stats = corpus_stats()
+    codes: set[str] = set()
+    for ex in load_example_texts():
+        codes.update(_re.findall(r"246-(?:341|337)-\d{3,4}", ex["text"]))
+    return {
+        **stats,
+        "codes_covered": sorted(codes),
     }
