@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import AnalysisRun, CustomTriggerPhrase, UsageStat, utcnow
 from app.rag.store import wac_store
 from app.schemas import AnalyzeResponse, ComplianceFinding
+from app.services.wac_scope import score_relevant_subsections
 
 
 STATUS_COMPLIES = "COMPLIES"
@@ -265,33 +266,51 @@ def analyze_document(
     for node in code_nodes:
         _bump_stat(db, node.id, "selected")
         context = _focused_context(text, node.code)
-        focused = _sentence_windows(text, node.code)
 
         extras = custom_map.get(node.id, []) + custom_map.get(f"WAC {node.code}", [])
-        # Gather phrases from code + primary children against focused context
+        # Gather phrases from code against focused context (PDF-derived trigger phrases)
         search_blob = context if context else (text[:2000] if node.code in mentioned else "")
         all_hits = wac_store.phrase_hits(search_blob or text[:2000], node, extras)
         child_hits: dict[str, list[str]] = {}
         compliant_subs: list[str] = []
         non_subs: list[str] = []
 
+        # Applicable subsections: SOLELY from PDF hierarchy under this selected code
+        applicable = score_relevant_subsections(text, node.code, max_items=8)
+        for sub in applicable:
+            label = sub.label or ""
+            if not label:
+                continue
+            # Score status using complaint context vs this subsection's PDF text
+            sub_blob = context or search_blob or text[:2000]
+            c_hits = wac_store.phrase_hits(sub_blob, node, extras)
+            # Prefer phrase hits that appear in the subsection text
+            sub_text_l = sub.text.lower()
+            scoped_hits = [h for h in c_hits if h.lower() in sub_text_l] or c_hits
+            if scoped_hits:
+                child_hits[label] = scoped_hits
+                all_hits.extend(scoped_hits)
+            st, _, _ = _score_status(sub_blob, scoped_hits, sub.title or node.title)
+            if st == STATUS_COMPLIES:
+                compliant_subs.append(label)
+            elif st in {STATUS_NON, STATUS_PARTIAL, STATUS_INSUFFICIENT}:
+                # Mark as implicated / potentially non-compliant for investigator review
+                if label not in non_subs:
+                    non_subs.append(label)
+            else:
+                if label not in non_subs and sub.reason == "explicit_cite":
+                    non_subs.append(label)
+
+        # Also walk primary children for phrase coverage (still PDF-derived nodes only)
         for child in wac_store.get_children(node.id):
             if child.level != "primary":
                 continue
             c_extras = custom_map.get(child.id, [])
             c_hits = wac_store.phrase_hits(context or search_blob, child, c_extras)
             if c_hits:
-                child_hits[child.primary or child.id] = c_hits
+                key = child.primary or child.id
+                child_hits[str(key)] = c_hits
                 all_hits.extend(c_hits)
-            child_ctx_parts = [w for w in focused if child.primary and f"({child.primary})" in w]
-            child_ctx = "\n".join(child_ctx_parts) if child_ctx_parts else context
-            if child_ctx:
-                st, _, _ = _score_status(child_ctx, c_hits, child.title)
-                label = f"({child.primary})"
-                if st == STATUS_COMPLIES:
-                    compliant_subs.append(label)
-                elif st == STATUS_NON:
-                    non_subs.append(label)
         # Dedupe hits
         seen = set()
         unique_hits = []
@@ -410,24 +429,3 @@ def analyze_document(
         analysis_id=run.id,
     )
 
-
-def batch_analyze(
-    db: Session,
-    documents: list[dict[str, Any]],
-    selected_wacs: list[str],
-    user_id: int | None = None,
-    include_informational: bool = True,
-) -> list[AnalyzeResponse]:
-    results = []
-    for doc in documents:
-        results.append(
-            analyze_document(
-                db=db,
-                text=doc.get("text", ""),
-                selected_wacs=selected_wacs,
-                user_id=user_id,
-                document_name=doc.get("name"),
-                include_informational=include_informational,
-            )
-        )
-    return results

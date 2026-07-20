@@ -1,0 +1,12 @@
+{
+  "id": "weak_overlap",
+  "complaint": "The complainant reported dissatisfaction with cafeteria menu options, parking availability, and the color of the waiting-room chairs.",
+  "selected_wacs": [
+    "WAC 246-341-0600"
+  ],
+  "expected_cite_prefixes": ["246-341-0600"],
+  "expect_low_confidence": true,
+  "must_quote_statute": true,
+  "forbid_phrase": "failed to comply with the following requirements",
+  "notes": "Weak lexical overlap is flagged low_confidence in UI; allegation stays DOH-shaped and concise."
+}

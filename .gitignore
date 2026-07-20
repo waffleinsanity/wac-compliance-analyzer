@@ -11,3 +11,4 @@ data/*.db
 *.log
 .env
 .pytest_cache/
+reference/

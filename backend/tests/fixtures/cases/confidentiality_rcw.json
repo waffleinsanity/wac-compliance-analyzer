@@ -1,0 +1,13 @@
+{
+  "id": "confidentiality_rcw",
+  "complaint": "Respondent is alleged to have disclosed protected health information on the patient (18 years old) to the patient's parent, without consent of the patient.",
+  "selected_wacs": [
+    "WAC 246-341-0420",
+    "WAC 246-341-0425",
+    "WAC 246-341-0600",
+    "RCW 71.05.020"
+  ],
+  "expected_cite_prefixes": ["246-341-0420", "246-341-0425", "71.05.020"],
+  "must_quote_statute": true,
+  "notes": "Confidentiality / disclosure facts; RF should include at least one RCW entry."
+}

@@ -1,262 +1,235 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user, get_optional_user
-from app.database import (
-    CustomTriggerPhrase,
-    User,
-    UsageStat,
-    AnalysisRun,
-    get_db,
-)
+from app.auth import get_current_user, get_editor_user
+from app.database import User, get_db
 from app.rag.store import wac_store
 from app.schemas import (
-    AnalyzeRequest,
-    AnalyzeResponse,
-    StatsOut,
-    TriggerPhraseCreate,
-    TriggerPhraseOut,
-    TriggerPhraseUpdate,
-    ValidationResult,
+    InvestigationReport,
+    InvestigationRequest,
+    QuoteIntegrityOut,
+    StatuteHit,
+    StatuteSearchRequest,
+    StatuteSearchResponse,
+    SuggestRelatedRequest,
+    SuggestRelatedResponse,
+    ValidateReportRequest,
+    ValidateReportResponse,
 )
-from app.services.analyzer import analyze_document, batch_analyze
-from app.services.documents import extract_text_from_bytes, extract_text_from_path
-from app.services.validation import validate_against_official
-from app.config import settings
+from app.services.documents import extract_text_from_bytes
+from app.services.investigation import build_investigation_report
+from app.services.pii_gate import ensure_clean_or_redact
+from app.services.quote_verify import verify_report_quotes
+from app.services.wac_scope import cite_prefix
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
 
-@router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(
-    payload: AnalyzeRequest,
-    db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_user),
-):
-    if not payload.text.strip():
-        raise HTTPException(status_code=400, detail="Document text is required")
-    if not payload.selected_wacs:
-        raise HTTPException(status_code=400, detail="Select at least one WAC")
-    try:
-        return analyze_document(
-            db=db,
-            text=payload.text,
-            selected_wacs=payload.selected_wacs,
-            user_id=user.id if user else None,
-            include_informational=payload.include_informational,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post("/analyze/upload", response_model=AnalyzeResponse)
-async def analyze_upload(
-    selected_wacs: str = Form(...),
-    include_informational: bool = Form(True),
+@router.post("/extract")
+async def extract_document(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_user),
+    _: User = Depends(get_editor_user),
 ):
     data = await file.read()
     text = extract_text_from_bytes(file.filename or "upload.txt", data)
     if not text.strip():
         raise HTTPException(status_code=400, detail="Could not extract text from file")
-    try:
-        selected = [s.strip() for s in selected_wacs.split(",") if s.strip()]
-        # Also accept JSON array
-        if selected_wacs.strip().startswith("["):
-            import json
+    return {"filename": file.filename, "text": text, "characters": len(text)}
 
-            selected = json.loads(selected_wacs)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid selected_wacs: {exc}") from exc
 
-    return analyze_document(
-        db=db,
+def _hit_from_node(node, score: float, reason: str) -> StatuteHit:
+    text = (node.text or "").strip()
+    excerpt = text if len(text) <= 420 else text[:419].rstrip() + "…"
+    instrument = cite_prefix(node.code)
+    return StatuteHit(
+        id=node.id,
+        instrument=instrument,
+        chapter=node.chapter,
+        code=node.code,
+        title=node.title or "",
+        level=node.level,
+        hierarchy_path=node.hierarchy_path,
+        score=round(float(score), 4),
+        reason=reason,
         text=text,
-        selected_wacs=selected,
-        user_id=user.id if user else None,
-        document_name=file.filename,
-        include_informational=include_informational,
+        excerpt=excerpt,
     )
 
 
-@router.post("/analyze/batch")
-async def analyze_batch(
-    selected_wacs: str = Form(...),
-    include_informational: bool = Form(True),
-    files: list[UploadFile] = File(...),
-    db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_user),
+@router.post("/search-statutes", response_model=StatuteSearchResponse)
+async def search_statutes(
+    payload: StatuteSearchRequest,
+    _: User = Depends(get_current_user),
 ):
-    import json
+    """Full-corpus keyword RAG over local WAC + RCW PDFs (exact text excerpts)."""
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="Complaint text is required")
+    if not wac_store.ready:
+        raise HTTPException(status_code=503, detail="Statute corpus is not loaded")
+    exclude = {c.replace("WAC ", "").replace("RCW ", "") for c in payload.exclude_codes}
+    ranked = wac_store.corpus_search(
+        payload.text,
+        top_k=max(1, min(payload.top_k, 50)),
+        exclude_codes=exclude or None,
+    )
+    hits = [_hit_from_node(n, s, reason) for n, s, reason in ranked]
+    preview = payload.text.strip()
+    return StatuteSearchResponse(
+        hits=hits,
+        query_preview=preview if len(preview) <= 240 else preview[:240] + "…",
+        total=len(hits),
+    )
 
+
+@router.post("/suggest-related", response_model=SuggestRelatedResponse)
+async def suggest_related(
+    payload: SuggestRelatedRequest,
+    _: User = Depends(get_current_user),
+):
+    """Suggest related WAC/RCW sections after approved selection (research only)."""
+    if not payload.selected_wacs:
+        raise HTTPException(status_code=400, detail="Select at least one authorized WAC/RCW")
+    if not wac_store.ready:
+        raise HTTPException(status_code=503, detail="Statute corpus is not loaded")
+
+    selected_nodes = wac_store.resolve_selection(payload.selected_wacs)
+    selected_codes = {
+        n.code.replace("WAC ", "").replace("RCW ", "") for n in selected_nodes
+    }
+    seed_parts = [payload.text.strip()]
+    for n in selected_nodes:
+        if n.level == "code":
+            seed_parts.append(f"{n.code} {n.title} {n.text[:800]}")
+    seed = "\n".join(p for p in seed_parts if p)
+    if not seed.strip():
+        raise HTTPException(status_code=400, detail="Need selected codes or complaint text")
+
+    ranked = wac_store.corpus_search(
+        seed,
+        top_k=max(1, min(payload.top_k, 40)),
+        exclude_codes=selected_codes,
+    )
+    suggestions: list[StatuteHit] = []
+    seen_codes: set[str] = set()
+    for node, score, reason in ranked:
+        key = node.code
+        if node.level not in {"code", "primary", "secondary"}:
+            continue
+        if key in seen_codes and node.level != "code":
+            continue
+        if node.level == "code":
+            seen_codes.add(key)
+        suggestions.append(_hit_from_node(node, score, reason))
+        if len(suggestions) >= payload.top_k:
+            break
+
+    return SuggestRelatedResponse(
+        suggestions=suggestions,
+        selected_count=len(selected_codes),
+    )
+
+
+@router.post("/investigate", response_model=InvestigationReport)
+async def investigate(
+    payload: InvestigationRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_editor_user),
+):
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="Complaint / allegation text is required")
+    if not payload.selected_wacs:
+        raise HTTPException(status_code=400, detail="Select at least one authorized WAC")
+    clean_text, _privacy = ensure_clean_or_redact(payload.text, auto_redact=True)
     try:
-        selected = json.loads(selected_wacs) if selected_wacs.strip().startswith("[") else [
-            s.strip() for s in selected_wacs.split(",") if s.strip()
-        ]
-    except Exception as exc:
+        return build_investigation_report(
+            db=db,
+            complaint_text=clean_text,
+            selected_wacs=payload.selected_wacs,
+            user_id=user.id,
+            investigation_date=payload.investigation_date,
+            case_id=payload.case_id,
+            include_informational=payload.include_informational,
+            facility_address=payload.facility_address,
+            credential_number=payload.credential_number,
+            use_llm=payload.use_llm,
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    docs = []
-    for f in files:
-        data = await f.read()
-        text = extract_text_from_bytes(f.filename or "upload.txt", data)
-        docs.append({"name": f.filename, "text": text})
-    results = batch_analyze(
-        db=db,
-        documents=docs,
-        selected_wacs=selected,
-        user_id=user.id if user else None,
-        include_informational=include_informational,
-    )
-    return {"results": results, "count": len(results)}
 
-
-@router.get("/examples")
-def list_examples():
-    examples = []
-    if settings.examples_dir.exists():
-        for path in sorted(settings.examples_dir.glob("Example*.*")):
-            examples.append({"name": path.name, "path": str(path)})
-    return examples
-
-
-@router.get("/examples/{name}/text")
-def example_text(name: str):
-    path = settings.examples_dir / name
-    if not path.exists() or ".." in name:
-        raise HTTPException(status_code=404, detail="Example not found")
-    return {"name": name, "text": extract_text_from_path(path)}
-
-
-@router.get("/stats", response_model=StatsOut)
-def stats(db: Session = Depends(get_db)):
-    codes = wac_store.get_code_nodes()
-    total_analyses = db.query(AnalysisRun).count()
-    top_selected = (
-        db.query(UsageStat)
-        .filter(UsageStat.stat_type == "selected")
-        .order_by(UsageStat.count.desc())
-        .limit(10)
-        .all()
-    )
-    top_matched = (
-        db.query(UsageStat)
-        .filter(UsageStat.stat_type == "matched")
-        .order_by(UsageStat.count.desc())
-        .limit(10)
-        .all()
-    )
-    recent = db.query(AnalysisRun).order_by(AnalysisRun.created_at.desc()).limit(8).all()
-    return StatsOut(
-        total_analyses=total_analyses,
-        total_wac_codes=len(codes),
-        total_nodes=len(wac_store.nodes),
-        top_selected=[{"wac_id": r.wac_id, "count": r.count} for r in top_selected],
-        top_matched=[{"wac_id": r.wac_id, "count": r.count} for r in top_matched],
-        recent_runs=[
-            {
-                "id": r.id,
-                "document_name": r.document_name,
-                "selected_count": r.selected_count,
-                "result_count": r.result_count,
-                "duration_ms": r.duration_ms,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in recent
-        ],
-        chapter_breakdown={
-            "246-341": sum(1 for c in codes if c.chapter == "246-341"),
-            "246-337": sum(1 for c in codes if c.chapter == "246-337"),
-        },
-    )
-
-
-@router.get("/validate/{chapter}", response_model=ValidationResult)
-async def validate_chapter(chapter: str):
-    return await validate_against_official(chapter)
-
-
-@router.get("/triggers", response_model=list[TriggerPhraseOut])
-def list_triggers(
-    wac_id: str | None = None,
+@router.post("/investigate/validate", response_model=ValidateReportResponse)
+async def validate_investigation_report(
+    payload: ValidateReportRequest,
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
-    q = db.query(CustomTriggerPhrase).filter(CustomTriggerPhrase.user_id == user.id)
-    if wac_id:
-        q = q.filter(CustomTriggerPhrase.wac_id == wac_id)
-    return q.order_by(CustomTriggerPhrase.updated_at.desc()).all()
-
-
-@router.post("/triggers", response_model=TriggerPhraseOut)
-def create_trigger(
-    payload: TriggerPhraseCreate,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if payload.wac_id not in wac_store.nodes and payload.wac_id not in wac_store.code_index:
-        # Allow code without WAC prefix
-        if f"WAC {payload.wac_id}" not in wac_store.nodes:
-            raise HTTPException(status_code=404, detail="Unknown WAC id")
-    row = CustomTriggerPhrase(user_id=user.id, wac_id=payload.wac_id, phrase=payload.phrase.strip())
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
-
-
-@router.patch("/triggers/{phrase_id}", response_model=TriggerPhraseOut)
-def update_trigger(
-    phrase_id: int,
-    payload: TriggerPhraseUpdate,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    row = (
-        db.query(CustomTriggerPhrase)
-        .filter(CustomTriggerPhrase.id == phrase_id, CustomTriggerPhrase.user_id == user.id)
-        .first()
+    """Re-check allegation / RF / evidentiary quotes against the PDF store after edits."""
+    _ = user
+    selected = [
+        c.replace("WAC ", "").replace("RCW ", "").strip() for c in payload.selected_wacs
+    ]
+    integrity = verify_report_quotes(
+        allegations=payload.allegations,
+        regulatory_framework=payload.regulatory_framework,
+        evidentiary_examples=payload.evidentiary_examples,
+        selected_codes=selected or None,
     )
-    if not row:
-        raise HTTPException(status_code=404, detail="Phrase not found")
-    row.phrase = payload.phrase.strip()
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
-
-
-@router.delete("/triggers/{phrase_id}")
-def delete_trigger(
-    phrase_id: int,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    row = (
-        db.query(CustomTriggerPhrase)
-        .filter(CustomTriggerPhrase.id == phrase_id, CustomTriggerPhrase.user_id == user.id)
-        .first()
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Phrase not found")
-    db.delete(row)
-    db.commit()
-    return {"deleted": True}
+    out = QuoteIntegrityOut(**integrity.to_dict())
+    return ValidateReportResponse(quote_integrity=out, can_export=out.ok)
 
 
 @router.post("/ingest")
 def ingest(force: bool = False, db: Session = Depends(get_db)):
-    result = wac_store.ingest(db, force=force)
-    return result
+    return wac_store.ingest(db, force=force)
+
+
+@router.get("/templates")
+def list_templates():
+    """Show which example IR shell templates are loaded (phrasing only, not duty authority)."""
+    from app.services.template_corpus import load_template_corpus
+
+    corpus = load_template_corpus()
+    return {
+        "example_files": [e.source_file for e in corpus.examples],
+        "allegation_templates": sum(len(v) for v in corpus.by_code.values()),
+        "codes_covered": sorted(corpus.by_code.keys()),
+        "by_code_counts": {k: len(v) for k, v in sorted(corpus.by_code.items())},
+        "reload": "POST /api/templates/reload",
+    }
+
+
+@router.post("/templates/reload")
+def reload_templates():
+    from app.services.template_corpus import reload_corpus
+
+    corpus = reload_corpus()
+    return {
+        "reloaded": True,
+        "example_files": [e.source_file for e in corpus.examples],
+        "allegation_templates": sum(len(v) for v in corpus.by_code.values()),
+        "codes_covered": len(corpus.by_code),
+    }
 
 
 @router.get("/health")
 def health():
+    from app.config import settings
+    from app.services.investigator_llm import llm_available
+    from app.services.template_corpus import load_template_corpus
+
+    corpus = load_template_corpus()
     return {
         "status": "ok",
         "wac_nodes": len(wac_store.nodes),
         "wac_codes": len(wac_store.get_code_nodes()),
         "ready": wac_store.ready,
+        "template_examples": len(corpus.examples),
+        "template_allegations": sum(len(v) for v in corpus.by_code.values()),
+        "template_codes": len(corpus.by_code),
+        "llm": {
+            "enabled": settings.llm_enabled,
+            "available": llm_available(),
+            "base_url": settings.llm_base_url,
+            "model": settings.llm_model,
+            "has_api_key": bool(settings.llm_api_key),
+        },
     }

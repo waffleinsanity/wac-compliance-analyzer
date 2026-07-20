@@ -4,16 +4,20 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "check:css": "node scripts/check-css.mjs",
+    "check": "npm run check:css && tsc --noEmit",
+    "predev": "npm run check:css",
     "dev": "vite",
+    "prebuild": "npm run check",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.487.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.5.0",
-    "lucide-react": "^0.487.0",
-    "clsx": "^2.1.1"
+    "react-router-dom": "^7.5.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.10",

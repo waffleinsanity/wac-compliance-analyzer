@@ -1,15 +1,17 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.auth import bootstrap_admin
 from app.config import settings
 from app.database import SessionLocal, init_db
 from app.rag.store import wac_store
-from app.routers import analysis, auth, wacs
+from app.routers import admin_users, analysis, auth, cases, privacy, support, wacs
+from app.services.usage_stats import backfill_from_cases
 
 
 @asynccontextmanager
@@ -17,8 +19,12 @@ async def lifespan(app: FastAPI):
     init_db()
     db = SessionLocal()
     try:
+        bootstrap_admin(db)
         result = wac_store.ingest(db, force=False)
+        seeded = backfill_from_cases(db)
         print(f"[startup] WAC store: {result}")
+        if seeded:
+            print(f"[startup] Seeded usage stats for {seeded} WACs from existing cases")
     finally:
         db.close()
     yield
@@ -40,8 +46,23 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(admin_users.router)
+app.include_router(support.router)
+app.include_router(privacy.router)
+app.include_router(cases.router)
 app.include_router(wacs.router)
 app.include_router(analysis.router)
+
+
+@app.api_route(
+    "/api/{full_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    include_in_schema=False,
+)
+async def api_not_found(full_path: str):
+    """Unmatched /api/* must be 404, not SPA GET catch-all 405 Method Not Allowed."""
+    raise HTTPException(status_code=404, detail="Not Found")
+
 
 # Serve built frontend if present
 frontend_dist = settings.project_root / "frontend" / "dist"
@@ -52,6 +73,9 @@ if frontend_dist.exists():
 
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
+        # Never mask missing API routes with the SPA shell.
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
         index = frontend_dist / "index.html"
         file_path = frontend_dist / full_path
         if full_path and file_path.exists() and file_path.is_file():

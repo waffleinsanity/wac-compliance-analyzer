@@ -2,56 +2,221 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg-glow: radial-gradient(1200px 600px at 10% -10%, rgba(61, 127, 150, 0.18), transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, rgba(176, 138, 82, 0.16), transparent 50%),
-    linear-gradient(180deg, #f4f7f5 0%, #e8efe9 100%);
-  --bg-glow-dark: radial-gradient(1200px 600px at 10% -10%, rgba(61, 127, 150, 0.22), transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, rgba(176, 138, 82, 0.12), transparent 50%),
-    linear-gradient(180deg, #111c17 0%, #0c1411 100%);
-}
+@layer base {
+  :root {
+    --background: 210 20% 97%;
+    --foreground: 215 22% 14%;
+    --card: 40 33% 99%;
+    --card-foreground: 215 22% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 22% 14%;
+    --primary: 176 62% 28%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 18% 93%;
+    --secondary-foreground: 215 22% 20%;
+    --muted: 210 16% 94%;
+    --muted-foreground: 215 12% 42%;
+    --accent: 176 30% 93%;
+    --accent-foreground: 176 62% 22%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 16% 86%;
+    --input: 214 16% 86%;
+    --ring: 176 62% 28%;
+    --radius: 0.65rem;
+    --surface-wash: radial-gradient(1200px 500px at 10% -10%, rgba(31, 127, 120, 0.08), transparent 55%),
+      radial-gradient(900px 420px at 90% 0%, rgba(31, 38, 48, 0.04), transparent 50%),
+      hsl(var(--background));
+  }
 
-html,
-body,
-#root {
-  min-height: 100%;
-}
+  .dark {
+    --background: 215 22% 9%;
+    --foreground: 210 20% 96%;
+    --card: 215 18% 12%;
+    --card-foreground: 210 20% 96%;
+    --popover: 215 18% 12%;
+    --popover-foreground: 210 20% 96%;
+    --primary: 174 42% 45%;
+    --primary-foreground: 215 22% 8%;
+    --secondary: 215 16% 18%;
+    --secondary-foreground: 210 20% 92%;
+    --muted: 215 14% 16%;
+    --muted-foreground: 215 12% 68%;
+    --accent: 174 22% 18%;
+    --accent-foreground: 174 40% 78%;
+    --destructive: 0 62% 42%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 215 14% 22%;
+    --input: 215 14% 22%;
+    --ring: 174 42% 45%;
+    --surface-wash: radial-gradient(1000px 420px at 8% -8%, rgba(63, 158, 149, 0.12), transparent 55%),
+      hsl(var(--background));
+  }
 
-body {
-  margin: 0;
-  font-family: 'Source Sans 3', Segoe UI, sans-serif;
-  background: var(--bg-glow);
-  background-attachment: fixed;
-}
+  * {
+    border-color: hsl(var(--border));
+  }
 
-html.dark body {
-  background: var(--bg-glow-dark);
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--surface-wash);
+    color: hsl(var(--foreground));
+    font-family: 'IBM Plex Sans', Segoe UI, sans-serif;
+    font-feature-settings: 'ss01' on, 'kern' on;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: hsl(176 45% 80% / 0.55);
+  }
+
+  .dark ::selection {
+    background: hsl(174 35% 30% / 0.7);
+  }
 }
 
 @layer components {
-  .panel {
-    @apply rounded-2xl border border-ink-200/80 bg-white/80 shadow-panel backdrop-blur-md
-      dark:border-ink-700/80 dark:bg-ink-900/70;
-  }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
-      transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
-      focus-visible:outline-tide-500 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
   }
+  .btn-default,
   .btn-primary {
-    @apply btn bg-ink-800 text-ink-50 hover:bg-ink-700 dark:bg-cedar-500 dark:text-ink-950
-      dark:hover:bg-cedar-400;
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+    background-color: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
   }
-  .btn-secondary {
-    @apply btn border border-ink-300 bg-white/70 text-ink-800 hover:bg-ink-100
-      dark:border-ink-600 dark:bg-ink-800/60 dark:text-ink-100 dark:hover:bg-ink-700;
+  .btn-default:hover,
+  .btn-primary:hover {
+    background-color: hsl(var(--primary) / 0.92);
   }
+  .btn-secondary,
+  .btn-outline {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+    border-color: hsl(var(--input));
+    background-color: hsl(var(--card));
+    color: hsl(var(--foreground));
+  }
+  .btn-secondary:hover,
+  .btn-outline:hover {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+  }
+  .btn-ghost {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-ghost:hover {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+  }
+  .btn-sm {
+    @apply h-8 rounded-md px-3 text-xs;
+  }
+
   .input {
-    @apply w-full rounded-xl border border-ink-300 bg-white/90 px-3 py-2 text-sm text-ink-900
-      outline-none ring-tide-500/30 placeholder:text-ink-400 focus:ring-2
-      dark:border-ink-600 dark:bg-ink-950/60 dark:text-ink-50;
+    @apply h-10 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-sm transition
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
+    border-color: hsl(var(--input));
+    background-color: hsl(var(--card));
   }
+  .input::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .panel {
+    @apply rounded-xl border;
+    background-color: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+    border-color: hsl(var(--border));
+    box-shadow: 0 1px 0 rgba(18, 23, 30, 0.03), 0 10px 28px rgba(18, 23, 30, 0.04);
+  }
+
+  .doc-surface {
+    @apply rounded-xl border;
+    background-color: #f7f9fb;
+    color: hsl(var(--card-foreground));
+    border-color: hsl(214 16% 82%);
+    box-shadow: 0 1px 0 rgba(18, 23, 30, 0.03), 0 12px 32px rgba(18, 23, 30, 0.05);
+  }
+  .dark .doc-surface {
+    background-color: #171c24;
+    border-color: hsl(215 14% 24%);
+  }
+
   .label {
-    @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-300;
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground;
+  }
+
+  .font-display {
+    font-family: 'IBM Plex Sans', Segoe UI, sans-serif;
+    @apply font-semibold tracking-tight;
+  }
+  .font-sans {
+    font-family: 'IBM Plex Sans', Segoe UI, sans-serif;
+  }
+  .font-serif,
+  .prose-report {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-optical-sizing: auto;
+    line-height: 1.65;
+  }
+
+  .status-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;
+  }
+  .status-chip-ready {
+    color: #14524d;
+    border-color: rgba(23, 102, 95, 0.25);
+    background-color: rgba(31, 127, 120, 0.1);
+  }
+  .dark .status-chip-ready {
+    color: #6bb8b0;
+  }
+  .status-chip-warn {
+    color: #92400e;
+    border-color: rgba(245, 158, 11, 0.3);
+    background-color: rgba(245, 158, 11, 0.1);
+  }
+  .dark .status-chip-warn {
+    color: #fcd34d;
+  }
+
+  .nav-pill {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition;
+  }
+  .nav-pill-active {
+    @apply bg-card text-foreground;
+    box-shadow: 0 1px 2px rgba(18, 23, 30, 0.06), 0 8px 24px rgba(18, 23, 30, 0.06);
+  }
+  .nav-pill-idle {
+    @apply text-muted-foreground hover:text-foreground;
+  }
+  .nav-pill-idle:hover {
+    background-color: hsl(var(--card) / 0.7);
+  }
+
+  .wac-row-selected {
+    background-color: rgba(31, 127, 120, 0.1);
+    box-shadow: inset 0 0 0 1px rgba(31, 127, 120, 0.25);
+  }
+
+  .sidebar-rail {
+    background: linear-gradient(180deg, hsl(var(--card)) 0%, hsl(var(--muted) / 0.55) 100%);
   }
 }

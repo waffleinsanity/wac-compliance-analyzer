@@ -76,9 +76,23 @@ class WACStore:
 
     def ingest(self, db: Session, force: bool = False) -> dict[str, Any]:
         existing = db.query(WACCodeRecord).count()
+        # Re-parse when source PDFs are newer than the DB so PDFs remain sole corpus
         if existing and not force:
-            loaded = self.load_from_db(db)
-            return {"status": "loaded_existing", "nodes": loaded}
+            db_mtime = settings.sqlite_path.stat().st_mtime if settings.sqlite_path.exists() else 0
+            pdf_mtime = 0.0
+            for name in (
+                "WAC 246-341.pdf",
+                "WAC 246-337.pdf",
+                *settings.rcw_source_pdfs,
+            ):
+                path = settings.source_dir / name
+                if path.exists():
+                    pdf_mtime = max(pdf_mtime, path.stat().st_mtime)
+            if pdf_mtime and pdf_mtime > db_mtime + 1:
+                force = True
+            else:
+                loaded = self.load_from_db(db)
+                return {"status": "loaded_existing", "nodes": loaded}
 
         nodes = parse_all_sources(settings.source_dir)
         # Deduplicate by id (prefer longer text)
@@ -89,7 +103,7 @@ class WACStore:
                 deduped[node.id] = node
         nodes = list(deduped.values())
 
-        if force:
+        if force or existing:
             db.query(WACCodeRecord).delete()
             db.commit()
             try:
@@ -127,14 +141,15 @@ class WACStore:
         self.code_index.update({n.id: n for n in nodes if n.level == "code"})
         self._rebuild_tfidf()
         self._sync_chroma(nodes)
+        chapters: dict[str, int] = {}
+        for n in nodes:
+            if n.level == "code":
+                chapters[n.chapter] = chapters.get(n.chapter, 0) + 1
         return {
             "status": "ingested",
             "nodes": len(nodes),
             "codes": sum(1 for n in nodes if n.level == "code"),
-            "chapters": {
-                "246-341": sum(1 for n in nodes if n.level == "code" and n.chapter == "246-341"),
-                "246-337": sum(1 for n in nodes if n.level == "code" and n.chapter == "246-337"),
-            },
+            "chapters": chapters,
         }
 
     def _rebuild_tfidf(self) -> None:
@@ -213,16 +228,43 @@ class WACStore:
             item = item.strip()
             if not item:
                 continue
-            # Normalize
-            m = re.search(r"(246-(?:341|337)-\d{3,4})", item)
+            # WAC 246-341/337 or RCW 71.xx.xxx
+            m = re.search(
+                r"(?:WAC\s+)?(246-(?:341|337)-\d{3,4})|(?:RCW\s+)?(71\.(?:05|24|34)\.\d{3,4})",
+                item,
+                re.IGNORECASE,
+            )
             if not m:
+                # Fall back to direct id / code lookup
+                exact = (
+                    self.nodes.get(item)
+                    or self.nodes.get(f"WAC {item}")
+                    or self.nodes.get(f"RCW {item}")
+                    or self.code_index.get(item)
+                )
+                if exact:
+                    if exact.level == "code":
+                        resolved[exact.id] = exact
+                    else:
+                        parent = self.code_index.get(exact.code)
+                        if parent:
+                            resolved[parent.id] = parent
+                        resolved[exact.id] = exact
                 continue
-            code = m.group(1)
-            node = self.code_index.get(code) or self.code_index.get(f"WAC {code}")
+            code = m.group(1) or m.group(2)
+            prefix = "RCW" if code.startswith("71.") else "WAC"
+            node = (
+                self.code_index.get(code)
+                or self.code_index.get(f"{prefix} {code}")
+                or self.nodes.get(f"{prefix} {code}")
+            )
             if node:
                 resolved[node.id] = node
-            # Also keep exact subsection if present
-            exact = self.nodes.get(item) or self.nodes.get(f"WAC {item}")
+            exact = (
+                self.nodes.get(item)
+                or self.nodes.get(f"WAC {item}")
+                or self.nodes.get(f"RCW {item}")
+            )
             if exact and exact.level != "code":
                 resolved[exact.id] = exact
         return list(resolved.values())
@@ -232,27 +274,97 @@ class WACStore:
         query: str,
         selected_codes: set[str] | None = None,
         top_k: int = 20,
+        *,
+        exclude_codes: set[str] | None = None,
+        min_score: float = 0.02,
     ) -> list[tuple[WACNode, float]]:
         if not self._vectorizer or self._tfidf_matrix is None or not query.strip():
             return []
         q = self._vectorizer.transform([query])
         sims = cosine_similarity(q, self._tfidf_matrix).flatten()
         ranked = sorted(enumerate(sims), key=lambda x: x[1], reverse=True)
+        selected_norm = {c.replace("WAC ", "").replace("RCW ", "") for c in (selected_codes or set())}
+        exclude_norm = {c.replace("WAC ", "").replace("RCW ", "") for c in (exclude_codes or set())}
         results: list[tuple[WACNode, float]] = []
         for idx, score in ranked:
-            if score < 0.02:
+            if score < min_score:
                 break
             node = self.nodes[self._tfidf_ids[idx]]
-            if selected_codes and node.code not in selected_codes and node.id not in selected_codes:
-                # Allow if parent code selected
-                if f"WAC {node.code}" not in selected_codes and node.code not in {
-                    c.replace("WAC ", "") for c in selected_codes
-                }:
-                    continue
+            code_key = node.code.replace("WAC ", "").replace("RCW ", "")
+            if exclude_norm and code_key in exclude_norm:
+                continue
+            if selected_norm and code_key not in selected_norm and node.id not in (selected_codes or set()):
+                continue
             results.append((node, float(score)))
             if len(results) >= top_k:
                 break
         return results
+
+    def search_chroma(self, query: str, top_k: int = 20) -> list[tuple[WACNode, float]]:
+        """Semantic backup over the full local statute corpus."""
+        if not query.strip() or not self.nodes:
+            return []
+        try:
+            self._ensure_chroma()
+            raw = self._collection.query(query_texts=[query[:4000]], n_results=min(top_k, 40))
+        except Exception:
+            return []
+        ids = (raw.get("ids") or [[]])[0]
+        dists = (raw.get("distances") or [[]])[0]
+        out: list[tuple[WACNode, float]] = []
+        for node_id, dist in zip(ids, dists):
+            node = self.nodes.get(node_id)
+            if not node:
+                continue
+            # Chroma cosine distance → similarity-ish score
+            score = max(0.0, 1.0 - float(dist))
+            out.append((node, score))
+        return out
+
+    def corpus_search(
+        self,
+        query: str,
+        *,
+        top_k: int = 25,
+        exclude_codes: set[str] | None = None,
+    ) -> list[tuple[WACNode, float, str]]:
+        """Full-corpus keyword RAG: TF-IDF primary, Chroma as backup filler."""
+        tfidf_hits = self.search(query, selected_codes=None, top_k=top_k, exclude_codes=exclude_codes)
+        scored: dict[str, tuple[WACNode, float, str]] = {
+            n.id: (n, s, "tfidf") for n, s in tfidf_hits
+        }
+        if len(scored) < top_k:
+            for node, score in self.search_chroma(query, top_k=top_k):
+                code_key = node.code.replace("WAC ", "").replace("RCW ", "")
+                if exclude_codes and code_key in {
+                    c.replace("WAC ", "").replace("RCW ", "") for c in exclude_codes
+                }:
+                    continue
+                prev = scored.get(node.id)
+                if not prev or score > prev[1]:
+                    scored[node.id] = (node, score, "chroma" if not prev else prev[2])
+        # Keyword / trigger-phrase boost
+        q_lower = query.lower()
+        tokens = {t for t in re.findall(r"[a-z0-9]{4,}", q_lower)}
+        for node in self.nodes.values():
+            code_key = node.code.replace("WAC ", "").replace("RCW ", "")
+            if exclude_codes and code_key in {
+                c.replace("WAC ", "").replace("RCW ", "") for c in exclude_codes
+            }:
+                continue
+            phrase_hit = any(p.lower() in q_lower for p in node.trigger_phrases if len(p) >= 8)
+            if not phrase_hit and tokens:
+                blob = f"{node.title} {node.text}".lower()
+                overlap = sum(1 for t in tokens if t in blob)
+                if overlap < max(3, len(tokens) // 8):
+                    continue
+                phrase_hit = True
+            if phrase_hit:
+                prev = scored.get(node.id)
+                boost = 0.15 if not prev else prev[1] + 0.05
+                scored[node.id] = (node, max(prev[1] if prev else 0.0, boost), "keyword")
+        ranked = sorted(scored.values(), key=lambda x: x[1], reverse=True)
+        return ranked[:top_k]
 
     def phrase_hits(self, document: str, node: WACNode, extra_phrases: list[str] | None = None) -> list[str]:
         doc_lower = document.lower()

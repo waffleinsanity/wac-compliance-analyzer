@@ -1,0 +1,14 @@
+{
+  "id": "assault_safety",
+  "complaint": "It was alleged that a patient was sexually assaulted by another patient while residing at the behavioral health facility and staff failed to protect patient safety and security.",
+  "selected_wacs": [
+    "WAC 246-341-0410",
+    "WAC 246-341-0420",
+    "WAC 246-341-0600",
+    "WAC 246-337-065",
+    "WAC 246-337-080"
+  ],
+  "expected_cite_prefixes": ["246-341-0600"],
+  "must_quote_statute": true,
+  "notes": "Safety/assault facts should surface 0600-family subsection language among matched cites."
+}

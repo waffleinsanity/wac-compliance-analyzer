@@ -1,24 +1,44 @@
+from __future__ import annotations
+
+import hashlib
+import logging
+import re
+import secrets
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import User, get_db
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = logging.getLogger(__name__)
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+MIN_PASSWORD_LENGTH = settings.min_password_length
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password[:72])
+    return bcrypt.hashpw(password[:72].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain[:72], hashed)
+    try:
+        return bcrypt.checkpw(plain[:72].encode("utf-8"), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
+
+
+def validate_password_strength(password: str) -> None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must be at least {MIN_PASSWORD_LENGTH} characters",
+        )
 
 
 def create_access_token(subject: str) -> str:
@@ -34,11 +54,47 @@ def get_user_by_username(db: Session, username: str) -> User | None:
     return db.query(User).filter(User.username == username).first()
 
 
+def get_user_by_email(db: Session, email: str) -> User | None:
+    return db.query(User).filter(User.email == email.lower()).first()
+
+
 def authenticate_user(db: Session, username: str, password: str) -> User | None:
     user = get_user_by_username(db, username)
-    if not user or not verify_password(password, user.hashed_password):
+    if not user or not user.is_active:
+        return None
+    if not user.hashed_password:
+        return None
+    if not verify_password(password, user.hashed_password):
         return None
     return user
+
+
+def ensure_active(user: User) -> User:
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+    return user
+
+
+def user_to_out_dict(user: User) -> dict:
+    from app.permissions import can_access_admin, can_edit, can_review, user_role
+
+    role = user_role(user)
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "display_name": getattr(user, "display_name", None),
+        "role": role,
+        "theme_preference": user.theme_preference or "system",
+        "is_admin": role == "admin",
+        "is_active": bool(user.is_active),
+        "must_change_password": bool(user.must_change_password),
+        "has_password": bool(user.hashed_password),  # empty string means Google-only / unset
+        "has_google": bool(user.google_sub),
+        "can_edit": can_edit(role),
+        "can_review": can_review(role),
+        "can_access_admin": can_access_admin(role),
+    }
 
 
 async def get_current_user(
@@ -62,7 +118,7 @@ async def get_current_user(
     user = get_user_by_username(db, username)
     if user is None:
         raise credentials_exception
-    return user
+    return ensure_active(user)
 
 
 async def get_optional_user(
@@ -75,3 +131,125 @@ async def get_optional_user(
         return await get_current_user(token=token, db=db)
     except HTTPException:
         return None
+
+
+async def get_admin_user(user: User = Depends(get_current_user)) -> User:
+    from app.permissions import require_role_admin
+
+    require_role_admin(user)
+    return user
+
+
+async def get_editor_user(user: User = Depends(get_current_user)) -> User:
+    from app.permissions import require_role_edit
+
+    require_role_edit(user)
+    return user
+
+
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def issue_password_reset_token(user: User) -> str:
+    raw = secrets.token_urlsafe(32)
+    user.password_reset_token_hash = hash_reset_token(raw)
+    user.password_reset_expires = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.password_reset_expire_minutes
+    )
+    return raw
+
+
+def clear_password_reset(user: User) -> None:
+    user.password_reset_token_hash = None
+    user.password_reset_expires = None
+
+
+def unique_username_from_email(db: Session, email: str) -> str:
+    local = email.split("@", 1)[0].lower()
+    base = re.sub(r"[^a-z0-9._-]", "", local)[:40] or "user"
+    candidate = base
+    n = 1
+    while get_user_by_username(db, candidate):
+        n += 1
+        candidate = f"{base}{n}"[:64]
+    return candidate
+
+
+def verify_google_id_token(id_token: str) -> dict:
+    if not settings.google_client_id:
+        raise HTTPException(status_code=503, detail="Google Sign-In is not configured")
+    try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="Google auth library not installed") from exc
+
+    try:
+        info = google_id_token.verify_oauth2_token(
+            id_token,
+            google_requests.Request(),
+            settings.google_client_id,
+        )
+    except Exception as exc:
+        logger.warning("Google token verification failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid Google token") from exc
+
+    if info.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
+        raise HTTPException(status_code=401, detail="Invalid Google token issuer")
+    if not info.get("email") or not info.get("email_verified"):
+        raise HTTPException(status_code=401, detail="Google account email is not verified")
+    return info
+
+
+def bootstrap_admin(db: Session) -> None:
+    """Create or promote bootstrap admin when no admin exists."""
+    existing_admin = db.query(User).filter(User.is_admin.is_(True)).first()
+    if existing_admin:
+        return
+
+    username = (settings.admin_bootstrap_username or "admin").strip()
+    password = settings.admin_bootstrap_password or "ChangeMeAdmin1!"
+    email = (settings.admin_bootstrap_email or "admin@localhost").strip().lower()
+
+    user = get_user_by_username(db, username)
+    if user:
+        user.role = "admin"
+        user.is_admin = True
+        user.is_active = True
+        user.must_change_password = True
+        if not user.email:
+            user.email = email
+        if not user.hashed_password:
+            user.hashed_password = hash_password(password)
+            user.must_change_password = True
+        db.add(user)
+        db.commit()
+        logger.info("Promoted existing user %s to admin", username)
+        return
+
+    # Avoid email collision with another account
+    if get_user_by_email(db, email):
+        email = f"admin+bootstrap@{email.split('@')[-1]}"
+
+    user = User(
+        username=username,
+        email=email,
+        hashed_password=hash_password(password),
+        role="admin",
+        is_admin=True,
+        is_active=True,
+        must_change_password=True,
+    )
+    db.add(user)
+    db.commit()
+    logger.info("Created bootstrap admin user %s — change the password after first login", username)
+
+
+def count_active_admins(db: Session, exclude_user_id: int | None = None) -> int:
+    q = db.query(User).filter(User.is_active.is_(True)).filter(
+        (User.role == "admin") | (User.is_admin.is_(True))
+    )
+    if exclude_user_id is not None:
+        q = q.filter(User.id != exclude_user_id)
+    return q.count()

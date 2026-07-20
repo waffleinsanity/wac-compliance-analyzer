@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 
 from sqlalchemy import (
     Boolean,
@@ -11,10 +12,14 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def utcnow() -> datetime:
@@ -31,9 +36,17 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     username = Column(String(64), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=True)
-    hashed_password = Column(String(255), nullable=False)
+    display_name = Column(String(128), nullable=True)
+    role = Column(String(32), default="editor", nullable=False, index=True)  # admin|editor|viewer
+    hashed_password = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     theme_preference = Column(String(16), default="system")
+    is_admin = Column(Boolean, default=False, nullable=False)  # legacy mirror of role==admin
+    is_active = Column(Boolean, default=True, nullable=False)
+    google_sub = Column(String(255), unique=True, nullable=True)
+    must_change_password = Column(Boolean, default=False, nullable=False)
+    password_reset_token_hash = Column(String(128), nullable=True)
+    password_reset_expires = Column(DateTime(timezone=True), nullable=True)
 
     favorites = relationship("Favorite", back_populates="user", cascade="all, delete-orphan")
     custom_phrases = relationship(
@@ -125,6 +138,150 @@ class AnalysisRun(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
+class InvestigationCase(Base):
+    """Persistent investigation drafting workspace (assistive — not auto-final)."""
+
+    __tablename__ = "investigation_cases"
+
+    id = Column(Integer, primary_key=True)
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    case_id_label = Column(String(128), default="", index=True)
+    title = Column(String(255), default="")
+    status = Column(String(32), default="draft", index=True)  # draft|in_review|final|reopened|archived
+    complaint_text = Column(Text, default="")
+    investigation_date = Column(String(128), default="")
+    facility_address = Column(String(512), default="")
+    credential_number = Column(String(128), default="")
+    approved_wac_ids = Column(Text, default="[]")  # JSON list
+    current_report_json = Column(Text, nullable=True)  # latest editable IR JSON
+    privacy_acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    privacy_redaction_note = Column(String(512), default="")
+    status_changed_at = Column(DateTime(timezone=True), default=utcnow)
+    status_changed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    snapshots = relationship(
+        "CaseReportSnapshot", back_populates="case", cascade="all, delete-orphan"
+    )
+    evidence = relationship("CaseEvidence", back_populates="case", cascade="all, delete-orphan")
+    process_entries = relationship(
+        "CaseProcessEntry", back_populates="case", cascade="all, delete-orphan"
+    )
+    comments = relationship("CaseComment", back_populates="case", cascade="all, delete-orphan")
+
+
+class CaseReportSnapshot(Base):
+    __tablename__ = "case_report_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    case_id = Column(Integer, ForeignKey("investigation_cases.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+    report_json = Column(Text, nullable=False)
+    report_text = Column(Text, default="")
+    note = Column(String(512), default="")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    case = relationship("InvestigationCase", back_populates="snapshots")
+
+
+class CaseEvidence(Base):
+    __tablename__ = "case_evidence"
+
+    id = Column(Integer, primary_key=True)
+    case_id = Column(Integer, ForeignKey("investigation_cases.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    original_filename = Column(String(255), default="")
+    stored_path = Column(String(512), nullable=False)
+    content_type = Column(String(128), default="")
+    linked_wac_ids = Column(Text, default="[]")  # JSON
+    notes = Column(Text, default="")
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    case = relationship("InvestigationCase", back_populates="evidence")
+
+
+class CaseProcessEntry(Base):
+    __tablename__ = "case_process_entries"
+
+    id = Column(Integer, primary_key=True)
+    case_id = Column(Integer, ForeignKey("investigation_cases.id"), nullable=False, index=True)
+    activity_date = Column(String(64), default="")
+    activity_type = Column(String(64), default="record_review")  # interview|record_review|site_visit|other
+    who = Column(String(255), default="")
+    summary = Column(Text, default="")
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    case = relationship("InvestigationCase", back_populates="process_entries")
+
+
+class CaseComment(Base):
+    __tablename__ = "case_comments"
+
+    id = Column(Integer, primary_key=True)
+    case_id = Column(Integer, ForeignKey("investigation_cases.id"), nullable=False, index=True)
+    author_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    case = relationship("InvestigationCase", back_populates="comments")
+
+
+class BugReport(Base):
+    __tablename__ = "bug_reports"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    page_url = Column(String(1024), default="")
+    user_agent = Column(String(512), default="")
+    viewport_json = Column(Text, default="{}")
+    diagnostics_json = Column(Text, default="{}")
+    screenshot_path = Column(String(512), nullable=True)
+    status = Column(String(32), default="open", index=True)  # open|in_progress|resolved|closed
+    admin_note = Column(Text, default="")
+    resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class UserFeedback(Base):
+    __tablename__ = "user_feedback"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    category = Column(String(64), default="suggestion", index=True)
+    subject = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    page_url = Column(String(1024), default="")
+    status = Column(String(32), default="new", index=True)  # new|read|archived
+    admin_note = Column(Text, default="")
+    read_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(128), nullable=False, index=True)
+    entity_type = Column(String(64), default="", index=True)
+    entity_id = Column(String(64), default="")
+    details = Column(Text, default="")
+    outcome = Column(String(32), default="ok")  # ok|error|denied
+    ip_address = Column(String(64), default="")
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 engine = create_engine(
     f"sqlite:///{settings.sqlite_path}",
     connect_args={"check_same_thread": False},
@@ -132,8 +289,72 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+def _migrate_users_table() -> None:
+    """Add new auth columns to existing SQLite DBs (create_all does not alter)."""
+    insp = inspect(engine)
+    if "users" not in insp.get_table_names():
+        return
+    existing = {col["name"] for col in insp.get_columns("users")}
+    alters: list[tuple[str, str]] = [
+        ("is_admin", "ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"),
+        ("is_active", "ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"),
+        ("google_sub", "ALTER TABLE users ADD COLUMN google_sub VARCHAR(255)"),
+        ("must_change_password", "ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0"),
+        ("password_reset_token_hash", "ALTER TABLE users ADD COLUMN password_reset_token_hash VARCHAR(128)"),
+        ("password_reset_expires", "ALTER TABLE users ADD COLUMN password_reset_expires DATETIME"),
+        ("display_name", "ALTER TABLE users ADD COLUMN display_name VARCHAR(128)"),
+        ("role", "ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'editor'"),
+    ]
+    with engine.begin() as conn:
+        for name, sql in alters:
+            if name not in existing:
+                conn.execute(text(sql))
+                logger.info("Migrated users.%s", name)
+
+    # Backfill role from legacy is_admin when role is missing/blank.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE users SET role = 'admin' "
+                "WHERE (role IS NULL OR role = '' OR role = 'editor') AND is_admin = 1"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE users SET role = 'editor' "
+                "WHERE role IS NULL OR role = ''"
+            )
+        )
+        conn.execute(text("UPDATE users SET is_admin = 1 WHERE role = 'admin'"))
+        conn.execute(text("UPDATE users SET is_admin = 0 WHERE role != 'admin'"))
+
+
+def _migrate_cases_table() -> None:
+    insp = inspect(engine)
+    if "investigation_cases" not in insp.get_table_names():
+        return
+    existing = {col["name"] for col in insp.get_columns("investigation_cases")}
+    alters: list[tuple[str, str]] = [
+        (
+            "privacy_acknowledged_at",
+            "ALTER TABLE investigation_cases ADD COLUMN privacy_acknowledged_at DATETIME",
+        ),
+        (
+            "privacy_redaction_note",
+            "ALTER TABLE investigation_cases ADD COLUMN privacy_redaction_note VARCHAR(512) DEFAULT ''",
+        ),
+    ]
+    with engine.begin() as conn:
+        for name, sql in alters:
+            if name not in existing:
+                conn.execute(text(sql))
+                logger.info("Migrated investigation_cases.%s", name)
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    _migrate_users_table()
+    _migrate_cases_table()
 
 
 def get_db():
