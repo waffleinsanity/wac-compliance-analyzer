@@ -448,6 +448,10 @@ export const api = {
     })
   },
   me: () => request<User>('/api/auth/me'),
+  prepareGoogleLink: () =>
+    request<{ authorize_url: string; username: string }>('/api/auth/google/link/prepare', {
+      method: 'POST',
+    }),
   setTheme: (theme_preference: string) =>
     request<User>('/api/auth/theme', {
       method: 'PATCH',

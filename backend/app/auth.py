@@ -346,6 +346,39 @@ def upsert_google_user(db: Session, info: dict) -> User:
     return user
 
 
+def link_google_to_user(db: Session, user: User, info: dict) -> User:
+    """Attach a verified Google identity to an already-authenticated account.
+
+    If this Google sub is on another user, detach it there first so the signed-in
+    account (e.g. admin) becomes the sole owner of that Google login.
+    """
+    sub = info["sub"]
+    other = db.query(User).filter(User.google_sub == sub, User.id != user.id).first()
+    if other is not None:
+        other.google_sub = None
+        db.add(other)
+
+    user.google_sub = sub
+    display = (info.get("name") or "").strip()
+    if display and not user.display_name:
+        user.display_name = display[:128]
+
+    # Prefer a real Google email when the account still has a placeholder local email.
+    google_email = str(info.get("email") or "").lower().strip()
+    if google_email and (not user.email or user.email.endswith("@localhost")):
+        clash = get_user_by_email(db, google_email)
+        if clash is None or clash.id == user.id:
+            user.email = google_email
+
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is disabled")
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 _DEFAULT_SECRET = "wac-compliance-dev-secret-change-in-production"
 
 

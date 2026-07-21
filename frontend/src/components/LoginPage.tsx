@@ -69,11 +69,15 @@ export function LoginPage() {
       return
     }
 
+    const linked = searchParams.get('google_linked') === '1'
     setCompletingGoogle(true)
     setToken(token)
     void (async () => {
       try {
         await refresh()
+        if (linked) {
+          setInfo('Google account linked. You can sign in with Google next time.')
+        }
         navigate('/', { replace: true })
       } catch (err) {
         setToken(null)

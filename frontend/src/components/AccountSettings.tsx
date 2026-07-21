@@ -118,6 +118,35 @@ export function AccountSettings({ open, onClose, forcePasswordChange = false }: 
                 <li>Password: {user.has_password ? 'Set' : 'Not set'}</li>
                 <li>Google: {user.has_google ? 'Linked' : 'Not linked'}</li>
               </ul>
+              {!user.has_google && (
+                <button
+                  type="button"
+                  className="btn-secondary mt-3"
+                  disabled={busy}
+                  onClick={() => {
+                    void (async () => {
+                      setBusy(true)
+                      setError('')
+                      setInfo('')
+                      try {
+                        const { authorize_url } = await api.prepareGoogleLink()
+                        window.location.assign(authorize_url)
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Failed to start Google link')
+                        setBusy(false)
+                      }
+                    })()
+                  }}
+                >
+                  Link Google account
+                </button>
+              )}
+              {!user.has_google && (
+                <p className="mt-2 text-xs text-ink-400">
+                  Sign in with your Google account to attach it to <span className="font-mono">{user.username}</span>.
+                  After linking, Google sign-in opens this same account (including admin).
+                </p>
+              )}
             </div>
 
             <form className="mb-6 space-y-3 border-b border-ink-200/70 pb-6 dark:border-ink-700" onSubmit={saveProfile}>

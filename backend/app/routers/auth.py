@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from app.auth import (
     hash_password,
     hash_reset_token,
     issue_password_reset_token,
+    link_google_to_user,
     user_to_out_dict,
     upsert_google_user,
     validate_password_strength,
@@ -125,6 +126,37 @@ def _login_redirect(query: str) -> RedirectResponse:
     return RedirectResponse(url=f"{base}/login?{query}", status_code=302)
 
 
+def _set_oauth_state_cookie(resp: RedirectResponse | None, value: str, *, secure: bool) -> None:
+    """Attach OAuth state cookie to a redirect, or return cookie kwargs for JSON responses."""
+    if resp is None:
+        return
+    resp.set_cookie(
+        key=_GOOGLE_STATE_COOKIE,
+        value=value,
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+        max_age=600,
+        path="/",
+    )
+
+
+def _parse_oauth_state_cookie(raw: str | None) -> tuple[str, int | None, str] | None:
+    """Return (mode, link_user_id|None, nonce) from cookie value."""
+    if not raw:
+        return None
+    parts = raw.split(":")
+    if len(parts) == 2 and parts[0] == "login":
+        return ("login", None, parts[1])
+    if len(parts) == 3 and parts[0] == "link":
+        try:
+            return ("link", int(parts[1]), parts[2])
+        except ValueError:
+            return None
+    # Legacy plain state → treat as login
+    return ("login", None, raw)
+
+
 @router.get("/google/status")
 def google_status():
     """Public: whether Google OAuth is configured for this deployment."""
@@ -148,7 +180,7 @@ def auth_config():
 @router.get("/google/start")
 @router.get("/google/authorize-url")
 def google_start(request: Request):
-    """Begin server-side Google OAuth (full-page redirect)."""
+    """Begin server-side Google OAuth (full-page redirect) for sign-in."""
     enforce_rate_limit(
         request,
         "google",
@@ -158,18 +190,49 @@ def google_start(request: Request):
     if not google_configured():
         raise HTTPException(status_code=503, detail="Google Sign-In is not configured")
 
-    state = secrets.token_urlsafe(24)
-    redirect = RedirectResponse(url=google_authorize_url(state=state), status_code=302)
-    redirect.set_cookie(
+    nonce = secrets.token_urlsafe(24)
+    redirect = RedirectResponse(url=google_authorize_url(state=nonce), status_code=302)
+    _set_oauth_state_cookie(
+        redirect,
+        f"login:{nonce}",
+        secure=request.url.scheme == "https",
+    )
+    return redirect
+
+
+@router.post("/google/link/prepare")
+def google_link_prepare(
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+):
+    """Authenticated: prepare OAuth to link Google to the current account (e.g. admin)."""
+    enforce_rate_limit(
+        request,
+        "google",
+        settings.auth_rate_limit_google,
+        settings.auth_rate_limit_window_seconds,
+    )
+    if not google_configured():
+        raise HTTPException(status_code=503, detail="Google Sign-In is not configured")
+    if user.google_sub:
+        raise HTTPException(status_code=400, detail="Google is already linked to this account")
+
+    nonce = secrets.token_urlsafe(24)
+    secure = request.url.scheme == "https"
+    response.set_cookie(
         key=_GOOGLE_STATE_COOKIE,
-        value=state,
+        value=f"link:{user.id}:{nonce}",
         httponly=True,
         samesite="lax",
-        secure=request.url.scheme == "https",
+        secure=secure,
         max_age=600,
         path="/",
     )
-    return redirect
+    return {
+        "authorize_url": google_authorize_url(state=nonce),
+        "username": user.username,
+    }
 
 
 @router.get("/google/callback")
@@ -181,7 +244,7 @@ def google_callback(
     error: str | None = None,
 ):
     """Google redirects here; exchange code and send the SPA a short-lived app JWT."""
-    cookie_state = request.cookies.get(_GOOGLE_STATE_COOKIE)
+    parsed = _parse_oauth_state_cookie(request.cookies.get(_GOOGLE_STATE_COOKIE))
 
     def _clear(resp: RedirectResponse) -> RedirectResponse:
         resp.delete_cookie(_GOOGLE_STATE_COOKIE, path="/")
@@ -189,11 +252,24 @@ def google_callback(
 
     if error:
         return _clear(_login_redirect(f"google_error={quote(error)}"))
-    if not code or not state or not cookie_state or state != cookie_state:
+    if not code or not state or not parsed:
+        return _clear(_login_redirect("google_error=invalid_oauth_state"))
+    mode, link_user_id, nonce = parsed
+    if state != nonce:
         return _clear(_login_redirect("google_error=invalid_oauth_state"))
 
     try:
         info = exchange_google_auth_code(code)
+        if mode == "link":
+            if not link_user_id:
+                return _clear(_login_redirect("google_error=invalid_link_session"))
+            target = db.query(User).filter(User.id == link_user_id).first()
+            if not target:
+                return _clear(_login_redirect("google_error=account_not_found"))
+            user = link_google_to_user(db, target, info)
+            token = create_access_token(user.username)
+            return _clear(_login_redirect(f"google_token={quote(token)}&google_linked=1"))
+
         user = upsert_google_user(db, info)
         token = create_access_token(user.username)
         return _clear(_login_redirect(f"google_token={quote(token)}"))

@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app.auth import get_current_user, hash_password, upsert_google_user
+from app.auth import get_current_user, hash_password, link_google_to_user, upsert_google_user
 from app.database import InvestigationCase, User
 from app.main import app
 from app.services.case_store import dumps_list
@@ -144,3 +144,38 @@ def test_google_does_not_auto_link_password_account(db):
         )
     assert excinfo.value.status_code == 409
     assert "already exists" in str(excinfo.value.detail).lower()
+
+
+def test_link_google_attaches_to_existing_password_account(db):
+    admin = _ensure_user(db, username="iso_link_admin", email="iso_link_admin@localhost", role="admin", is_admin=True)
+    assert not admin.google_sub
+
+    # Stray Google-only account that previously claimed this sub
+    stray = User(
+        username="iso_google_stray",
+        email="real.google@example.com",
+        hashed_password="",
+        google_sub="google-sub-admin-link",
+        role="editor",
+        is_admin=False,
+        is_active=True,
+    )
+    db.add(stray)
+    db.commit()
+
+    linked = link_google_to_user(
+        db,
+        admin,
+        {
+            "sub": "google-sub-admin-link",
+            "email": "real.google@example.com",
+            "email_verified": True,
+            "name": "Admin Person",
+        },
+    )
+    assert linked.id == admin.id
+    assert linked.google_sub == "google-sub-admin-link"
+    # Email stays put when another account still owns the Google mailbox.
+    assert linked.email == "iso_link_admin@localhost"
+    db.refresh(stray)
+    assert stray.google_sub is None
