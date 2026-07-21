@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Inbox,
   ScrollText,
+  NotebookPen,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useNavigate } from 'react-router-dom'
@@ -37,6 +38,7 @@ import { AdminInboxPanel } from './components/AdminInboxPanel'
 import { AdminUsersPanel } from './components/AdminUsersPanel'
 import { BugReportDialog } from './components/BugReportDialog'
 import { CasesPanel } from './components/CasesPanel'
+import { ChangelogPanel } from './components/ChangelogPanel'
 import { ComplaintStep } from './components/ComplaintStep'
 import { DirectoryPanel } from './components/DirectoryPanel'
 import { FeedbackDialog } from './components/FeedbackDialog'
@@ -52,7 +54,7 @@ import { canAccessAdmin, canEdit, canExport, roleLabel } from './permissions'
 import { normalizeReportAllegations } from './allegationFormat'
 
 type MainTab = 'analysis' | 'directory' | 'admin'
-type AdminSubTab = 'users' | 'inbox' | 'audit'
+type AdminSubTab = 'users' | 'inbox' | 'audit' | 'changelog'
 
 function applyReport(report: InvestigationReport | null): InvestigationReport | null {
   return report ? normalizeReportAllegations(report) : null
@@ -852,6 +854,7 @@ export default function App() {
                       ['users', 'Users', Users],
                       ['inbox', 'Inbox', Inbox],
                       ['audit', 'Audit', ScrollText],
+                      ['changelog', 'Changelog', NotebookPen],
                     ] as const
                   ).map(([id, label, Icon]) => (
                     <button
@@ -873,6 +876,7 @@ export default function App() {
                 {adminSubTab === 'users' && <AdminUsersPanel />}
                 {adminSubTab === 'inbox' && <AdminInboxPanel />}
                 {adminSubTab === 'audit' && <AdminAuditPanel />}
+                {adminSubTab === 'changelog' && <ChangelogPanel />}
               </div>
             )}
           </div>

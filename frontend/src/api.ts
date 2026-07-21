@@ -434,7 +434,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  health: () => request<{ status: string; wac_codes: number; wac_nodes: number; ready: boolean }>('/api/health'),
+  health: () =>
+    request<{
+      status: string
+      wac_codes: number
+      wac_nodes: number
+      ready: boolean
+      started_at?: string
+      pid?: number
+    }>('/api/health'),
   register: (username: string, password: string, email: string) =>
     request<{ access_token: string; username: string }>('/api/auth/register', {
       method: 'POST',
