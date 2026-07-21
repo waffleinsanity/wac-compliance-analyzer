@@ -36,11 +36,11 @@ export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
     date: '2026-07-21',
     title: 'Compact report chrome on small screens',
     summary:
-      'Workflow stepper and Report sticky toolbar collapse on narrow viewports so investigators keep more of the draft in view.',
+      'Workflow stepper and Report sticky toolbar collapse into single dense rows so mid-width and mobile viewports keep the draft readable.',
     highlights: [
-      'Workflow stepper hides step hints and shrinks chips on small screens.',
-      'Report toolbar keeps primary Save/Export actions visible; secondary actions move under More.',
-      'Privacy banner and long subtitle hide on mobile Report to reclaim vertical space.',
+      'Workflow stepper is one row: step labels + context chips (hints only via tooltip).',
+      'Report toolbar is one row: title, status chips, Save/DOCX, and a More menu for secondary export actions.',
+      'Privacy banner and long subtitle stay off until large screens.',
     ],
     areas: ['platform', 'investigation'],
   },

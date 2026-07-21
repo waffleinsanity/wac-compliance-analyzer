@@ -441,19 +441,17 @@ export function InvestigationReportEditor({
   }
 
   return (
-    <div className="animate-rise space-y-3 sm:space-y-5">
-      <PrivacyScreenBanner variant="evidence" compact className="max-sm:hidden" />
-      <div className="sticky top-0 z-20 -mx-1 space-y-2 rounded-xl border border-ink-200/70 bg-background/95 px-3 py-2 shadow-soft backdrop-blur-md sm:space-y-3 sm:px-4 sm:py-3 dark:border-ink-700">
-        <div className="flex flex-wrap items-center justify-between gap-2 sm:items-end sm:gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-sans text-[10px] font-semibold uppercase tracking-[0.14em] text-tide-600 sm:text-xs dark:text-tide-400">
-                Step 3 · Report
-              </p>
+    <div className="animate-rise space-y-3 lg:space-y-5">
+      <PrivacyScreenBanner variant="evidence" compact className="max-lg:hidden" />
+      <div className="sticky top-0 z-20 -mx-1 rounded-xl border border-ink-200/70 bg-background/95 px-3 py-2 shadow-soft backdrop-blur-md dark:border-ink-700 lg:px-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h2 className="font-display text-lg tracking-tight lg:text-2xl">Investigative Report</h2>
               {caseDetail?.status && (
                 <span
                   className={clsx(
-                    'status-chip !px-2 !py-0.5 text-[10px]',
+                    'status-chip !px-1.5 !py-0 text-[10px]',
                     caseStatusClass(caseDetail.status),
                   )}
                 >
@@ -463,45 +461,41 @@ export function InvestigationReportEditor({
               {defensibility && (
                 <span
                   className={clsx(
-                    'status-chip !px-2 !py-0.5 text-[10px] sm:!px-2.5 sm:!py-1 sm:text-[11px]',
+                    'status-chip !px-1.5 !py-0 text-[10px]',
                     defensibilityChipClass(defensibility.overall),
                   )}
                   title={defensibility.summary}
                 >
-                  <span className="sm:hidden">{defensibilityOverallLabel(defensibility.overall)}</span>
-                  <span className="hidden sm:inline">
-                    Export check · {defensibilityOverallLabel(defensibility.overall)}
-                  </span>
+                  {defensibilityOverallLabel(defensibility.overall)}
                 </span>
               )}
             </div>
-            <h2 className="mt-0.5 font-display text-xl tracking-tight sm:mt-1 sm:text-2xl md:text-3xl">
-              Investigative Report
-            </h2>
-            <p className="mt-0.5 hidden max-w-2xl font-sans text-sm text-ink-500 sm:mt-1 sm:block">
-              Working draft for investigator review — not an automated final. Save to a case, then export.
-            </p>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <button type="button" className="btn-ghost !px-2.5 !py-1.5 text-xs sm:!px-3 sm:!py-2 sm:text-sm" onClick={onBack}>
-              <ArrowLeft className="h-4 w-4" />
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              className="btn-ghost !px-2 !py-1 text-xs lg:!px-2.5 lg:!py-1.5"
+              onClick={onBack}
+              title="Back to Compare"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Compare</span>
             </button>
             {canEdit && (
               <button
                 type="button"
-                className="btn-secondary !px-2.5 !py-1.5 text-xs sm:!px-3 sm:!py-2 sm:text-sm"
+                className="btn-secondary !px-2.5 !py-1 text-xs lg:!px-3 lg:!py-1.5"
                 disabled={saving || !caseId}
                 onClick={() => void saveDraft()}
               >
                 {saving ? 'Saving…' : 'Save'}
-                <span className="hidden sm:inline">&nbsp;draft</span>
               </button>
             )}
             {canExport ? (
               <button
                 type="button"
-                className="btn-primary !px-2.5 !py-1.5 text-xs sm:!px-3 sm:!py-2 sm:text-sm"
+                className="btn-primary !px-2.5 !py-1 text-xs lg:!px-3 lg:!py-1.5"
                 disabled={validating || !caseId || exportBlocked}
                 title={
                   exportBlocked
@@ -512,186 +506,118 @@ export function InvestigationReportEditor({
                 }
                 onClick={() => void exportDocx(false)}
               >
-                <Download className="h-4 w-4" />
-                <span className="sm:hidden">DOCX</span>
-                <span className="hidden sm:inline">Export DOCX</span>
+                <Download className="h-3.5 w-3.5" />
+                DOCX
               </button>
             ) : (
               <span
-                className="inline-flex items-center rounded-lg border border-ink-200/80 bg-ink-50/80 px-2 py-1.5 text-[11px] text-ink-500 dark:border-ink-700 dark:bg-ink-900/40 sm:px-3 sm:py-2 sm:text-xs"
+                className="inline-flex items-center rounded-lg border border-ink-200/80 bg-ink-50/80 px-2 py-1 text-[11px] text-ink-500 dark:border-ink-700 dark:bg-ink-900/40"
                 title="Viewer accounts keep the IR in the case record without download or copy"
               >
                 In-record only
               </span>
             )}
+            <details className="relative">
+              <summary className="btn-ghost !px-2 !py-1 text-xs marker:content-none [&::-webkit-details-marker]:hidden">
+                More
+              </summary>
+              <div className="absolute right-0 z-30 mt-1 min-w-[11rem] rounded-xl border border-ink-200/80 bg-card p-1.5 shadow-soft dark:border-ink-700">
+                {canEdit && caseId && onRebuild && (
+                  <button
+                    type="button"
+                    className="btn-ghost w-full !justify-start !px-2.5 !py-1.5 text-xs"
+                    disabled={validating || saving}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          'Rebuild from approved WACs? Your current draft will be snapshotted, then overwritten.',
+                        )
+                      ) {
+                        void onRebuild()
+                      }
+                    }}
+                  >
+                    Rebuild draft
+                  </button>
+                )}
+                {canExport && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn-ghost w-full !justify-start !px-2.5 !py-1.5 text-xs"
+                      disabled={validating}
+                      onClick={() => void copyAll()}
+                    >
+                      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copied ? 'Copied' : validating ? 'Checking…' : 'Copy all'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost w-full !justify-start !px-2.5 !py-1.5 text-xs"
+                      disabled={validating}
+                      onClick={() => void exportTxt()}
+                    >
+                      <Download className="h-3.5 w-3.5" /> .txt
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost w-full !justify-start !px-2.5 !py-1.5 text-xs"
+                      disabled={validating || !caseId || exportBlocked}
+                      onClick={() => void exportPack(true)}
+                      title={
+                        exportBlocked
+                          ? 'Export blocked — statute wording must match approved codes first'
+                          : undefined
+                      }
+                    >
+                      Export pack
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost w-full !justify-start !px-2.5 !py-1.5 text-xs text-amber-800 dark:text-amber-300"
+                      disabled={validating || !caseId || exportBlocked}
+                      onClick={() => void exportDocx(true)}
+                      title={
+                        exportBlocked
+                          ? 'Export blocked — statute wording must match approved codes first'
+                          : 'Export even when export-check warnings remain'
+                      }
+                    >
+                      Export DOCX anyway
+                    </button>
+                  </>
+                )}
+                {canExport && exportBlocked && (
+                  <p className="px-2.5 py-1.5 text-[11px] text-rose-700 dark:text-rose-300">
+                    Export blocked until statute wording matches.
+                  </p>
+                )}
+                {canExport && !exportBlocked && exportWarn && (
+                  <p className="px-2.5 py-1.5 text-[11px] text-amber-800 dark:text-amber-300">
+                    Gaps remain — use Export DOCX anyway after review.
+                  </p>
+                )}
+                {!canExport && (
+                  <p className="px-2.5 py-1.5 text-[11px] text-ink-500">
+                    Viewer: save in-record only.
+                  </p>
+                )}
+              </div>
+            </details>
           </div>
         </div>
-        <details className="border-t border-ink-200/60 pt-2 dark:border-ink-700 sm:hidden">
-          <summary className="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wide text-ink-400 marker:content-none [&::-webkit-details-marker]:hidden">
-            More actions
-          </summary>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {canEdit && caseId && onRebuild && (
-              <button
-                type="button"
-                className="btn-ghost !px-2.5 !py-1 text-xs"
-                disabled={validating || saving}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      'Rebuild from approved WACs? Your current draft will be snapshotted, then overwritten.',
-                    )
-                  ) {
-                    void onRebuild()
-                  }
-                }}
-              >
-                Rebuild draft
-              </button>
-            )}
-            {canExport && (
-              <>
-                <button
-                  type="button"
-                  className="btn-ghost !px-2.5 !py-1 text-xs"
-                  disabled={validating}
-                  onClick={() => void copyAll()}
-                >
-                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copied ? 'Copied' : validating ? 'Checking…' : 'Copy all'}
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost !px-2.5 !py-1 text-xs"
-                  disabled={validating}
-                  onClick={() => void exportTxt()}
-                >
-                  <Download className="h-3.5 w-3.5" /> .txt
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost !px-2.5 !py-1 text-xs"
-                  disabled={validating || !caseId || exportBlocked}
-                  onClick={() => void exportPack(true)}
-                  title={
-                    exportBlocked
-                      ? 'Export blocked — statute wording must match approved codes first'
-                      : undefined
-                  }
-                >
-                  Export pack
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost !px-2.5 !py-1 text-xs text-amber-800 dark:text-amber-300"
-                  disabled={validating || !caseId || exportBlocked}
-                  onClick={() => void exportDocx(true)}
-                  title={
-                    exportBlocked
-                      ? 'Export blocked — statute wording must match approved codes first'
-                      : 'Export even when export-check warnings remain (statute wording blocks still apply)'
-                  }
-                >
-                  Export DOCX anyway
-                </button>
-              </>
-            )}
-          </div>
-          {canExport && exportBlocked && (
-            <p className="mt-2 text-[11px] text-rose-700 dark:text-rose-300">
-              Export blocked until statute wording matches the approved codes.
-            </p>
-          )}
-          {canExport && !exportBlocked && exportWarn && (
-            <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300">
-              Defensibility gaps remain — use “Export DOCX anyway” after review.
-            </p>
-          )}
-          {!canExport && (
-            <p className="mt-2 text-[11px] text-ink-500">
-              Viewer role: edit and save in-record. Export and copy are disabled.
-            </p>
-          )}
-        </details>
-        <div className="hidden flex-wrap items-center gap-1.5 border-t border-ink-200/60 pt-2 dark:border-ink-700 sm:flex">
-          <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-ink-400">More</span>
-          {canEdit && caseId && onRebuild && (
-            <button
-              type="button"
-              className="btn-ghost !px-2.5 !py-1 text-xs"
-              disabled={validating || saving}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    'Rebuild from approved WACs? Your current draft will be snapshotted, then overwritten.',
-                  )
-                ) {
-                  void onRebuild()
-                }
-              }}
-            >
-              Rebuild draft
-            </button>
-          )}
-          {canExport && (
-            <>
-          <button
-            type="button"
-            className="btn-ghost !px-2.5 !py-1 text-xs"
-            disabled={validating}
-            onClick={() => void copyAll()}
-          >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            {copied ? 'Copied' : validating ? 'Checking…' : 'Copy all'}
-          </button>
-          <button
-            type="button"
-            className="btn-ghost !px-2.5 !py-1 text-xs"
-            disabled={validating}
-            onClick={() => void exportTxt()}
-          >
-            <Download className="h-3.5 w-3.5" /> .txt
-          </button>
-          <button
-            type="button"
-            className="btn-ghost !px-2.5 !py-1 text-xs"
-            disabled={validating || !caseId || exportBlocked}
-            onClick={() => void exportPack(true)}
-            title={
-              exportBlocked ? 'Export blocked — statute wording must match approved codes first' : undefined
-            }
-          >
-            Export pack
-          </button>
-          <button
-            type="button"
-            className="btn-ghost !px-2.5 !py-1 text-xs text-amber-800 dark:text-amber-300"
-            disabled={validating || !caseId || exportBlocked}
-            onClick={() => void exportDocx(true)}
-            title={
+        {(exportBlocked || exportWarn) && canExport && (
+          <p
+            className={clsx(
+              'mt-1.5 text-[11px] lg:mt-2',
               exportBlocked
-                ? 'Export blocked — statute wording must match approved codes first'
-                : 'Export even when export-check warnings remain (statute wording blocks still apply)'
-            }
+                ? 'text-rose-700 dark:text-rose-300'
+                : 'text-amber-800 dark:text-amber-300',
+            )}
           >
-            Export DOCX anyway
-          </button>
-            </>
-          )}
-        </div>
-        {canExport && exportBlocked && (
-          <p className="hidden text-[11px] text-rose-700 dark:text-rose-300 sm:block">
-            Export blocked until statute wording matches the approved codes. Fix cited language, then re-check.
-          </p>
-        )}
-        {canExport && !exportBlocked && exportWarn && (
-          <p className="hidden text-[11px] text-amber-800 dark:text-amber-300 sm:block">
-            Defensibility gaps remain — use “Export DOCX anyway” after investigator review.
-          </p>
-        )}
-        {!canExport && (
-          <p className="hidden text-[11px] text-ink-500 sm:block">
-            Viewer role: edit and save the investigation report in this case. Export, download, and copy are disabled.
+            {exportBlocked
+              ? 'Export blocked until statute wording matches the approved codes.'
+              : 'Defensibility gaps remain — use More → Export DOCX anyway after review.'}
           </p>
         )}
       </div>

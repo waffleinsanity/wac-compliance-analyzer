@@ -735,7 +735,7 @@ export default function App() {
           <div className="min-h-0 flex-1 overflow-hidden">
             {tab === 'analysis' && (
               <div className="flex h-full flex-col overflow-hidden">
-                <div className="border-b border-ink-200/70 bg-card/50 px-3 py-2 sm:px-4 sm:py-3 dark:border-ink-700">
+                <div className="border-b border-ink-200/70 bg-card/50 px-3 py-1.5 dark:border-ink-700 lg:px-4 lg:py-2">
                   <WorkflowStepper
                     step={step}
                     onStepChange={setStep}
