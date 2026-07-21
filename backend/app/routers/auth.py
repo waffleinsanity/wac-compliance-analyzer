@@ -132,7 +132,7 @@ def google_status():
 
 @router.get("/google/start")
 @router.get("/google/authorize-url")
-def google_start(request: Request, response: Response):
+def google_start(request: Request):
     """Begin server-side Google OAuth (full-page redirect)."""
     enforce_rate_limit(
         request,
