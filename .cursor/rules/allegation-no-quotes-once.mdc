@@ -1,0 +1,25 @@
+---
+description: Do not make the user repeat requests; allegation lines never use quotation marks
+alwaysApply: true
+---
+
+# Execute once; allegation format is fixed
+
+## User instruction discipline
+
+- When the user asks for a change, **implement it fully end-to-end** (backend emit + stored payloads + UI display) in the same turn.
+- Do **not** leave the fix only in drafting code while the Compare/Report UI still shows stale quoted text.
+- Do **not** ask the user to regenerate or restart unless you have already restarted the API yourself and verified the live path.
+- Never make the user ask a second time for the same change unless completing it would destroy the build.
+
+## Allegation line format (non-negotiable)
+
+Baseline IR allegation shape — **no quotation marks** around duty phrases:
+
+```
+Potential violation of WAC {code}, {title}, by having failed to (label) duty; and (label) duty.
+```
+
+- Opener is `Potential violation` (not `A potential violation`).
+- Strip ASCII and curly double quotes (`" “ ” „`) from every allegation string on draft, API emit, report rebuild, and frontend display/load (`normalize_allegation_line` / `normalizeAllegationLine`).
+- Full statute quotes belong in Regulatory Framework / verification panels — **not** wrapped in the allegation line.

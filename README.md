@@ -43,12 +43,17 @@ Or start pieces separately with `start-backend.bat` / `start-frontend.bat`.
 
 ### Backend only
 
+From the project root, prefer the stable launcher (no `--reload`):
+
 ```bat
-cd backend
-.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+start-backend.bat
 ```
 
-Or run `start-backend.bat` from the project root (uses `backend\.venv`).
+For auto-reload during development:
+
+```bat
+start-backend-dev.bat
+```
 
 On first startup the API parses `data/source/WAC 246-341.pdf` and `data/source/WAC 246-337.pdf` and builds the RAG store.
 

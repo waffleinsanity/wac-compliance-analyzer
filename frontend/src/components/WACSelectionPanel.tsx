@@ -90,6 +90,10 @@ export function WACSelectionPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="space-y-3 border-b p-4">
+        <p className="font-sans text-xs leading-snug text-ink-500 dark:text-ink-400">
+          Only codes you approve here enter the Investigation Report. Research and related hits are
+          not authorization.
+        </p>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -99,33 +103,39 @@ export function WACSelectionPanel({
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              className="btn-outline btn-sm"
+              className="btn-outline btn-sm !px-2"
               onClick={() =>
                 onSelectionChange([...new Set([...selectedCodes, ...allFiltered.map((c) => c.id)])])
               }
             >
-              <CheckSquare className="mr-1 h-4 w-4" />
+              <CheckSquare className="mr-1 h-3.5 w-3.5" />
               All
             </button>
-            <button type="button" className="btn-outline btn-sm" onClick={() => onSelectionChange([])}>
-              <Square className="mr-1 h-4 w-4" />
+            <button
+              type="button"
+              className="btn-outline btn-sm !px-2"
+              onClick={() => onSelectionChange([])}
+            >
+              <Square className="mr-1 h-3.5 w-3.5" />
               None
             </button>
             <button
               type="button"
-              className={clsx('btn-sm', showOnlyFavorites ? 'btn-default' : 'btn-outline')}
+              className={clsx('btn-sm !px-2', showOnlyFavorites ? 'btn-default' : 'btn-outline')}
               onClick={() => setShowOnlyFavorites(!showOnlyFavorites)}
               title="Show only favorites"
             >
-              <Star className={clsx('h-4 w-4', showOnlyFavorites && 'fill-current')} />
+              <Star className={clsx('h-3.5 w-3.5', showOnlyFavorites && 'fill-current')} />
             </button>
           </div>
           {selectedCodes.length > 0 && (
-            <span className="text-sm text-muted-foreground">{selectedCodes.length} selected</span>
+            <p className="text-xs tabular-nums text-muted-foreground">
+              {selectedCodes.length} selected
+            </p>
           )}
         </div>
       </div>

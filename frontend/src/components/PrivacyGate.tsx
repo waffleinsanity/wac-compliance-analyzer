@@ -28,6 +28,7 @@ export function PrivacyGate({ open, scan, busy = false, onCancel, onContinueReda
 
   const byKind = scan.summary.by_kind || {}
   const kinds = Object.entries(byKind).sort((a, b) => b[1] - a[1])
+  const snippetHits = (scan.hits || []).slice(0, 2)
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-950/55 p-4 backdrop-blur-sm">
@@ -59,12 +60,62 @@ export function PrivacyGate({ open, scan, busy = false, onCancel, onContinueReda
           </ul>
         </div>
 
-        <p className="mb-5 text-xs leading-relaxed text-ink-500">
-          <strong className="font-semibold text-ink-700 dark:text-ink-200">Continue and redact</strong> permanently
-          replaces flagged spans with tokens such as <span className="font-mono">[REDACTED_SSN]</span> in this
-          workspace. Only the redacted text is saved or sent for draft generation. Original identifiers are not
-          retained.
-        </p>
+        {snippetHits.length > 0 && (
+          <div className="mb-4 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-500">
+              Example flagged span{snippetHits.length === 1 ? '' : 's'}
+            </p>
+            {snippetHits.map((hit) => {
+              const preview = hit.preview || '***'
+              const segments = highlightPrivacySegments(preview, [
+                { start: 0, end: preview.length, kind: hit.kind },
+              ])
+              return (
+                <div
+                  key={hit.id}
+                  className="rounded-xl border border-ink-200/80 bg-ink-50/80 px-3 py-2.5 text-sm dark:border-ink-700 dark:bg-ink-900/40"
+                >
+                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-500">
+                    {KIND_LABELS[hit.kind] || hit.kind}
+                  </div>
+                  <p className="whitespace-pre-wrap break-words font-serif text-[15px] leading-relaxed text-ink-800 dark:text-ink-100">
+                    {segments.map((seg) =>
+                      seg.hit ? (
+                        <mark
+                          key={seg.key}
+                          className="rounded-sm bg-amber-300/70 px-0.5 text-ink-950 dark:bg-amber-500/50 dark:text-ink-50"
+                          title={seg.kind}
+                        >
+                          {seg.text}
+                        </mark>
+                      ) : (
+                        <span key={seg.key}>{seg.text}</span>
+                      ),
+                    )}
+                  </p>
+                </div>
+              )
+            })}
+            <p className="text-[11px] leading-relaxed text-ink-500">
+              Detection is assistive and may miss or over-flag spans. It is not a legal or compliance
+              determination. Previews are masked; full spans remain highlighted in the complaint field.
+            </p>
+          </div>
+        )}
+
+        <div className="mb-5 space-y-3 text-xs leading-relaxed text-ink-500">
+          <p>
+            <strong className="font-semibold text-ink-700 dark:text-ink-200">Cancel — edit text</strong>{' '}
+            closes this dialog so you can change the narrative and try again. If you remove the flagged
+            spans yourself, redaction is optional.
+          </p>
+          <p>
+            <strong className="font-semibold text-ink-700 dark:text-ink-200">Continue and redact</strong>{' '}
+            permanently replaces flagged spans with tokens such as{' '}
+            <span className="font-mono">[REDACTED_SSN]</span> in this workspace. Only the redacted text is
+            saved or sent for draft generation. Original identifiers are not retained.
+          </p>
+        </div>
 
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" className="btn-secondary" disabled={busy} onClick={onCancel}>

@@ -1,7 +1,10 @@
+import os
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user, get_editor_user
+from app.auth import get_admin_user, get_current_user, get_editor_user
 from app.database import User, get_db
 from app.rag.store import wac_store
 from app.schemas import (
@@ -23,6 +26,12 @@ from app.services.quote_verify import verify_report_quotes
 from app.services.wac_scope import cite_prefix
 
 router = APIRouter(prefix="/api", tags=["analysis"])
+
+_started_at = datetime.now(timezone.utc).isoformat()
+_HEALTH_FEATURES = {
+    "case_trash": True,
+    "case_restore": True,
+}
 
 
 @router.post("/extract")
@@ -178,12 +187,16 @@ async def validate_investigation_report(
 
 
 @router.post("/ingest")
-def ingest(force: bool = False, db: Session = Depends(get_db)):
+def ingest(
+    force: bool = False,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
     return wac_store.ingest(db, force=force)
 
 
 @router.get("/templates")
-def list_templates():
+def list_templates(_: User = Depends(get_current_user)):
     """Show which example IR shell templates are loaded (phrasing only, not duty authority)."""
     from app.services.template_corpus import load_template_corpus
 
@@ -198,7 +211,7 @@ def list_templates():
 
 
 @router.post("/templates/reload")
-def reload_templates():
+def reload_templates(_: User = Depends(get_admin_user)):
     from app.services.template_corpus import reload_corpus
 
     corpus = reload_corpus()
@@ -219,6 +232,9 @@ def health():
     corpus = load_template_corpus()
     return {
         "status": "ok",
+        "pid": os.getpid(),
+        "started_at": _started_at,
+        "features": dict(_HEALTH_FEATURES),
         "wac_nodes": len(wac_store.nodes),
         "wac_codes": len(wac_store.get_code_nodes()),
         "ready": wac_store.ready,

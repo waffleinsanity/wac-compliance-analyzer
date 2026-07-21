@@ -20,8 +20,9 @@ from app.database import (
 from app.schemas import InvestigationReport
 
 
-CASE_STATUSES = {"draft", "in_review", "final", "reopened", "archived"}
+CASE_STATUSES = {"draft", "in_review", "final", "reopened", "archived", "trashed"}
 EDITABLE_STATUSES = {"draft", "reopened"}
+ACTIVE_STATUSES = {"draft", "in_review", "final", "reopened"}
 
 
 def parse_json_list(raw: str | None) -> list[str]:
@@ -69,11 +70,20 @@ def assert_case_access(case: InvestigationCase, user: User) -> None:
         raise HTTPException(status_code=403, detail="Not allowed to access this case")
 
 
+def assert_case_not_trashed(case: InvestigationCase, *, action: str = "continue") -> None:
+    if case.status == "trashed":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Case is in trash. Restore it before {action}.",
+        )
+
+
 def assert_case_editable(case: InvestigationCase, user: User | None = None) -> None:
     from app.permissions import can_edit, user_role
 
     if user is not None and not can_edit(user_role(user)):
         raise HTTPException(status_code=403, detail="Editor or admin role required to edit cases")
+    assert_case_not_trashed(case, action="editing")
     if case.status not in EDITABLE_STATUSES:
         raise HTTPException(
             status_code=400,
@@ -131,11 +141,50 @@ def set_status(
     case.status_changed_by = user.id
     if status == "archived":
         case.archived_at = utcnow()
+        case.trashed_at = None
+    elif status == "trashed":
+        case.trashed_at = utcnow()
+    else:
+        # Restored / active statuses clear archive & trash markers
+        case.archived_at = None
+        case.trashed_at = None
     case.updated_at = utcnow()
     db.add(case)
     db.commit()
     db.refresh(case)
     return case
+
+
+def hard_delete_case(db: Session, case: InvestigationCase) -> None:
+    """Permanently delete a case and on-disk evidence folder."""
+    import shutil
+
+    case_id = case.id
+    case_path = settings.cases_dir / str(case_id)
+    db.delete(case)
+    db.commit()
+    if case_path.exists():
+        shutil.rmtree(case_path, ignore_errors=True)
+
+
+def purge_trashed_cases(db: Session) -> int:
+    """Hard-delete cases that have been in trash longer than retention."""
+    days = getattr(settings, "case_trash_retention_days", 7) or 7
+    if days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        db.query(InvestigationCase)
+        .filter(
+            InvestigationCase.status == "trashed",
+            InvestigationCase.trashed_at.isnot(None),
+            InvestigationCase.trashed_at < cutoff,
+        )
+        .all()
+    )
+    for case in rows:
+        hard_delete_case(db, case)
+    return len(rows)
 
 
 def evidence_dir(case_id: int):
@@ -198,13 +247,16 @@ def unit_analytics(db: Session, user: User) -> dict[str, Any]:
     cases = q.all()
     by_status: dict[str, int] = {}
     wac_counts: dict[str, int] = {}
+    active = 0
     for c in cases:
         by_status[c.status] = by_status.get(c.status, 0) + 1
+        if c.status in ACTIVE_STATUSES:
+            active += 1
         for w in parse_json_list(c.approved_wac_ids):
             wac_counts[w] = wac_counts.get(w, 0) + 1
     top_wacs = sorted(wac_counts.items(), key=lambda x: (-x[1], x[0]))[:15]
     return {
-        "total_cases": len(cases),
+        "total_cases": active,
         "by_status": by_status,
         "top_approved_wacs": [{"wac_id": w, "count": n} for w, n in top_wacs],
     }

@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { Check } from 'lucide-react'
 import { Fragment } from 'react'
+import { caseStatusLabel } from '../investigatorLabels'
 
 export type WorkflowStep = 'workspace' | 'review' | 'report'
 
@@ -10,17 +11,57 @@ const STEPS: { id: WorkflowStep; label: string; hint: string }[] = [
   { id: 'report', label: 'Report', hint: 'Edit, save, export DOCX' },
 ]
 
+export type StepperContext = {
+  approvedWacCount?: number
+  quoteIssueCount?: number
+  caseStatus?: string | null
+}
+
 type Props = {
   step: WorkflowStep
   onStepChange: (step: WorkflowStep) => void
   unlocked: Record<WorkflowStep, boolean>
+  context?: StepperContext
 }
 
-export function WorkflowStepper({ step, onStepChange, unlocked }: Props) {
+function formatStatus(status: string): string {
+  return caseStatusLabel(status)
+}
+
+export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props) {
   const currentIdx = STEPS.findIndex((s) => s.id === step)
+  const chips: { key: string; label: string; tone: 'neutral' | 'ready' | 'warn' }[] = []
+
+  if (context?.approvedWacCount != null) {
+    chips.push({
+      key: 'wacs',
+      label:
+        context.approvedWacCount === 1
+          ? '1 approved WAC'
+          : `${context.approvedWacCount} approved WACs`,
+      tone: context.approvedWacCount > 0 ? 'ready' : 'warn',
+    })
+  }
+  if (context?.quoteIssueCount != null && context.quoteIssueCount > 0) {
+    chips.push({
+      key: 'quotes',
+      label:
+        context.quoteIssueCount === 1
+          ? '1 statute wording issue'
+          : `${context.quoteIssueCount} statute wording issues`,
+      tone: 'warn',
+    })
+  }
+  if (context?.caseStatus) {
+    chips.push({
+      key: 'status',
+      label: formatStatus(context.caseStatus),
+      tone: context.caseStatus === 'final' ? 'ready' : 'neutral',
+    })
+  }
 
   return (
-    <nav aria-label="Investigation workflow" className="w-full">
+    <nav aria-label="Investigation workflow" className="w-full space-y-2">
       <ol className="flex items-start">
         {STEPS.map((s, idx) => {
           const active = s.id === step
@@ -82,6 +123,25 @@ export function WorkflowStepper({ step, onStepChange, unlocked }: Props) {
           )
         })}
       </ol>
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-2" aria-label="Case context">
+          {chips.map((chip) => (
+            <span
+              key={chip.key}
+              className={clsx(
+                'status-chip !px-2 !py-0.5 text-[10px] capitalize',
+                chip.tone === 'ready' && 'status-chip-ready',
+                chip.tone === 'warn' && 'status-chip-warn',
+                chip.tone === 'neutral' &&
+                  'border-ink-200 bg-ink-50 text-ink-600 dark:border-ink-600 dark:bg-ink-900 dark:text-ink-300',
+              )}
+            >
+              {chip.label}
+            </span>
+          ))}
+        </div>
+      )}
     </nav>
   )
 }

@@ -104,7 +104,7 @@ HARD SCOPE RULES FOR THIS APPLICATION (must never violate):
 1. You may ONLY analyze and cite WAC codes and subsections that appear in the SELECTED WAC CONTEXT provided in the user message (from local PDFs).
 2. Never import duties, requirements, or allegation language from any WAC that was not selected — even if you know it exists (e.g. do not use 246-341-0520 content when only 246-341-0410 is selected).
 3. Within a selected WAC, cite only subsections that are reasonably relevant to the complaint facts. Do not dump every subsection.
-4. Allegation drafts must use DOH style: "Potential violation of WAC {code}, {title}, by having failed to / failing to …" and cite subsection labels like (1)(a) when available.
+4. Allegation drafts must use DOH Baseline style: "Potential violation of WAC {code}, {title}, by having failed to …" with subsection labels like (1)(a) when available. Do not wrap duty language in quotation marks.
 5. Separate known facts, unclear items, and inferences. Ask clarifying questions when needed.
 6. Do not make legal conclusions of guilt or final enforcement decisions.
 7. Do not use example-report language, prior cases, or external websites as the source of which subsections apply — only the provided PDF-derived WAC text.

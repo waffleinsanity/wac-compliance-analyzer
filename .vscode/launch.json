@@ -1,0 +1,84 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "WACMAKR: API (stable)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": false
+    },
+    {
+      "name": "WACMAKR: API (reload)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": false
+    },
+    {
+      "name": "WACMAKR: UI",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["run", "dev", "--", "--host", "localhost", "--port", "5173"],
+      "cwd": "${workspaceFolder}/frontend",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": false,
+      "serverReadyAction": {
+        "pattern": "Local:\\s+https?://[^\\s]+",
+        "uriFormat": "http://localhost:5173/login",
+        "action": "openExternally"
+      }
+    },
+    {
+      "name": "WACMAKR: UI (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173/login",
+      "webRoot": "${workspaceFolder}/frontend/src"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "WACMAKR: Full stack",
+      "configurations": ["WACMAKR: API (stable)", "WACMAKR: UI"],
+      "stopAll": true,
+      "presentation": {
+        "order": 1,
+        "group": "WACMAKR",
+        "hidden": false
+      }
+    }
+  ]
+}

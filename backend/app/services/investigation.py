@@ -3,8 +3,8 @@
 Pipeline:
   1. Ingest complaint → normalize Intake Details voice (DOH received…)
   2. Run investigator (LLM when configured, else scoped local) on SELECTED codes only
-  3. Draft allegations from exact PDF subsections (Example DOCX = phrasing shape only)
-  4. Emit a facility Investigative Report skeleton matching the expanded example corpus
+  3. Draft WAC-templated portions only: allegations + Regulatory Framework from PDF subsections
+  4. Emit blank DOH process/facility shell; investigation activity / findings remain human-owned
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from app.schemas import (
     WACComparison,
 )
 from app.services.investigator_llm import CodeInvestigation, run_investigator
-from app.services.quote_verify import verify_report_quotes
+from app.services.quote_verify import repair_allegation_text_from_store, verify_report_quotes
 from app.services.ir_blank import ACTIONS_LABEL, TITLE as IR_TITLE, format_conclusion_line
 from app.services.template_corpus import (
     DOH_ALLEGATION_BLOCK_HEADER,
@@ -37,16 +37,16 @@ from app.services.template_corpus import (
     DOH_INTAKE_LABEL,
     DOH_PROCESS_LABEL,
     DOH_SUMMARY_LABEL,
-    _detect_themes,
     format_intake_narrative,
     load_template_corpus,
 )
 from app.services.wac_scope import (
     cite_prefix,
     draft_allegation_from_source,
-    duty_phrase_from_text,
-    evidentiary_examples_from_matches,
+    normalize_allegation_line,
+    normalize_statute_text,
     score_relevant_subsections,
+    sentence_boundary_excerpt,
 )
 
 
@@ -77,7 +77,7 @@ def draft_allegation(
     Example DOCX templates are NOT used for which subsections apply or for duty text.
     Investigator output is accepted only when already rebuilt from source (see investigator_llm).
     """
-    del themes  # themes may inform process steps elsewhere; not subsection authority
+    del themes  # themes are not subsection authority; investigation activity is human-owned
     if investigator_code and investigator_code.allegation_text:
         text = investigator_code.allegation_text.strip()
         if not text.endswith("."):
@@ -145,73 +145,125 @@ def _relevant_excerpts(complaint: str, node: Any, max_excerpts: int = 3) -> list
     return out
 
 
-def _suggest_process(complaint: str, buckets: set[str], themes: list[str]) -> list[str]:
-    """Seed Investigative Process from the blank IR skeleton (Pre-investigation / Activity / …)."""
-    del complaint
+def _suggest_process() -> list[str]:
+    """Blank DOH Investigative Process shell only — no theme/keyword-invented steps."""
     shell = _shell()
-    steps = list(shell.default_process or DOH_DEFAULT_PROCESS)
-
-    # Insert theme-specific pre-investigation bullets after the blank's plan line
-    extras: list[str] = []
-    if "confidentiality" in themes:
-        extras.append(
-            "The Investigator reviewed confidentiality and release-of-information policies."
-        )
-    if "assault" in themes or "abuse" in themes or "safety" in themes:
-        extras.append(
-            "The Investigator contacted Adult Protective Services and/or law enforcement as applicable."
-        )
-        extras.append(
-            "The Investigator reviewed incident reports and safety/security documentation."
-        )
-    if "death" in themes:
-        extras.append(
-            "The Investigator reviewed critical incident and death reporting documentation."
-        )
-    if "unlicensed" in themes:
-        extras.append(
-            "The Investigator reviewed licensure/certification records and publicly available facility information."
-        )
-    if "BHA" in buckets and "RTF" in buckets:
-        extras.append(
-            "The Investigator evaluated both BHA (246-341) and RTF (246-337) licensing requirements."
-        )
-    if "RCW" in buckets:
-        extras.append(
-            "The Investigator reviewed related RCW provisions authorized for this investigation."
-        )
-
-    if extras:
-        try:
-            anchor = steps.index("The Investigator developed an investigation plan.")
-            for i, line in enumerate(extras):
-                steps.insert(anchor + 1 + i, line)
-        except ValueError:
-            # Fallback: place under Pre-investigation Activity header
-            try:
-                anchor = steps.index("Pre-investigation Activity:")
-                for i, line in enumerate(extras):
-                    steps.insert(anchor + 1 + i, line)
-            except ValueError:
-                steps.extend(extras)
-
-    seen: set[str] = set()
-    out: list[str] = []
-    for s in steps:
-        if s not in seen:
-            seen.add(s)
-            out.append(s)
-    return out
+    return list(shell.default_process or DOH_DEFAULT_PROCESS)
 
 
-def _summary_placeholder(intake: str, allegations: list[InvestigationAllegation]) -> str:
-    codes = ", ".join(a.wac_code for a in allegations[:8])
-    more = f" and {len(allegations) - 8} additional codes" if len(allegations) > 8 else ""
+_SUMMARY_INTAKE_MAX_CHARS = 720
+_SUMMARY_SCOPE_BRIDGE = (
+    "This summary outlines how authorized WAC/RCW selections relate to the drafted "
+    "allegations; investigative findings will be completed after interviews, "
+    "observations, and document review."
+)
+_SUMMARY_FINDINGS_SHELL = (
+    "Investigative findings (to be completed):\n"
+    "[Document review]\n"
+    "[Interviews]\n"
+    "[Observations]"
+)
+
+
+def _truncate_at_sentence_boundary(text: str, max_chars: int) -> str:
+    """Keep complete sentences only; never append ellipsis."""
+    cleaned = _clean(text)
+    if len(cleaned) <= max_chars:
+        return cleaned
+    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    parts: list[str] = []
+    total = 0
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        add_len = len(sentence) + (1 if parts else 0)
+        if parts and total + add_len > max_chars:
+            break
+        parts.append(sentence)
+        total += add_len
+        # Always keep at least the first full sentence, even if it exceeds max_chars
+        if total >= max_chars:
+            break
+    if parts:
+        out = " ".join(parts)
+        if not re.search(r"[.!?]$", out):
+            out += "."
+        return out
+    # No sentence punctuation — keep a word-boundary cut and end with a period
+    window = cleaned[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;")
+    return (window or cleaned[:max_chars].rstrip()) + "."
+
+
+def _summary_intake_opener(intake_text: str) -> str:
+    """DOH complaint opener for Summary of Findings (adapt intake narrative patterns)."""
+    text = _clean(intake_text)
+    if not text:
+        return (
+            "The Department of Health (DOH) received a complaint alleging concerns "
+            "within the scope of the authorized WAC/RCW selections."
+        )
+    lower = text.lower()
+    if lower.startswith("the department of health (doh) received a complaint alleging"):
+        opener = text
+    elif lower.startswith("it was alleged that"):
+        body = text[len("It was alleged that") :].strip()
+        if body and body[0].isupper():
+            body = body[0].lower() + body[1:]
+        opener = f"The Department of Health (DOH) received a complaint alleging that {body}"
+    elif lower.startswith("it was alleged"):
+        body = re.sub(r"^it was alleged\s*", "", text, flags=re.IGNORECASE).strip()
+        if body and body[0].isupper():
+            body = body[0].lower() + body[1:]
+        opener = f"The Department of Health (DOH) received a complaint alleging {body}"
+    elif lower.startswith(
+        (
+            "the department of health",
+            "doh received",
+            "the doh received",
+            "the department received",
+            "respondent is alleged",
+        )
+    ):
+        opener = text if "received a complaint alleging" in lower else format_intake_narrative(text)
+    else:
+        opener = format_intake_narrative(text)
+    return _truncate_at_sentence_boundary(opener, _SUMMARY_INTAKE_MAX_CHARS)
+
+
+def _allegation_summary_paragraph(code: str, title: str, allegation_text: str) -> str:
+    code_clean = (code or "").replace("WAC ", "").replace("RCW ", "").strip()
+    prefix = cite_prefix(code_clean)
+    clean_title = _clean(title or code_clean).replace("—", " - ").replace("–", " - ")
+    allegation = normalize_allegation_line(allegation_text)
+    if allegation and not allegation.endswith("."):
+        allegation += "."
     return (
-        f"{_clean(intake)[:500]}{'…' if len(intake) > 500 else ''}\n\n"
-        f"Authorized citations for this investigation include {codes}{more}. "
-        f"Summary of Findings is to be completed after investigative activities are finished."
+        f"{prefix} {code_clean}, {clean_title}, is authorized for this investigation "
+        f"because the complaint raises concerns within the scope of that section. "
+        f"The corresponding allegation asserts: {allegation}"
     )
+
+
+def build_summary_of_findings(
+    intake_text: str,
+    allegations: list[InvestigationAllegation],
+) -> str:
+    """Framework starter for Summary of Findings — scope bridge and allegation mapping only.
+
+    Does not invent investigative outcomes; evidentiary findings remain human-owned.
+    """
+    sections: list[str] = [_summary_intake_opener(intake_text), _SUMMARY_SCOPE_BRIDGE]
+    for allegation in allegations:
+        sections.append(
+            _allegation_summary_paragraph(
+                allegation.wac_code,
+                allegation.wac_title or allegation.wac_code,
+                allegation.allegation_text,
+            )
+        )
+    sections.append(_SUMMARY_FINDINGS_SHELL)
+    return "\n\n".join(sections)
 
 
 def build_report_text(report: InvestigationReport) -> str:
@@ -242,7 +294,7 @@ def build_report_text(report: InvestigationReport) -> str:
     ]
 
     for a in report.allegations:
-        text = a.allegation_text.strip()
+        text = normalize_allegation_line(a.allegation_text)
         if text.lower().startswith("allegation:"):
             lines.append(text)
         else:
@@ -334,7 +386,6 @@ def build_investigation_report(
     code_nodes.sort(key=_sort_key)
 
     intake = _extract_intake(complaint_text)
-    themes = _detect_themes(intake)
     inv_date = investigation_date or date.today().strftime("%m/%d/%Y")
 
     # Local investigator is instant; LLM is opt-in (settings.llm_for_investigate / use_llm)
@@ -345,7 +396,6 @@ def build_investigation_report(
     allegations: list[InvestigationAllegation] = []
     conclusions: list[InvestigationConclusion] = []
     framework_raw: list[dict[str, Any]] = []
-    buckets: set[str] = set()
 
     for node in code_nodes:
         # One TF-IDF pass per code — shared by allegation, matches, and Regulatory Framework
@@ -357,26 +407,36 @@ def build_investigation_report(
             max_subs=2,
             relevant=ranked,
         )
-        allegation_text = draft.text
+        allegation_text = normalize_allegation_line(draft.text)
         cites = draft.cites
         # Allegation stays concise (top duties); review UI gets the closest cluster for verification.
         relevant = ranked[:2]
         closest = ranked[:4] or relevant
         prefix = cite_prefix(node.code)
+        # Cites/texts shown in Compare must match what the allegation line actually uses
+        # (draft.cites), not the full closest-4 ranking cluster — avoids false verify noise.
+        cite_labels = list(draft.cites) or [
+            f"{node.code}{s.label}" if s.label else node.code for s in closest[:2]
+        ]
         matched = [
-            f"{prefix} {node.code}{s.label}" if s.label else f"{prefix} {node.code}" for s in closest
+            f"{prefix} {c}" if not c.upper().startswith(("WAC ", "RCW ")) else c for c in cite_labels
         ]
-        matched_texts = [
-            _clean(s.text)[:720] + ("…" if len(_clean(s.text)) > 720 else "") for s in closest
-        ]
+        matched_texts: list[str] = []
+        for c in cite_labels:
+            raw = c.replace("WAC ", "").replace("RCW ", "").strip()
+            label = raw[len(node.code) :] if raw.startswith(node.code) else ""
+            sub = next((s for s in closest if (s.label or "") == label), None)
+            if sub is None and closest:
+                sub = closest[0]
+            matched_texts.append(normalize_statute_text(sub.text) if sub else "")
         excerpts = _relevant_excerpts(complaint_text, node)
-        wac_summary = _clean(node.text[:500])
-        if len(node.text) > 500:
-            wac_summary += "…"
+        # Summary stays short for list chrome; expandable "full code" uses fuller body below.
+        full_code = normalize_statute_text(node.text)
+        wac_summary = full_code[:500] + ("…" if len(full_code) > 500 else "")
+        wac_full = full_code if len(full_code) <= 12000 else full_code[:12000]
 
         inv_code = inv_by_code.get(node.code)
         bucket = _chapter_bucket(node.code)
-        buckets.add(bucket)
 
         if inv_code and inv_code.source.startswith("llm"):
             source_note = f"source-pdf+investigator:{investigator.llm_model or 'llm'}"
@@ -394,7 +454,7 @@ def build_investigation_report(
                     {
                         "cite": f"{prefix} {node.code}{s.label}" if s.label else f"{prefix} {node.code}",
                         "label": s.label,
-                        "text": s.text,
+                        "text": normalize_statute_text(s.text),
                         "level": s.level,
                         "score": s.score,
                     }
@@ -410,8 +470,8 @@ def build_investigation_report(
                 title=node.title,
                 chapter=node.chapter,
                 hierarchy_path=node.hierarchy_path,
-                # Keep payload small — full statute lives in store; UI uses matched texts + summary
-                wac_text=wac_summary,
+                # Full code for "Show full selected code text"; summary for compact chrome
+                wac_text=wac_full,
                 wac_summary=wac_summary,
                 complaint_excerpts=excerpts,
                 allegation_draft=allegation_text,
@@ -448,20 +508,9 @@ def build_investigation_report(
         )
 
     framework = [RegulatoryFrameworkEntry(**e) for e in framework_raw]
-    examples = evidentiary_examples_from_matches(framework_raw, count=5)
-
-    process = _suggest_process(complaint_text, buckets, themes)
-    if investigator.next_steps:
-        # Merge optional investigator notes under Document Review without truncating the blank shell
-        try:
-            doc_idx = process.index("Document Review")
-            insert_at = doc_idx + 1
-        except ValueError:
-            insert_at = len(process)
-        for step in investigator.next_steps:
-            if step and step not in process:
-                process.insert(insert_at, step)
-                insert_at += 1
+    # Evidentiary examples / investigation scripts are human-owned — do not auto-fabricate.
+    examples: list[str] = []
+    process = _suggest_process()
 
     facility = FacilityInfo(
         facility_address=facility_address or "Washington State",
@@ -487,7 +536,7 @@ def build_investigation_report(
         allegation_preamble=shell.allegation_preamble or DOH_ALLEGATION_PREAMBLE,
         allegations=allegations,
         investigative_process=process,
-        summary_of_findings=_summary_placeholder(intake, allegations),
+        summary_of_findings=build_summary_of_findings(intake, allegations),
         conclusions=conclusions,
         actions="[To be determined after investigation]",
         comparisons=comparisons,
@@ -519,10 +568,33 @@ def build_investigation_report(
         evidentiary_examples=report.evidentiary_examples,
         selected_codes=selected_codes,
     )
+    # Auto-draft comes from the PDF store — repair any false mismatches before surfacing UI flags.
+    failed_fields = {f.field for f in integrity.failures}
+    if failed_fields:
+        for a in report.allegations:
+            if f"allegation:{a.wac_code}" in failed_fields:
+                a.allegation_text = repair_allegation_text_from_store(
+                    a.allegation_text, a.wac_code
+                )
+        for conc in report.conclusions:
+            match = next((a for a in report.allegations if a.wac_code == conc.wac_code), None)
+            if match:
+                conc.allegation_text = match.allegation_text
+        for c in report.comparisons:
+            match = next((a for a in report.allegations if a.wac_code == c.code), None)
+            if match:
+                c.allegation_draft = match.allegation_text
+        integrity = verify_report_quotes(
+            allegations=report.allegations,
+            regulatory_framework=report.regulatory_framework,
+            evidentiary_examples=report.evidentiary_examples,
+            selected_codes=selected_codes,
+        )
+        failed_fields = {f.field for f in integrity.failures}
+
     report.quote_integrity = QuoteIntegrityOut(**integrity.to_dict())
 
     # Per-allegation quote_ok from integrity failures
-    failed_fields = {f.field for f in integrity.failures}
     for a in report.allegations:
         a.quote_ok = f"allegation:{a.wac_code}" not in failed_fields
     for c in report.comparisons:

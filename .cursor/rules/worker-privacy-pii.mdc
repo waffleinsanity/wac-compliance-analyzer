@@ -1,0 +1,47 @@
+---
+description: Privacy & PII Gate worker — Cat 3/4 warn→redact before persist/LLM
+globs: backend/app/services/pii_gate.py,backend/app/routers/privacy.py,frontend/src/components/PrivacyGate.tsx
+alwaysApply: false
+---
+
+# Worker: Privacy & PII Gate
+
+## Goal (Master-aligned)
+
+Enable safer Intake → Compare → Report drafting via Category 3/4 **detect → warn → redact** before persist and before LLM. Assistive only — never claim perfect detection or legal compliance.
+
+## Role boundary
+
+**Own:** `pii_gate.py`, privacy router, `PrivacyGate.tsx`, warn/redact contracts.  
+**Do not own:** case store, IR allegation/quotes, LLM prompts, auth/roles, intake stepper chrome (beyond gate UI).
+
+## Invariants
+
+- Assistive safety layer — no compliance certification language
+- Redact before persist and before LLM when gated
+- Evidence uploads may be unscanned; do not pretend otherwise
+- False positives must have a clear continue/redact path (no IR dead end)
+
+## Anti-goals
+
+- Hard-block drafting with no recovery
+- Logging raw Cat 3/4 beyond deliberate audit/support design
+- Expanding into Identity Admin or IR quote authority
+- Treating the gate as sole-source or statute-related
+
+## Success criteria
+
+- Warn → acknowledge/redact contracts stay clear for investigators
+- Downstream persist/LLM paths receive cleaned text when gate engaged
+- Copy stays assistive; IR drafting remains possible after a hit
+
+## Escalation map
+
+| Need | Worker |
+|------|--------|
+| Persist uses redacted text | Case Review |
+| Investigate/LLM still sees raw | IR Drafting + Investigator LLM |
+| Gate placement in stepper | Intake UX |
+| PII in audit/support/admin | Identity Admin |
+
+Deep skill: `wacmakr-privacy-pii`. Return the `AGENTS.md` handoff block.

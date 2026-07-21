@@ -1,0 +1,50 @@
+---
+description: Local DevEx & Launch worker — bats, ports, VS Code/Cursor launch configs
+globs: Launch.bat,setup-local.bat,start-*.bat,start-local.bat,.vscode/launch.json,.vscode/tasks.json
+alwaysApply: false
+---
+
+# Worker: Local DevEx & Launch
+
+## Goal (Master-aligned)
+
+Keep the dual-process local stack healthy so investigators can run **Intake → Compare → Report**: UI `http://localhost:5173`, API `http://127.0.0.1:8000`. Prefer `Launch.bat` or **WACMAKR: Full stack** (Node-spawned API; no debugpy).
+
+## Role boundary
+
+**Own:** `Launch.bat`, `setup-local.bat`, `start-*.bat` / `start-local.bat`, `.vscode/launch.json`, `.vscode/tasks.json` — ports, process spawn, health verify paths.
+
+**Do not own:** OAuth/auth logic, LLM provider config, IR/corpus/eval code, product UI beyond “app loads / login reachable.”
+
+## Invariants
+
+- Dual process: Vite UI `:5173` + FastAPI/uvicorn `:8000`
+- Prefer Node-spawned uvicorn over `debugpy` (Cursor may lack Python debug extension)
+- Never embed real API keys, tokens, or `backend/.env` contents in bat/launch/tasks
+- Port cleanup on 8000/5173 is intentional but disruptive — document clearly
+- Setup scripts must leave IR path runnable without inventing secrets
+
+## Anti-goals
+
+- debugpy-first or Python-extension-required default launch
+- Single-process “API serves UI” as the primary local path
+- Hardcoding credentials, SMTP, or Gemini keys into launch files
+- Optimizing for legacy analyzer dashboards over IR workflow startup
+
+## Success criteria
+
+- Full stack starts without unsupported debug types
+- Verify: UI login page + `GET http://127.0.0.1:8000/api/health`
+- Investigators can reach Intake → Compare → Report after launch
+
+## Escalation map
+
+| Symptom | Escalate to |
+|---------|-------------|
+| Login / OAuth / redirect / roles | Identity Admin |
+| `.env` shape, Gemini/Ollama 403/404 | Investigator LLM |
+| App loads but stepper/WAC UI broken | Intake UX |
+| Cases/export after login | Case Review |
+| Accuracy scripts / pytest runners only | Accuracy & Eval |
+
+Return the standard handoff block from `AGENTS.md`.

@@ -19,6 +19,7 @@ from app.services.wac_scope import (
     draft_allegation_from_source,
     filter_cites_to_source,
     format_scoped_context,
+    normalize_allegation_line,
     score_relevant_subsections,
     strip_foreign_wac_mentions,
 )
@@ -177,7 +178,7 @@ def _local_code_investigation(
 ) -> CodeInvestigation:
     # Allegation + cites come ONLY from PDF-derived subsection text
     draft = draft_allegation_from_source(code, title, complaint, max_subs=2)
-    allegation, labels = draft.text, draft.cites
+    allegation, labels = normalize_allegation_line(draft.text), draft.cites
     relevant = score_relevant_subsections(complaint, code, max_items=2)
     known = []
     unclear = []
@@ -263,11 +264,8 @@ def _local_investigate(
             "Inferences are labeled and must be confirmed by human investigators.",
         ],
         clarifying_questions=clarifying[:8],
-        next_steps=[
-            "Review facility policies tied to the selected WAC subsections.",
-            "Request records that speak directly to the cited subsections.",
-            "Interview staff responsible for the duties named in the selected WAC.",
-        ],
+        # Investigation activity / process steps are human-owned — do not auto-seed scripts.
+        next_steps=[],
         recommended_subsections=recommended,
         codes=codes,
         investigator_notes="\n".join(notes_lines),
@@ -348,7 +346,7 @@ def _parse_llm_result(
         draft = draft_allegation_from_source(
             code, title_map[code], complaint_for_draft, max_subs=2
         )
-        allegation, source_cites = draft.text, draft.cites
+        allegation, source_cites = normalize_allegation_line(draft.text), draft.cites
         # Prefer intersection of LLM suggestions with source-ranked cites when both exist
         if validated:
             # Re-draft still from source, but surface validated LLM cites that also score in source
@@ -362,7 +360,7 @@ def _parse_llm_result(
                 draft = draft_allegation_from_source(
                     code, title_map[code], hint, max_subs=2
                 )
-                allegation, source_cites = draft.text, draft.cites
+                allegation, source_cites = normalize_allegation_line(draft.text), draft.cites
             subs = source_cites
             source = "llm+source"
             rationale = _clean(str(raw.get("rationale") or ""))

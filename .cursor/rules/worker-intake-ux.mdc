@@ -1,0 +1,53 @@
+---
+description: Intake UX & Statute Selection worker — stepper, WAC select, Compare, shell rails
+globs: frontend/src/App.tsx,frontend/src/components/ComplaintStep.tsx,frontend/src/components/WACSelectionPanel.tsx,frontend/src/components/ReviewStep.tsx,frontend/src/components/WorkflowStepper.tsx,frontend/src/components/StatuteSearchPanel.tsx,frontend/src/components/RelatedStatutesPanel.tsx,frontend/src/api.ts
+alwaysApply: false
+---
+
+# Worker: Intake UX & Statute Selection
+
+## Goal (Master-aligned)
+
+Ship the IR-first desktop flow **Intake → Compare → Report**: complaint intake, multi-select WAC/RCW, Compare, stepper chrome, and App shell rails. Selection UX feeds approved codes into IR drafting — it does not author legal text.
+
+## Role boundary
+
+**Owns:** stepper labels/CTAs, Complaint/WAC/Review steps, statute search & related panels, selection state, desktop rails (drawers = small-breakpoint fallback), frontend API client wiring for those surfaces.
+
+**Does not own:** allegation/quote/DOCX body (IR Drafting), PDF ingest/ranking (Corpus), case save/resume/status/export pack (Case Review), PII gate (Privacy), auth (Identity), launch config (DevEx).
+
+## Invariants
+
+- Primary path is Intake → Compare → Report; IR-primary wins over UX convenience
+- Research / related-statute panels are **not authorization** — label and gate accordingly; only explicit user multi-select authorizes codes
+- Never invent or paraphrase statute text in UI copy; show store-backed text or clear “unavailable / unverified” states
+- Preserve desktop rail behavior; drawers remain fallback at smaller breakpoints
+- User-facing copy is **investigator/application language only** — never show internal codes (`lexical_overlap`, `match_score`, `not_in_store`, prompt/model jargon). Use `investigatorLabels.ts`.
+
+## Anti-goals
+
+- Do not revive analyzer-first / dashboard-first UX as the default (trigger phrases, stats dashboards, generic findings lists)
+- Do not treat search hits, related panels, or LLM suggestions as approved selections
+- Do not invent statute quotes or subsection labels in copy, empty states, or placeholders
+- Do not break zero-WAC / clear-selection affordances that keep the IR path honest
+- Do not surface ranking reasons, scores, LLM model ids, or API field names in the UI
+
+## Success criteria
+
+- Step labels and CTAs stay aligned with Intake → Compare → Report
+- Multi-select WAC/RCW and Compare states are clear; zero-WAC remains actionable
+- Research panels are visually/verbally distinct from authorized selections
+- Desktop rails work; no regression to analyzer-dashboard as the home path
+
+## Escalation map
+
+| Signal | Escalate to |
+|--------|-------------|
+| Allegation payload / quotes / IR sections | IR Drafting |
+| Empty/wrong search or ranking results | Statute Corpus |
+| Save/resume, review status, export pack | Case Review |
+| Category 3/4 on complaint text | Privacy |
+| Login / roles blocking the stepper | Identity Admin |
+| Ports / Launch.bat / debug | Local DevEx |
+
+Return the standard handoff block from `AGENTS.md`.

@@ -1,8 +1,9 @@
-"""Quote fidelity unit tests."""
+"""Quote fidelity unit tests — Baseline unquoted duty phrases + remaining quoted spans."""
 
 from __future__ import annotations
 
 from app.services.quote_verify import (
+    extract_duty_spans,
     extract_quoted_spans,
     is_contiguous_substring,
     normalize_ws,
@@ -25,9 +26,23 @@ def test_normalize_and_substring():
 
 
 def test_extract_quoted_spans():
-    text = 'A potential violation of WAC 246-341-0600, by having failed to: "(1) keep records" and "(2) train staff".'
+    text = 'Review per WAC 246-341-0600: "(1) keep records" and "(2) train staff".'
     spans = extract_quoted_spans(text)
     assert spans == ["(1) keep records", "(2) train staff"]
+
+
+def test_extract_duty_spans_baseline_shape():
+    text = (
+        "Potential violation of WAC 246-337-045, Governance and administration, "
+        "by having failed to (1)(a)(iii) adopting, periodically reviewing, and updating; "
+        "(1)(b) provide a process for communication; and (3)(c) staff who are competent."
+    )
+    spans = extract_duty_spans(text)
+    assert spans == [
+        "adopting, periodically reviewing, and updating",
+        "provide a process for communication",
+        "staff who are competent",
+    ]
 
 
 def test_sentence_boundary_no_ellipsis(store_ready):
@@ -60,7 +75,8 @@ def test_exact_quotes_are_store_substrings(store_ready):
 
 
 def test_verify_rejects_paraphrase_and_ellipsis(store_ready):
-    fake = 'A potential violation of WAC 246-341-0600, regarding: "NOT_IN_STORE_PHRASE".'
+    # Still catch fabricated quoted language when present
+    fake = 'Potential violation of WAC 246-341-0600, regarding: "NOT_IN_STORE_PHRASE".'
     fails = verify_allegation(
         fake,
         wac_code="246-341-0600",
@@ -69,7 +85,20 @@ def test_verify_rejects_paraphrase_and_ellipsis(store_ready):
     )
     assert any(f.reason == "not_in_store" for f in fails)
 
-    ellipsis_text = 'A potential violation of WAC 246-341-0600, regarding: "shall protect…".'
+    # Baseline-style unquoted paraphrase after a subsection label
+    fake_duty = (
+        "Potential violation of WAC 246-341-0600, Agency administration, "
+        "by having failed to (1) NOT_IN_STORE_DUTY_PHRASE."
+    )
+    fails_duty = verify_allegation(
+        fake_duty,
+        wac_code="246-341-0600",
+        matched_subsections=["246-341-0600"],
+        selected_codes=["246-341-0600"],
+    )
+    assert any(f.reason == "not_in_store" for f in fails_duty)
+
+    ellipsis_text = 'Potential violation of WAC 246-341-0600, regarding: "shall protect…".'
     fails2 = verify_allegation(
         ellipsis_text,
         wac_code="246-341-0600",
@@ -86,6 +115,7 @@ def test_fresh_draft_passes_quote_verify(store_ready):
         "patient was assaulted and facility failed to protect safety and security",
         max_subs=3,
     )
+    assert '"' not in draft.text
     integrity = verify_report_quotes(
         allegations=[
             {

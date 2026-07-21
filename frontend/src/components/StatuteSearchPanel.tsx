@@ -35,14 +35,10 @@ export function StatuteSearchPanel({ hits, busy, onSearch, onAddCode, selectedId
                 <div className="min-w-0">
                   <div className="font-mono text-xs font-semibold">
                     {hit.instrument} {hit.code}
-                    {hit.level !== 'code' ? ` · ${hit.level}` : ''}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">{hit.title}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {(hit.score * 100).toFixed(0)}%
-                  </span>
                   <button
                     type="button"
                     className="btn-ghost btn-sm !px-2"

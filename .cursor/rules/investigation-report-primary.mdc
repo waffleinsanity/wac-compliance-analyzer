@@ -1,0 +1,24 @@
+---
+description: Investigation Report is the primary product — IR workflow over legacy analyzer
+alwaysApply: true
+---
+
+# Investigation Report Primary
+
+This product's primary purpose is helping investigators draft a DOH-style **Investigation Report** from approved WAC/RCW selections and complaint text.
+
+## Product framing
+
+- Prefer Investigation Report drafting, case workspace, and WAC-scoped allegation workflows over generic "compliance analysis" framing.
+- When requirements conflict, prioritize Investigation Report accuracy, structure, and exportability.
+- Local statute PDFs under `data/source/` are the **sole source** for which WAC/RCW subsections apply and for statute quote text. Example Investigation Report DOCX files inform shell structure and phrasing only — not which codes apply and not quote wording.
+- Keep IR language and section structure aligned with the blank DOH Investigation Report form and the example reports' formal investigative tone.
+- Preserve assistive safety layers: PII Category 3/4 detection, quote-integrity checks, and clear human-editable draft status.
+- Avoid reintroducing analyzer-first UX (trigger phrases, stats dashboards, generic findings lists) as the main path unless the user explicitly asks for legacy analysis tools.
+
+## When implementing
+
+1. Scope work to approved code selections and PDF-backed subsections.
+2. Prefer exact statute quotes from the local store; flag unverified quotes.
+3. Keep the editable report + DOCX export as first-class outcomes.
+4. Do not treat LLM free-text as authority for subsection choice or quote text.

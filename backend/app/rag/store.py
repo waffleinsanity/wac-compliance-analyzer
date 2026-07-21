@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import WACCodeRecord
+from app.parser.rcw_parser import parse_all_rcw_sources
 from app.parser.wac_parser import WACNode, parse_all_sources
 
 
@@ -70,6 +71,12 @@ class WACStore:
             if node.level == "code":
                 self.code_index[node.code] = node
                 self.code_index[node.id] = node
+        try:
+            from app.services import wac_scope
+
+            wac_scope._CODE_TFIDF.clear()
+        except Exception:
+            pass
         self._rebuild_tfidf()
         self._ensure_chroma()
         return len(self.nodes)
@@ -88,13 +95,17 @@ class WACStore:
                 path = settings.source_dir / name
                 if path.exists():
                     pdf_mtime = max(pdf_mtime, path.stat().st_mtime)
+            sections_dir = settings.source_dir / "sections"
+            if sections_dir.is_dir():
+                for path in sections_dir.glob("*.pdf"):
+                    pdf_mtime = max(pdf_mtime, path.stat().st_mtime)
             if pdf_mtime and pdf_mtime > db_mtime + 1:
                 force = True
             else:
                 loaded = self.load_from_db(db)
                 return {"status": "loaded_existing", "nodes": loaded}
 
-        nodes = parse_all_sources(settings.source_dir)
+        nodes = parse_all_sources(settings.source_dir) + parse_all_rcw_sources(settings.source_dir)
         # Deduplicate by id (prefer longer text)
         deduped: dict[str, WACNode] = {}
         for node in nodes:
@@ -139,6 +150,13 @@ class WACStore:
         self.nodes = {n.id: n for n in nodes}
         self.code_index = {n.code: n for n in nodes if n.level == "code"}
         self.code_index.update({n.id: n for n in nodes if n.level == "code"})
+        # Subsection TF-IDF caches are keyed by code text; drop them after store rebuild.
+        try:
+            from app.services import wac_scope
+
+            wac_scope._CODE_TFIDF.clear()
+        except Exception:
+            pass
         self._rebuild_tfidf()
         self._sync_chroma(nodes)
         chapters: dict[str, int] = {}
@@ -300,13 +318,39 @@ class WACStore:
                 break
         return results
 
-    def search_chroma(self, query: str, top_k: int = 20) -> list[tuple[WACNode, float]]:
-        """Semantic backup over the full local statute corpus."""
+    def search_chroma(
+        self,
+        query: str,
+        top_k: int = 20,
+        *,
+        selected_codes: set[str] | None = None,
+    ) -> list[tuple[WACNode, float]]:
+        """Semantic backup over the local statute corpus.
+
+        When ``selected_codes`` is set, restrict Chroma to those code metadata
+        values so subsection ranking can blend a code-scoped signal without
+        letting unrelated chapters crowd out the approved selection.
+        """
         if not query.strip() or not self.nodes:
             return []
+        where: dict[str, Any] | None = None
+        if selected_codes:
+            codes = sorted(
+                {c.replace("WAC ", "").replace("RCW ", "").strip() for c in selected_codes if c}
+            )
+            if len(codes) == 1:
+                where = {"code": codes[0]}
+            elif len(codes) > 1:
+                where = {"code": {"$in": codes}}
         try:
             self._ensure_chroma()
-            raw = self._collection.query(query_texts=[query[:4000]], n_results=min(top_k, 40))
+            # When code-scoped, pull enough peers under that code for a light boost.
+            n_results = min(max(top_k, 12), 40) if where else min(top_k, 40)
+            raw = self._collection.query(
+                query_texts=[query[:4000]],
+                n_results=n_results,
+                where=where,
+            )
         except Exception:
             return []
         ids = (raw.get("ids") or [[]])[0]
@@ -319,6 +363,8 @@ class WACStore:
             # Chroma cosine distance → similarity-ish score
             score = max(0.0, 1.0 - float(dist))
             out.append((node, score))
+            if len(out) >= top_k:
+                break
         return out
 
     def corpus_search(

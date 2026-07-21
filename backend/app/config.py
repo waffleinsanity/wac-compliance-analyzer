@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     cases_dir: Path = data_dir / "cases"
     sqlite_path: Path = data_dir / "wac_app.db"
     case_retention_days: int = 365
+    # Soft-deleted (trashed) cases are hard-deleted after this many days
+    case_trash_retention_days: int = 7
     case_upload_max_mb: int = 15
 
     wac_341_pdf: str = "WAC 246-341.pdf"

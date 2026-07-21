@@ -9,6 +9,9 @@
     "WAC 246-337-080"
   ],
   "expected_cite_prefixes": ["246-341-0600"],
+  "expected_top_labels": {
+    "246-341-0600": ["(2)(e)", "(1)", "(2)(f)"]
+  },
   "must_quote_statute": true,
-  "notes": "Safety/assault facts should surface 0600-family subsection language among matched cites."
+  "notes": "Safety/assault facts should rank sexual-harassment / protect leaves under 0600 (not just any 0600 prefix)."
 }

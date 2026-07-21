@@ -43,13 +43,16 @@ from app.schemas import (
 from app.services.case_store import (
     assert_case_access,
     assert_case_editable,
+    assert_case_not_trashed,
     archive_stale_final_cases,
     dumps_list,
     evidence_dir,
     evidence_exhibit_lines,
     get_case_or_404,
+    hard_delete_case,
     parse_json_list,
     process_entries_to_bullets,
+    purge_trashed_cases,
     report_from_json,
     save_snapshot,
     set_status,
@@ -94,6 +97,8 @@ def _summary(case: InvestigationCase) -> CaseSummaryOut:
         owner_user_id=case.owner_user_id,
         updated_at=case.updated_at,
         created_at=case.created_at,
+        archived_at=case.archived_at,
+        trashed_at=case.trashed_at,
     )
 
 
@@ -138,6 +143,7 @@ def _detail(db: Session, case: InvestigationCase) -> CaseDetailOut:
         status_changed_at=case.status_changed_at,
         status_changed_by=case.status_changed_by,
         archived_at=case.archived_at,
+        trashed_at=getattr(case, "trashed_at", None),
         created_at=case.created_at,
         updated_at=case.updated_at,
         snapshots=[
@@ -173,16 +179,29 @@ def _draft_label(case: InvestigationCase) -> str:
 
 @router.get("", response_model=list[CaseSummaryOut])
 def list_cases(
+    view: str = "active",
     include_archived: bool = False,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     archive_stale_final_cases(db)
+    purge_trashed_cases(db)
     q = db.query(InvestigationCase)
     if not is_admin_role(user_role(user)):
         q = q.filter(InvestigationCase.owner_user_id == user.id)
-    if not include_archived:
-        q = q.filter(InvestigationCase.status != "archived")
+
+    # Backward-compatible: include_archived=true maps to archived view
+    mode = (view or "active").strip().lower()
+    if include_archived and mode == "active":
+        mode = "archived"
+
+    if mode == "archived":
+        q = q.filter(InvestigationCase.status == "archived")
+    elif mode in {"trash", "trashed"}:
+        q = q.filter(InvestigationCase.status == "trashed")
+    else:
+        q = q.filter(InvestigationCase.status.notin_(["archived", "trashed"]))
+
     cases = q.order_by(InvestigationCase.updated_at.desc()).all()
     return [_summary(c) for c in cases]
 
@@ -333,6 +352,50 @@ def rebuild_draft(
     return _detail(db, case)
 
 
+def _move_case_to_trash(db: Session, case: InvestigationCase, user: User) -> InvestigationCase:
+    """Soft-delete: mark trashed. Allowed from any non-trashed status."""
+    require_role_edit(user)
+    if case.status == "trashed":
+        return case
+    return set_status(db, case, "trashed", user)
+
+
+def _restore_case_from_shelf(db: Session, case: InvestigationCase, user: User) -> InvestigationCase:
+    """Restore archived or trashed case to draft."""
+    require_role_edit(user)
+    if case.status not in {"archived", "trashed"}:
+        raise HTTPException(status_code=400, detail="Only archived or trashed cases can be restored")
+    return set_status(db, case, "draft", user)
+
+
+@router.post("/{case_id}/trash", response_model=CaseDetailOut)
+def trash_case(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Move a case to trash (soft delete). Dedicated path — do not rely on /status alone."""
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    case = _move_case_to_trash(db, case, user)
+    db.refresh(case)
+    return _detail(db, case)
+
+
+@router.post("/{case_id}/restore", response_model=CaseDetailOut)
+def restore_case(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Restore a case from archive or trash back to draft."""
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    case = _restore_case_from_shelf(db, case, user)
+    db.refresh(case)
+    return _detail(db, case)
+
+
 @router.post("/{case_id}/status", response_model=CaseDetailOut)
 def update_status(
     case_id: int,
@@ -343,7 +406,10 @@ def update_status(
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
     role = user_role(user)
-    target = payload.status.strip()
+    target = (payload.status or "").strip().lower()
+    # Aliases
+    if target == "trash":
+        target = "trashed"
 
     if target == "in_review":
         require_role_edit(user)
@@ -379,12 +445,36 @@ def update_status(
         set_status(db, case, "draft", user)
     elif target == "archived":
         require_role_edit(user)
+        if case.status == "trashed":
+            raise HTTPException(status_code=400, detail="Restore from trash before archiving")
         set_status(db, case, "archived", user)
+    elif target == "trashed":
+        _move_case_to_trash(db, case, user)
+    elif target == "restore":
+        _restore_case_from_shelf(db, case, user)
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported status transition: {target}")
 
     db.refresh(case)
     return _detail(db, case)
+
+
+@router.delete("/{case_id}")
+def delete_case(
+    case_id: int,
+    user: User = Depends(get_editor_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete a case. Prefer trash first; only trashed cases can be purged here."""
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    if case.status != "trashed":
+        raise HTTPException(
+            status_code=400,
+            detail="Move the case to trash first, then permanently delete it from Trash.",
+        )
+    hard_delete_case(db, case)
+    return {"ok": True, "deleted_id": case_id}
 
 
 @router.post("/{case_id}/comments", response_model=CaseCommentOut)
@@ -396,6 +486,8 @@ def add_comment(
 ):
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
+    if case.status == "trashed":
+        raise HTTPException(status_code=400, detail="Case is in trash. Restore it before adding comments.")
     if not user.is_admin and case.owner_user_id != user.id:
         raise HTTPException(status_code=403, detail="Not allowed")
     comment = CaseComment(case_id=case.id, author_user_id=user.id, body=payload.body.strip())
@@ -442,6 +534,7 @@ def export_docx(
 ):
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
+    assert_case_not_trashed(case, action="exporting")
     report = _report_for_export(case)
     selected = parse_json_list(case.approved_wac_ids) or [a.wac_code for a in report.allegations]
     integrity = verify_report_quotes(
@@ -477,6 +570,7 @@ def export_pack(
     """Multi-doc pack: IR DOCX + deficiency cite sheet."""
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
+    assert_case_not_trashed(case, action="exporting")
     report = _report_for_export(case)
     selected = parse_json_list(case.approved_wac_ids) or [a.wac_code for a in report.allegations]
     integrity = verify_report_quotes(
@@ -522,7 +616,7 @@ async def upload_evidence(
 ):
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
-    assert_case_editable(case)
+    assert_case_editable(case, user)
 
     filename = file.filename or "upload.bin"
     ext = Path(filename).suffix.lower()
@@ -581,7 +675,7 @@ def delete_evidence(
 ):
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
-    assert_case_editable(case)
+    assert_case_editable(case, user)
     ev = (
         db.query(CaseEvidence)
         .filter(CaseEvidence.id == evidence_id, CaseEvidence.case_id == case_id)
@@ -606,7 +700,7 @@ def add_process_entry(
 ):
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
-    assert_case_editable(case)
+    assert_case_editable(case, user)
     order = len(case.process_entries)
     entry = CaseProcessEntry(
         case_id=case.id,
@@ -633,7 +727,7 @@ def apply_process_to_report(
     """Compose process bullets + exhibit lines into the editable IR (investigator may rewrite)."""
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
-    assert_case_editable(case)
+    assert_case_editable(case, user)
     report = _report_for_export(case)
     bullets = process_entries_to_bullets(list(case.process_entries))
     exhibits = evidence_exhibit_lines(list(case.evidence))
@@ -658,7 +752,7 @@ def delete_process_entry(
 ):
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
-    assert_case_editable(case)
+    assert_case_editable(case, user)
     entry = (
         db.query(CaseProcessEntry)
         .filter(CaseProcessEntry.id == entry_id, CaseProcessEntry.case_id == case_id)
@@ -676,5 +770,11 @@ def run_retention(
     _: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
-    n = archive_stale_final_cases(db)
-    return {"archived": n, "retention_days": settings.case_retention_days}
+    archived = archive_stale_final_cases(db)
+    purged = purge_trashed_cases(db)
+    return {
+        "archived": archived,
+        "retention_days": settings.case_retention_days,
+        "trash_purged": purged,
+        "trash_retention_days": settings.case_trash_retention_days,
+    }

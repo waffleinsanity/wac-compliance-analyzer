@@ -519,6 +519,8 @@ class CaseSummaryOut(BaseModel):
     owner_user_id: int
     updated_at: datetime | None = None
     created_at: datetime | None = None
+    archived_at: datetime | None = None
+    trashed_at: datetime | None = None
 
 
 class CaseDetailOut(BaseModel):
@@ -538,6 +540,7 @@ class CaseDetailOut(BaseModel):
     status_changed_at: datetime | None = None
     status_changed_by: int | None = None
     archived_at: datetime | None = None
+    trashed_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     snapshots: list[CaseSnapshotOut] = Field(default_factory=list)

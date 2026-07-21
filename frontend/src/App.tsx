@@ -48,9 +48,14 @@ import { StatuteSearchPanel } from './components/StatuteSearchPanel'
 import { WACSelectionPanel } from './components/WACSelectionPanel'
 import { WorkflowStepper, type WorkflowStep } from './components/WorkflowStepper'
 import { canAccessAdmin, canEdit, roleLabel } from './permissions'
+import { normalizeReportAllegations } from './allegationFormat'
 
 type MainTab = 'analysis' | 'directory' | 'admin'
 type AdminSubTab = 'users' | 'inbox' | 'audit'
+
+function applyReport(report: InvestigationReport | null): InvestigationReport | null {
+  return report ? normalizeReportAllegations(report) : null
+}
 
 export default function App() {
   const { user, logout } = useAuth()
@@ -168,7 +173,7 @@ export default function App() {
       setCredentialNumber(detail.credential_number || '')
       setSelectedCodes(detail.approved_wac_ids || [])
       if (detail.report) {
-        setReport(detail.report)
+        setReport(applyReport(detail.report))
         setStep('report')
       } else {
         setReport(null)
@@ -246,15 +251,19 @@ export default function App() {
         setPrivacyModalOpen(true)
       }
       return scan
-    } catch {
-      setPrivacyHits([])
+    } catch (e) {
+      // Fail closed: keep prior hits and surface the error — never pretend "no PII".
+      setError(e instanceof Error ? e.message : 'Privacy scan failed — check that the API is running')
       return null
     }
   }, [])
 
   const ensurePrivacyClear = async (): Promise<boolean> => {
     const scan = await scanPrivacy(text)
-    if (scan?.has_hits) {
+    if (!scan) {
+      return false
+    }
+    if (scan.has_hits) {
       setPendingAfterRedact('draft')
       setPrivacyModalOpen(true)
       return false
@@ -366,7 +375,7 @@ export default function App() {
         facility_address: facilityAddress || undefined,
         credential_number: credentialNumber || undefined,
       })
-      setReport(res)
+      setReport(applyReport(res))
       setStep('review')
       setBusy(false)
       setProgress('Saving working draft to case…')
@@ -410,7 +419,7 @@ export default function App() {
       })
       const detail = await api.rebuildCaseDraft(activeCaseId)
       setCaseDetail(detail)
-      if (detail.report) setReport(detail.report)
+      if (detail.report) setReport(applyReport(detail.report))
       setCasesRefreshKey((k) => k + 1)
       setStep('report')
     } catch (e) {
@@ -462,6 +471,11 @@ export default function App() {
       onNewCase={startNewCase}
       refreshKey={casesRefreshKey}
       canEdit={userCanEdit}
+      onCaseRemoved={(id) => {
+        if (activeCaseId === id) {
+          startNewCase()
+        }
+      }}
     />
   )
 
@@ -491,14 +505,6 @@ export default function App() {
                 </p>
               </div>
             </div>
-            <span
-              className={clsx(
-                'status-chip ml-1 hidden md:inline-flex',
-                selectedCodes.length > 0 ? 'status-chip-ready' : 'status-chip-warn',
-              )}
-            >
-              {selectedCodes.length} approved
-            </span>
           </div>
           <div className="relative flex shrink-0 items-center gap-2">
             <button
@@ -722,7 +728,16 @@ export default function App() {
             {tab === 'analysis' && (
               <div className="flex h-full flex-col overflow-hidden">
                 <div className="border-b border-ink-200/70 bg-card/50 px-4 py-3 dark:border-ink-700">
-                  <WorkflowStepper step={step} onStepChange={setStep} unlocked={unlocked} />
+                  <WorkflowStepper
+                    step={step}
+                    onStepChange={setStep}
+                    unlocked={unlocked}
+                    context={{
+                      approvedWacCount: selectedCodes.length,
+                      quoteIssueCount: report?.quote_integrity?.failures?.length ?? 0,
+                      caseStatus: caseDetail?.status ?? null,
+                    }}
+                  />
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
                   {step === 'workspace' && (

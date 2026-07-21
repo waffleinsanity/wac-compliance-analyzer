@@ -16,13 +16,14 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from app.rag.store import wac_store
 
 # Per-code TF-IDF matrices (subsection docs are static after ingest)
 _CODE_TFIDF: dict[str, tuple[TfidfVectorizer, Any, tuple[str, ...]]] = {}
+_TFIDF_STOP = frozenset(ENGLISH_STOP_WORDS)
 
 
 FOREIGN_WAC_RE = re.compile(r"246-(?:341|337)-\d{3,4}")
@@ -59,6 +60,11 @@ class ScopedSubsection:
 def _clean(text: str) -> str:
     text = (text or "").replace("\u00ad", "").replace("\ufffd", "-").replace("�", "-")
     return re.sub(r"[ \t]+", " ", text).strip()
+
+
+def normalize_statute_text(text: str) -> str:
+    """Collapse PDF line-break artifacts into contiguous statute wording for display/verify."""
+    return re.sub(r"\s+", " ", _clean(text)).strip()
 
 
 def instrument_for(code: str) -> str:
@@ -195,32 +201,228 @@ def _looks_like_container(text: str) -> bool:
     body = (text or "").strip()
     if not body:
         return False
+    if _is_list_intro_stub(body):
+        return True
+    # e.g. (iii) "… in all of the following: (A) … (B) …"
+    if re.search(r"\bfollowing\s*:", body, re.I) and re.search(r"\([A-Z]\)\s+\S+", body):
+        return True
     if re.search(r"(must|shall)\s+ensure\s*:?\s*(\n|\r)?\s*\([a-z0-9]+\)", body, re.I):
         return True
-    if len(body) > 320 and len(re.findall(r"\n\s*\([a-z0-9]+\)", body)) >= 2:
+    if len(body) > 320 and len(re.findall(r"\n\s*\([a-z0-9A-Z]+\)", body)) >= 2:
         return True
-    if re.search(r"including\s*:?\s*(\n|\r)?\s*\([a-z0-9]+\)", body, re.I) and len(body) > 220:
+    if re.search(r"including\s*:?\s*(\n|\r)?\s*\([a-z0-9A-Z]+\)", body, re.I) and len(body) > 220:
         return True
     return False
 
 
+def _is_list_intro_stub(text: str) -> bool:
+    """Incomplete list openers like '… in all of the following:' — not actionable duties."""
+    body = normalize_statute_text(text)
+    if not body:
+        return False
+    if re.search(r"\b(the\s+following|as\s+follows|all\s+of\s+the\s+following)\s*:\s*$", body, re.I):
+        return True
+    # Short clause that ends with a bare colon (introduces nested items)
+    if body.endswith(":") and len(body) < 180 and not re.search(r"\([A-Za-z0-9]+\)", body):
+        return True
+    return False
+
+
+def _looks_like_definition(text: str) -> bool:
+    """RCW/WAC definitional clauses ('\"Term\" means …') are not 'failed to' duties."""
+    body = normalize_statute_text(text)
+    if not body:
+        return False
+    return bool(
+        re.match(
+            r"^[\"'“”]?[A-Za-z][^\"'“”]{0,80}[\"'“”]?\s+means\s+",
+            body,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def _actionable_subsections(subs: list[ScopedSubsection]) -> list[ScopedSubsection]:
     """Prefer leaf duties over bloated parent containers for complaint matching."""
-    leaves = [s for s in subs if s.level in ("secondary", "tertiary")]
+    leaves = [
+        s
+        for s in subs
+        if s.level in ("quaternary", "tertiary", "secondary")
+        and not _looks_like_container(s.text)
+        and not _is_list_intro_stub(s.text)
+        and not _looks_like_definition(s.text)
+    ]
     short_primaries = [
         s
         for s in subs
-        if s.level == "primary" and not _looks_like_container(s.text) and len(s.text) <= 360
+        if s.level == "primary"
+        and not _looks_like_container(s.text)
+        and not _looks_like_definition(s.text)
+        and len(s.text) <= 360
     ]
     pool = leaves + short_primaries
     if pool:
         return pool
-    non_containers = [s for s in subs if not _looks_like_container(s.text)]
+    non_containers = [
+        s
+        for s in subs
+        if not _looks_like_container(s.text) and not _looks_like_definition(s.text)
+    ]
     return non_containers or subs
 
 
 def _level_rank(level: str) -> int:
-    return {"tertiary": 0, "secondary": 1, "primary": 2, "code": 3}.get(level, 4)
+    return {"quaternary": 0, "tertiary": 1, "secondary": 2, "primary": 3, "code": 4}.get(level, 5)
+
+
+# Ranking-only aliases: expand complaint query so related facts match PDF wording.
+# Never written into statute text or allegations — scoring signal only.
+_RANK_QUERY_ALIASES: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bsexually\b", re.I), " sexual "),
+    (re.compile(r"\bassault(?:ed|s)?\b", re.I), " assault abuse harassment exploitation "),
+    (re.compile(r"\bsafety\b", re.I), " safety protect protection security "),
+    (re.compile(r"\bsecurity\b", re.I), " security protect protection safety "),
+    # Do not match bare "protected" inside "protected health information" → security duties
+    (re.compile(r"\bprotect(?:ing|ion)\b", re.I), " protect safety security "),
+    (re.compile(r"\bconfidential(?:ity)?\b", re.I), " confidential privacy disclosure information "),
+    # Avoid "release" — RCW 71.05.020(49) defines commitment Release, not PHI disclosure
+    (re.compile(r"\bdisclos(?:e|ed|ure|ing)\b", re.I), " disclose share confidential privacy "),
+    (
+        re.compile(r"\b(?:protected\s+health\s+information|phi)\b", re.I),
+        " personal health information confidential disclosure share privacy ",
+    ),
+    (re.compile(r"\bwithout\s+consent\b", re.I), " consent authorization share privacy "),
+    (re.compile(r"\bneglect(?:ed|ing)?\b", re.I), " neglect abuse exploitation safety "),
+]
+
+
+# Conservative morphology only — avoid stripping "reported"→"report" (false (2)(k) hits).
+# Do not map "protected"→"protect" (PHI "protected health information" ≠ safety "protect").
+_MORPH_MAP: dict[str, str] = {
+    "sexually": "sexual",
+    "assaulted": "assault",
+    "assaults": "assault",
+    "protecting": "protect",
+    "protection": "protect",
+    "disclosing": "disclose",
+    "disclosed": "disclose",
+    "disclosure": "disclose",
+    "confidentiality": "confidential",
+    "neglected": "neglect",
+    "neglecting": "neglect",
+    "exploited": "exploitation",
+    "exploiting": "exploitation",
+    "harassing": "harassment",
+    "harassed": "harassment",
+}
+
+
+def _normalize_rank_token(token: str) -> str:
+    """Map known complaint morphology onto PDF wording; no aggressive stemming."""
+    t = token.lower()
+    return _MORPH_MAP.get(t, t)
+
+
+def _tfidf_analyzer(text: str) -> list[str]:
+    stems: list[str] = []
+    for t in re.findall(r"[a-z0-9]{3,}", (text or "").lower()):
+        if t in _TFIDF_STOP:
+            continue
+        st = _normalize_rank_token(t)
+        if len(st) < 3 or st in _TFIDF_STOP:
+            continue
+        stems.append(st)
+    grams = list(stems)
+    grams.extend(f"{a}_{b}" for a, b in zip(stems, stems[1:]))
+    return grams
+
+
+def _expand_ranking_query(complaint: str) -> str:
+    """Append ranking-only aliases; PDF subsection text remains the documents."""
+    out = complaint or ""
+    extras: list[str] = []
+    for pat, repl in _RANK_QUERY_ALIASES:
+        if pat.search(out):
+            extras.append(repl.strip())
+    if extras:
+        out = f"{out} {' '.join(extras)}"
+    return out
+
+
+def _scoped_store_boosts(query: str, code: str) -> dict[str, float]:
+    """Light score boosts from store TF-IDF + Chroma, scoped to one approved code.
+
+    PDF subsection text remains the ranking documents; store hits only nudge scores.
+    Failures (Chroma down / empty TF-IDF) return {} so the TF-IDF path still works.
+    """
+    boosts: dict[str, float] = {}
+    if not query.strip() or not wac_store.ready:
+        return boosts
+    try:
+        for node, score in wac_store.search(
+            query, selected_codes={code}, top_k=12, min_score=0.01
+        ):
+            if getattr(node, "level", "") == "code":
+                continue
+            label = subsection_label(node)
+            if not label:
+                continue
+            boosts[label] = max(boosts.get(label, 0.0), float(score) * 0.35)
+    except Exception:
+        pass
+    try:
+        for node, score in wac_store.search_chroma(
+            query, top_k=12, selected_codes={code}
+        ):
+            if getattr(node, "level", "") == "code":
+                continue
+            label = subsection_label(node)
+            if not label:
+                continue
+            # Chroma similarities are often ~0.3–0.5; keep as a light blend only.
+            boosts[label] = max(boosts.get(label, 0.0), float(score) * 0.28)
+    except Exception:
+        pass
+    return boosts
+
+
+def _merge_explicit_and_lexical(
+    explicit: list[ScopedSubsection],
+    lexical: list[ScopedSubsection],
+    *,
+    max_items: int,
+) -> list[ScopedSubsection]:
+    """Explicit cites get a high boost; lexical ranking fills remaining slots."""
+    by_key: dict[str, ScopedSubsection] = {}
+    for sub in lexical:
+        key = sub.label or sub.hierarchy_path
+        by_key[key] = sub
+
+    merged: list[ScopedSubsection] = []
+    used: set[str] = set()
+    explicit_sorted = sorted(
+        explicit,
+        key=lambda s: (-s.score, _level_rank(s.level), len(s.text), s.hierarchy_path),
+    )
+    for sub in explicit_sorted:
+        key = sub.label or sub.hierarchy_path
+        item = by_key.get(key, sub)
+        item.reason = "explicit_cite"
+        item.score = max(float(item.score), 1.0)
+        merged.append(item)
+        used.add(key)
+        if len(merged) >= max_items:
+            return merged
+
+    for sub in lexical:
+        key = sub.label or sub.hierarchy_path
+        if key in used:
+            continue
+        merged.append(sub)
+        used.add(key)
+        if len(merged) >= max_items:
+            break
+    return merged
 
 
 def score_relevant_subsections(
@@ -230,17 +432,23 @@ def score_relevant_subsections(
     max_items: int = 6,
     min_score: float = 0.08,
 ) -> list[ScopedSubsection]:
-    """Rank the most complaint-relevant *leaf* duties under one selected code."""
+    """Rank the most complaint-relevant *leaf* duties under one selected code.
+
+    Explicit complaint cites are merged with lexical ranking (not an early return).
+    Optional code-scoped store/Chroma hits apply a light boost only; PDF text stays
+    primary. Always returns closest leaves for UX, with honest low scores / reasons.
+    """
     code = code.replace("WAC ", "").replace("RCW ", "").strip()
     explicit = extract_explicit_cites(complaint, code)
-    if explicit:
-        # Prefer the most specific cited node when both parent and child appear
-        explicit.sort(key=lambda s: (-s.score, _level_rank(s.level), len(s.text), s.hierarchy_path))
-        return explicit[:max_items]
 
     all_subs = subsections_for_code(code)
     subs = _actionable_subsections(all_subs)
     if not subs:
+        if explicit:
+            explicit.sort(
+                key=lambda s: (-s.score, _level_rank(s.level), len(s.text), s.hierarchy_path)
+            )
+            return explicit[:max_items]
         node = code_node_for(code)
         if node and node.text:
             snippet = duty_phrase_from_text(node.text, max_chars=DUTY_MAX_CHARS)
@@ -252,7 +460,7 @@ def score_relevant_subsections(
                     title=_clean(node.title),
                     text=snippet or _clean(node.text)[:DUTY_MAX_CHARS],
                     level="code",
-                    score=1.0,
+                    score=0.0,
                     reason="code_fallback",
                     instrument=instrument_for(code),
                 )
@@ -262,58 +470,93 @@ def score_relevant_subsections(
     complaint_c = _clean(complaint)
     if not complaint_c:
         for s in subs[:max_items]:
+            s.score = 0.0
             s.reason = "code_fallback"
-        return subs[:max_items]
+        return _merge_explicit_and_lexical(explicit, subs, max_items=max_items)
 
+    ranking_query = _expand_ranking_query(complaint_c)
     docs = [f"{s.label} {s.title} {s.text}" for s in subs]
     labels = tuple(s.label or s.hierarchy_path for s in subs)
+    cache_key = f"{code}::stem_v4"
     try:
-        cached = _CODE_TFIDF.get(code)
+        cached = _CODE_TFIDF.get(cache_key)
         if cached is None or cached[2] != labels:
-            vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2), max_features=8000)
+            vectorizer = TfidfVectorizer(
+                analyzer=_tfidf_analyzer,
+                max_features=8000,
+            )
             matrix = vectorizer.fit_transform(docs)
-            _CODE_TFIDF[code] = (vectorizer, matrix, labels)
+            _CODE_TFIDF[cache_key] = (vectorizer, matrix, labels)
         else:
             vectorizer, matrix, _ = cached
-        q = vectorizer.transform([complaint_c])
+        q = vectorizer.transform([ranking_query])
         scores = cosine_similarity(q, matrix).flatten()
     except ValueError:
         for s in subs[:max_items]:
+            s.score = 0.0
             s.reason = "code_fallback"
-        return subs[:max_items]
+        return _merge_explicit_and_lexical(explicit, subs, max_items=max_items)
+
+    store_boosts = _scoped_store_boosts(ranking_query, code)
 
     ranked: list[ScopedSubsection] = []
     for sub, score in zip(subs, scores):
         # Prefer specific leaves; penalize long dumps that survived the container filter
-        boost = 0.08 if sub.level == "tertiary" else 0.05 if sub.level == "secondary" else 0.0
+        level_boost = (
+            0.1
+            if sub.level == "quaternary"
+            else 0.08
+            if sub.level == "tertiary"
+            else 0.05
+            if sub.level == "secondary"
+            else 0.0
+        )
         penalty = min(0.14, max(0.0, (len(sub.text) - 220) / 3500.0))
-        sub.score = float(score) + boost - penalty
+        base = float(score)
+        # Store/Chroma may only nudge an already-plausible lexical hit — never invent relevance.
+        store_boost = store_boosts.get(sub.label, 0.0) if base >= 0.04 else 0.0
+        sub.score = base + level_boost - penalty + store_boost
         sub.reason = "lexical_overlap"
         ranked.append(sub)
     ranked.sort(key=lambda s: (-s.score, _level_rank(s.level), len(s.text)))
 
     filtered = [s for s in ranked if s.score >= min_score]
     if not filtered:
-        tokens = {t for t in re.findall(r"[a-z]{4,}", complaint_c.lower())}
+        # Token-overlap fallback; keep honest low scores for IR low_confidence flags
+        tokens = {
+            _normalize_rank_token(t)
+            for t in re.findall(r"[a-z]{4,}", complaint_c.lower())
+            if t not in _TFIDF_STOP
+        }
         for s in ranked:
-            blob = f"{s.label} {s.text}".lower()
-            hits = sum(1 for t in tokens if t in blob)
+            blob_tokens = set(_tfidf_analyzer(f"{s.label} {s.text}"))
+            hits = sum(1 for t in tokens if t in blob_tokens)
             s.score = hits / max(len(tokens), 1)
-            s.reason = "lexical_overlap" if s.score > 0 else "code_fallback"
+            if s.score > 0:
+                s.reason = "lexical_overlap"
+            else:
+                s.reason = "code_fallback"
+                s.score = 0.0
         ranked.sort(key=lambda s: (-s.score, _level_rank(s.level), len(s.text)))
         # Always keep the next-closest subsections under this code — never empty.
         filtered = [s for s in ranked if s.score > 0][:max_items] or ranked[:max_items]
         for s in filtered:
-            if s.score <= 0:
-                s.reason = "code_fallback"
+            if s.score < min_score and s.reason != "explicit_cite":
+                # UX always-return path: mark weak matches honestly
+                if s.score <= 0:
+                    s.reason = "code_fallback"
+                elif s.score < min_score:
+                    # Keep lexical_overlap but leave score low for low_confidence
+                    pass
 
     # Guarantee at least one closest leaf when the code has subsections
     if not filtered and ranked:
         closest = ranked[0]
-        closest.reason = closest.reason or "code_fallback"
+        if closest.score < min_score and closest.reason != "explicit_cite":
+            closest.reason = "code_fallback"
         filtered = [closest]
 
-    return filtered[:max_items]
+    return _merge_explicit_and_lexical(explicit, filtered, max_items=max_items)
 
 
 def format_scoped_context(code: str, title: str, full_text: str, relevant: list[ScopedSubsection]) -> str:
@@ -366,21 +609,43 @@ DEFAULT_QUOTE_MAX_CHARS = DUTY_MAX_CHARS
 
 
 def sanitize_for_outer_quotes(text: str) -> str:
-    """Replace inner double quotes so allegation wrappers stay parseable."""
-    return (text or "").replace('"', "'").replace("“", "'").replace("”", "'")
+    """Strip double quotes from duty phrases; Baseline allegations never wrap duties in quotes."""
+    return (text or "").replace('"', "").replace("“", "").replace("”", "").replace("„", "")
+
+
+_HANGING_CUT_RE = re.compile(
+    r"\b(the|a|an|or|and|of|to|for|in|on|at|by|with|as|from|than|that|which|who)$",
+    re.IGNORECASE,
+)
 
 
 def sentence_boundary_excerpt(text: str, max_chars: int = DEFAULT_QUOTE_MAX_CHARS) -> str:
     """Contiguous PDF excerpt ending on a sentence boundary when possible.
 
-    Hard-capped: never returns more than max_chars (cuts at last space if needed).
-    Never inserts ellipsis characters into the statute text.
+    Prefers ending on `.` / `;` etc. Soft-extends past max_chars to finish a short leaf
+    sentence rather than hanging on articles ("… or the"). Never inserts ellipsis into
+    statute text.
     """
-    body = re.sub(r"\s+", " ", _clean(text))
+    body = normalize_statute_text(text)
     if not body:
         return ""
     if len(body) <= max_chars:
         return body
+    # Soft cap: allow a short overrun to reach the next sentence end (leaf duties ~200–300 chars)
+    soft_cap = max(max_chars * 2, 280)
+    soft = body[:soft_cap]
+    best = -1
+    for sep in (". ", "? ", "! ", "; "):
+        idx = soft.rfind(sep)
+        if idx >= max(20, max_chars // 3) and idx > best:
+            best = idx
+    if best >= 20:
+        return soft[: best + 1].rstrip()
+    # Also accept terminal punctuation at end of soft window
+    for sep in (".", "?", "!", ";"):
+        idx = soft.rfind(sep)
+        if idx >= max(20, max_chars // 3):
+            return soft[: idx + 1].rstrip()
     window = body[:max_chars]
     best = -1
     for sep in (". ", "? ", "! ", "; "):
@@ -389,20 +654,55 @@ def sentence_boundary_excerpt(text: str, max_chars: int = DEFAULT_QUOTE_MAX_CHAR
             best = idx
     if best >= 20:
         return window[: best + 1].rstrip()
-    # Fall back to last whitespace inside the budget (still contiguous prefix of PDF text)
     space = window.rfind(" ")
     if space >= 20:
-        return window[:space].rstrip()
+        cut = window[:space].rstrip()
+        # Avoid "... or the" — extend to next whitespace/sentence within soft_cap
+        if _HANGING_CUT_RE.search(cut):
+            rest = body[space:]
+            m = re.search(r"[.;!?]|(\s+\S+){1,12}", rest)
+            if m:
+                extended = normalize_statute_text(body[: space + m.end()])
+                if len(extended) <= soft_cap:
+                    # Prefer ending on punctuation when present in the extension
+                    for sep in (".", ";", "?", "!"):
+                        if sep in extended[max_chars // 2 :]:
+                            return extended[: extended.rfind(sep) + 1].rstrip()
+                    return extended.rstrip(" ,;")
+        return cut
     return window.rstrip()
 
 
 def duty_phrase_from_text(text: str, max_chars: int = DUTY_MAX_CHARS) -> str:
     """Short verbatim duty fragment suitable after 'by having failed to' (Baseline IR shape)."""
     raw = _clean(text)
+    normalized = normalize_statute_text(raw)
+
+    # Incomplete list intro: pull the first nested lettered/numbered duty when present
+    if _is_list_intro_stub(normalized) or (
+        "following:" in normalized.lower() and re.search(r"\([A-Za-z0-9]+\)", raw)
+    ):
+        nested = re.search(
+            r"\(([A-Z]|[a-z]|[0-9]+)\)\s+([^\n(]+?)(?=\s*(?:\([A-Za-z0-9]+\)|;|$))",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        if nested and len(nested.group(2).split()) >= 3:
+            raw = nested.group(2).strip()
+            normalized = normalize_statute_text(raw)
+        elif _is_list_intro_stub(normalized):
+            # No nested duty available — do not emit a hanging "the following:" stub
+            return ""
+
+    # Short leaf duties: keep the whole clause — do not mid-cut at DUTY_MAX
+    if normalized and not _looks_like_container(raw) and len(normalized) <= max(max_chars, 300):
+        phrase = sanitize_for_outer_quotes(normalized)
+        phrase = re.sub(r"(?:;?\s*and)+$", "", phrase, flags=re.IGNORECASE)
+        return _strip_list_edge_punct(phrase)
     # Prefer the first concrete lettered item inside a container parent
     if _looks_like_container(raw) or "\n" in raw:
         item = re.search(
-            r"\(([a-z]|[0-9]+)\)\s+([^\n(]+?)(?=\s*(?:\([a-z0-9]+\)|;|$))",
+            r"\(([A-Z]|[a-z]|[0-9]+)\)\s+([^\n(]+?)(?=\s*(?:\([A-Za-z0-9]+\)|;|$))",
             raw,
             flags=re.IGNORECASE,
         )
@@ -426,10 +726,46 @@ def duty_phrase_from_text(text: str, max_chars: int = DUTY_MAX_CHARS) -> str:
     )
     body = re.sub(r"^(ensure|ensuring)\s+", "", body, flags=re.IGNORECASE)
     # Stop before the next nested subsection marker inside the same blob
-    cut = re.search(r"\s\([a-z0-9]+\)\s", body, flags=re.IGNORECASE)
+    cut = re.search(r"\s\([A-Za-z0-9]+\)\s", body)
     if cut and cut.start() >= 24:
-        body = body[: cut.start()].rstrip(" ;,")
-    return sanitize_for_outer_quotes(sentence_boundary_excerpt(body, max_chars=max_chars))
+        body = body[: cut.start()]
+    phrase = sanitize_for_outer_quotes(sentence_boundary_excerpt(body, max_chars=max_chars))
+    # Baseline lines put "; and" between clauses — never inside a duty fragment
+    phrase = re.sub(r"(?:;?\s*and)+$", "", phrase, flags=re.IGNORECASE)
+    # Never keep wrapping quotation marks or list-edge punctuation in duty fragments
+    phrase = phrase.strip().strip('"“”\'')
+    return _strip_list_edge_punct(phrase)
+
+
+def _strip_list_edge_punct(text: str) -> str:
+    """Remove trailing list punctuation so allegation joiners do not create ;; or :."""
+    return (text or "").strip().rstrip(" ;:,.")
+
+
+def normalize_allegation_line(text: str) -> str:
+    """Baseline IR allegation shape: no quotation marks; clean clause punctuation."""
+    out = (text or "").replace('"', "").replace("“", "").replace("”", "").replace("„", "")
+    out = re.sub(r"\s+", " ", out).strip()
+    # Legacy drafts used "A potential violation…" — Baseline / blank IR omit the leading A.
+    out = re.sub(r"^A\s+potential\s+violation\b", "Potential violation", out, flags=re.IGNORECASE)
+    # Collapse doubled / mixed list punctuation from PDF list items + allegation joiners
+    out = re.sub(r";{2,}", ";", out)
+    out = re.sub(r":{2,}", ":", out)
+    out = re.sub(r"([;:])\s*\.", r".", out)  # "following:." / "services;." → "."
+    out = re.sub(r"\.\s*;", ".", out)
+    out = re.sub(r";\s*;", ";", out)
+    out = re.sub(r"\s+([;,.])", r"\1", out)
+    # Ensure a single terminal period
+    out = out.rstrip(" ;:")
+    if out and not out.endswith("."):
+        out += "."
+    out = re.sub(r"\.{2,}$", ".", out)
+    return out
+
+
+def _allegation_without_quotes(text: str) -> str:
+    """Backward-compatible alias."""
+    return normalize_allegation_line(text)
 
 
 def exact_quotes_from_subsections(
@@ -483,8 +819,8 @@ def draft_allegation_from_source(
 ) -> AllegationDraft:
     """Build a concise DOH-shaped allegation from short exact PDF duty phrases.
 
-    Shape matches peer-reviewed / Baseline IR lines:
-      A potential violation of WAC {code}, {title}, by having failed to (1)(a) "…"; and (2) "…".
+    Shape matches Baseline Allegations RTF / peer IR lines (no quotation marks):
+      Potential violation of WAC {code}, {title}, by having failed to (1)(a) …; and (2) ….
     Full subsection text stays in matched_subsections / Regulatory Framework — not here.
     Low-confidence is flagged on the draft object for the UI; wording stays allegation-shaped.
     """
@@ -509,7 +845,7 @@ def draft_allegation_from_source(
     # Keep title short in the allegation line
     if len(clean_title) > 80:
         clean_title = clean_title[:77].rstrip() + "…"
-    opener = f"A potential violation of {prefix} {code}, {clean_title}"
+    opener = f"Potential violation of {prefix} {code}, {clean_title}"
 
     if not quotes:
         # Prefer the closest ranked subsection text before falling back to the whole code body.
@@ -530,7 +866,7 @@ def draft_allegation_from_source(
             top_score = 0.0
         if snippet:
             cite0 = f"{cite_label} " if cite_label else ""
-            text = f'{opener}, by having failed to {cite0}"{snippet}".'.strip()
+            text = _allegation_without_quotes(f"{opener}, by having failed to {cite0}{snippet}.").strip()
         else:
             text = f"{opener}, as applied to the reported concern in the complaint intake."
         return AllegationDraft(
@@ -544,25 +880,30 @@ def draft_allegation_from_source(
     parts: list[str] = []
     for i, (label, quote) in enumerate(quotes):
         cite = f"{label} " if label else ""
-        fragment = f'{cite}"{quote}"'.strip()
-        if i == 0:
+        fragment = f"{cite}{_strip_list_edge_punct(quote)}".strip()
+        if not _strip_list_edge_punct(quote):
+            continue
+        if i == 0 or not parts:
             parts.append(fragment)
         else:
             parts.append(f"and {fragment}")
-    body = "; ".join(parts)
-    text = f"{opener}, by having failed to {body}."
+    if not parts:
+        text = f"{opener}, as applied to the reported concern in the complaint intake."
+    else:
+        body = "; ".join(parts)
+        text = _allegation_without_quotes(f"{opener}, by having failed to {body}.")
 
     # Hard trim: peer Allegation lines stay short; never dump multi-subsection walls of text
     if len(text) > ALLEGATION_TARGET_CHARS and len(quotes) > 1:
         label0, quote0 = quotes[0]
         cite0 = f"{label0} " if label0 else ""
-        text = f'{opener}, by having failed to {cite0}"{quote0}".'.strip()
+        text = _allegation_without_quotes(f"{opener}, by having failed to {cite0}{quote0}.").strip()
     if len(text) > ALLEGATION_TARGET_CHARS + 40:
-        # Last resort: shorten the single remaining quote in place
+        # Last resort: shorten the single remaining duty phrase in place
         label0, quote0 = quotes[0]
         cite0 = f"{label0} " if label0 else ""
         short = duty_phrase_from_text(quote0, max_chars=90)
-        text = f'{opener}, by having failed to {cite0}"{short}".'.strip()
+        text = _allegation_without_quotes(f"{opener}, by having failed to {cite0}{short}.").strip()
 
     return AllegationDraft(
         text=text,

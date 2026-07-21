@@ -11,6 +11,9 @@ const LABEL: Record<NonNullable<Props['buttonText']>, string> = {
   signup_with: 'Sign up with Google',
 }
 
+/** Show Google OAuth only when VITE_GOOGLE_SIGNIN=true and backend OAuth is configured. */
+export const isGoogleSignInEnabled = import.meta.env.VITE_GOOGLE_SIGNIN === 'true'
+
 /**
  * Always start OAuth on 127.0.0.1 — Google treats localhost as a different redirect URI.
  * Port follows the current UI port (default 5173).
@@ -26,6 +29,10 @@ export function GoogleSignInButton({
   buttonText = 'continue_with',
   width = 320,
 }: Props) {
+  if (!isGoogleSignInEnabled) {
+    return null
+  }
+
   return (
     <a
       href={googleStartHref()}

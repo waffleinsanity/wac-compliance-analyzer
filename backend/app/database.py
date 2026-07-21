@@ -147,7 +147,7 @@ class InvestigationCase(Base):
     owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     case_id_label = Column(String(128), default="", index=True)
     title = Column(String(255), default="")
-    status = Column(String(32), default="draft", index=True)  # draft|in_review|final|reopened|archived
+    status = Column(String(32), default="draft", index=True)  # draft|in_review|final|reopened|archived|trashed
     complaint_text = Column(Text, default="")
     investigation_date = Column(String(128), default="")
     facility_address = Column(String(512), default="")
@@ -159,6 +159,7 @@ class InvestigationCase(Base):
     status_changed_at = Column(DateTime(timezone=True), default=utcnow)
     status_changed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     archived_at = Column(DateTime(timezone=True), nullable=True)
+    trashed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -342,6 +343,10 @@ def _migrate_cases_table() -> None:
         (
             "privacy_redaction_note",
             "ALTER TABLE investigation_cases ADD COLUMN privacy_redaction_note VARCHAR(512) DEFAULT ''",
+        ),
+        (
+            "trashed_at",
+            "ALTER TABLE investigation_cases ADD COLUMN trashed_at DATETIME",
         ),
     ]
     with engine.begin() as conn:

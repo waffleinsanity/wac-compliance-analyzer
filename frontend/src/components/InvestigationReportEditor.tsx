@@ -17,12 +17,50 @@ import clsx from 'clsx'
 import {
   api,
   type CaseDetail,
+  type DefensibilityResult,
   type FacilityInfo,
   type InvestigationAllegation,
   type InvestigationConclusion,
   type InvestigationReport,
+  type QuoteFailure,
 } from '../api'
 import { CaseAssistPanel } from './CaseAssistPanel'
+import {
+  caseStatusLabel,
+  defensibilityOverallLabel,
+  quoteFailureLabel,
+} from '../investigatorLabels'
+import { normalizeAllegationLine, normalizeReportAllegations } from '../allegationFormat'
+
+function caseStatusClass(status: string) {
+  if (status === 'final') return 'status-chip-ready'
+  if (status === 'in_review') return 'status-chip-warn'
+  if (status === 'archived') return 'opacity-70'
+  return ''
+}
+
+function defensibilityChipClass(overall: string) {
+  if (overall === 'pass') return 'status-chip-ready'
+  if (overall === 'block') return 'border-rose-400/50 bg-rose-50 text-rose-900 dark:bg-rose-950/40 dark:text-rose-200'
+  return 'status-chip-warn'
+}
+
+function allegationAnchorId(wacCode: string) {
+  return `allegation-${wacCode.replace(/[^\w.-]+/g, '_')}`
+}
+
+function wacCodeFromFailure(f: QuoteFailure): string | null {
+  if (f.field.startsWith('allegation:')) return f.field.slice('allegation:'.length) || null
+  return null
+}
+
+function jumpToAllegation(wacCode: string) {
+  const el = document.getElementById(allegationAnchorId(wacCode))
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('ring-2', 'ring-cedar-500/50')
+  window.setTimeout(() => el.classList.remove('ring-2', 'ring-cedar-500/50'), 1600)
+}
 
 type Props = {
   report: InvestigationReport
@@ -39,22 +77,22 @@ type Props = {
 function AllegationBadge({ a }: { a: InvestigationAllegation }) {
   if (a.quote_ok === false) {
     return (
-      <span className="rounded-md bg-rose-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
-        Quote broken
+      <span className="rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
+        Needs statute review
       </span>
     )
   }
   if (a.low_confidence) {
     return (
-      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-        Low confidence
+      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+        Confirm subsection
       </span>
     )
   }
   if (a.quote_ok) {
     return (
-      <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
-        Verified
+      <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+        Statute verified
       </span>
     )
   }
@@ -160,16 +198,17 @@ export function InvestigationReportEditor({
   onRebuild,
   canEdit = true,
 }: Props) {
-  const [report, setReport] = useState(initial)
+  const [report, setReport] = useState(() => normalizeReportAllegations({ ...initial }))
   const [copied, setCopied] = useState(false)
   const [showFindings, setShowFindings] = useState(false)
   const [exportError, setExportError] = useState('')
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [info, setInfo] = useState('')
+  const [defensibility, setDefensibility] = useState<DefensibilityResult | null>(null)
 
   useEffect(() => {
-    setReport(initial)
+    setReport(normalizeReportAllegations({ ...initial }))
     setExportError('')
     setInfo('')
   }, [initial])
@@ -178,7 +217,35 @@ export function InvestigationReportEditor({
     onReportChange?.(report)
   }, [report, onReportChange])
 
+  useEffect(() => {
+    if (!caseId) {
+      setDefensibility(null)
+      return
+    }
+    let cancelled = false
+    void api
+      .caseDefensibility(caseId)
+      .then((res) => {
+        if (!cancelled) setDefensibility(res)
+      })
+      .catch(() => {
+        if (!cancelled) setDefensibility(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [caseId, caseDetail?.updated_at, report.quote_integrity?.ok, report.allegations.length])
+
   const grouped = useMemo(() => groupAllegations(report.allegations), [report.allegations])
+
+  const topQuoteFailures = useMemo(
+    () => report.quote_integrity?.failures?.slice(0, 5) ?? [],
+    [report.quote_integrity?.failures],
+  )
+
+  const exportBlocked =
+    defensibility?.can_export === false || report.quote_integrity?.ok === false
+  const exportWarn = !exportBlocked && defensibility?.overall === 'warn'
 
   const selectedCodes = useMemo(() => {
     if (selectedWacs?.length) return selectedWacs
@@ -217,6 +284,9 @@ export function InvestigationReportEditor({
     })
   }, [])
 
+  const caseDraftEditable =
+    caseDetail?.status === 'draft' || caseDetail?.status === 'reopened'
+
   const ensureExportAllowed = async (): Promise<boolean> => {
     setValidating(true)
     setExportError('')
@@ -244,10 +314,13 @@ export function InvestigationReportEditor({
       if (!res.can_export) {
         const detail = res.quote_integrity.failures
           .slice(0, 4)
-          .map((f) => `${f.reason}${f.cite ? ` (${f.cite})` : ''}: ${f.quote_preview}`)
+          .map(
+            (f) =>
+              `${quoteFailureLabel(f.reason)}${f.cite ? ` (${f.cite})` : ''}: ${f.quote_preview}`,
+          )
           .join(' · ')
         setExportError(
-          `Export blocked — quote integrity failed. Fix or restore source quotes. ${detail}`,
+          `Export blocked — statute wording does not match the approved codes. ${detail}`,
         )
         return false
       }
@@ -316,7 +389,9 @@ export function InvestigationReportEditor({
     setValidating(true)
     setExportError('')
     try {
-      await api.saveCaseDraft(caseId, report, 'Pre-export save')
+      if (caseDraftEditable) {
+        await api.saveCaseDraft(caseId, report, 'Pre-export save')
+      }
       const blob = await api.exportCaseDocx(caseId, acknowledgeGaps)
       downloadBlob(blob, `IR_case_${caseId}.docx`)
       setInfo(acknowledgeGaps ? 'DOCX exported with investigator acknowledgment of gaps.' : 'DOCX exported.')
@@ -341,7 +416,9 @@ export function InvestigationReportEditor({
     setValidating(true)
     setExportError('')
     try {
-      await api.saveCaseDraft(caseId, report, 'Pre-pack save')
+      if (caseDraftEditable) {
+        await api.saveCaseDraft(caseId, report, 'Pre-pack save')
+      }
       const blob = await api.exportCasePack(caseId, acknowledgeGaps)
       downloadBlob(blob, `case_${caseId}_pack.zip`)
       setInfo('Pack exported (IR + deficiency cite sheet).')
@@ -358,15 +435,38 @@ export function InvestigationReportEditor({
       <div className="sticky top-0 z-20 -mx-1 space-y-3 rounded-xl border border-ink-200/70 bg-background/95 px-4 py-3 shadow-soft backdrop-blur-md dark:border-ink-700">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-sans text-xs font-semibold uppercase tracking-[0.14em] text-tide-600 dark:text-tide-400">
-              Step 3 · Report
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-sans text-xs font-semibold uppercase tracking-[0.14em] text-tide-600 dark:text-tide-400">
+                Step 3 · Report
+              </p>
+              {caseDetail?.status && (
+                <span
+                  className={clsx(
+                    'status-chip !px-2 !py-0.5 text-[10px]',
+                    caseStatusClass(caseDetail.status),
+                  )}
+                >
+                  {caseStatusLabel(caseDetail.status)}
+                </span>
+              )}
+            </div>
             <h2 className="mt-1 font-display text-2xl tracking-tight sm:text-3xl">Investigative Report</h2>
             <p className="mt-1 max-w-2xl font-sans text-sm text-ink-500">
               Working draft for investigator review — not an automated final. Save to a case, then export.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {defensibility && (
+              <span
+                className={clsx(
+                  'status-chip !px-2.5 !py-1 text-[11px]',
+                  defensibilityChipClass(defensibility.overall),
+                )}
+                title={defensibility.summary}
+              >
+                Export check · {defensibilityOverallLabel(defensibility.overall)}
+              </span>
+            )}
             <button type="button" className="btn-ghost" onClick={onBack}>
               <ArrowLeft className="h-4 w-4" /> Compare
             </button>
@@ -383,7 +483,14 @@ export function InvestigationReportEditor({
             <button
               type="button"
               className="btn-primary"
-              disabled={validating || !caseId}
+              disabled={validating || !caseId || exportBlocked}
+              title={
+                exportBlocked
+                  ? 'Export blocked — fix statute wording first'
+                  : exportWarn
+                    ? 'Defensibility gaps remain — use Export DOCX anyway to acknowledge'
+                    : undefined
+              }
               onClick={() => void exportDocx(false)}
             >
               <Download className="h-4 w-4" /> Export DOCX
@@ -430,21 +537,38 @@ export function InvestigationReportEditor({
           <button
             type="button"
             className="btn-ghost !px-2.5 !py-1 text-xs"
-            disabled={validating || !caseId}
+            disabled={validating || !caseId || exportBlocked}
             onClick={() => void exportPack(true)}
+            title={
+              exportBlocked ? 'Export blocked — statute wording must match approved codes first' : undefined
+            }
           >
             Export pack
           </button>
           <button
             type="button"
             className="btn-ghost !px-2.5 !py-1 text-xs text-amber-800 dark:text-amber-300"
-            disabled={validating || !caseId}
+            disabled={validating || !caseId || exportBlocked}
             onClick={() => void exportDocx(true)}
-            title="Export even when defensibility warnings remain (quote blocks still apply)"
+            title={
+              exportBlocked
+                ? 'Export blocked — statute wording must match approved codes first'
+                : 'Export even when export-check warnings remain (statute wording blocks still apply)'
+            }
           >
             Export DOCX anyway
           </button>
         </div>
+        {exportBlocked && (
+          <p className="text-[11px] text-rose-700 dark:text-rose-300">
+            Export blocked until statute wording matches the approved codes. Fix cited language, then re-check.
+          </p>
+        )}
+        {!exportBlocked && exportWarn && (
+          <p className="text-[11px] text-amber-800 dark:text-amber-300">
+            Defensibility gaps remain — use “Export DOCX anyway” after investigator review.
+          </p>
+        )}
       </div>
 
       {exportError && (
@@ -468,8 +592,39 @@ export function InvestigationReportEditor({
           )}
         >
           {report.quote_integrity.ok
-            ? 'Quote integrity OK — statute language matches the local PDF store.'
-            : `Quote integrity issues (${report.quote_integrity.failures.length}). Copy/export is blocked until quotes match the store.`}
+            ? 'Statute wording matches the approved code text.'
+            : `Statute wording issues (${report.quote_integrity.failures.length}). Copy/export is blocked until wording matches the approved codes.`}
+          {!report.quote_integrity.ok && topQuoteFailures.length > 0 && (
+            <ul className="mt-2 space-y-1.5 border-t border-amber-300/50 pt-2 dark:border-amber-700/60">
+              {topQuoteFailures.map((f, i) => {
+                const code = wacCodeFromFailure(f)
+                const label = f.cite || code || 'Issue'
+                const jumpable =
+                  !!code && report.allegations.some((a) => a.wac_code === code)
+                return (
+                  <li key={`${f.field}-${f.reason}-${i}`} className="text-xs leading-snug">
+                    {jumpable ? (
+                      <button
+                        type="button"
+                        className="text-left underline decoration-amber-700/40 underline-offset-2 hover:decoration-amber-800 dark:decoration-amber-400/50"
+                        onClick={() => jumpToAllegation(code)}
+                      >
+                        <span className="font-mono font-semibold">{label}</span>
+                        <span className="mx-1.5 text-amber-700/70 dark:text-amber-400/70">·</span>
+                        <span>{quoteFailureLabel(f.reason)}</span>
+                      </button>
+                    ) : (
+                      <span>
+                        <span className="font-mono font-semibold">{label}</span>
+                        <span className="mx-1.5 text-amber-700/70 dark:text-amber-400/70">·</span>
+                        <span>{quoteFailureLabel(f.reason)}</span>
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </div>
       )}
 
@@ -598,7 +753,8 @@ export function InvestigationReportEditor({
                     {items.map((a) => (
                       <div
                         key={`${category}-${a.wac_code}`}
-                        className="rounded-xl border border-cedar-500/20 bg-cedar-500/[0.04] px-4 py-3"
+                        id={allegationAnchorId(a.wac_code)}
+                        className="scroll-mt-28 rounded-xl border border-cedar-500/20 bg-cedar-500/[0.04] px-4 py-3 transition"
                       >
                         <div className="mb-1.5 flex flex-wrap items-center gap-2">
                           <span className="rounded-md bg-ink-900 px-2 py-0.5 font-mono text-[11px] font-semibold text-ink-50 dark:bg-ink-100 dark:text-ink-900">
@@ -610,9 +766,9 @@ export function InvestigationReportEditor({
                         </div>
                         <textarea
                           className="input min-h-[88px] font-serif text-sm leading-relaxed"
-                          value={a.allegation_text}
+                          value={normalizeAllegationLine(a.allegation_text)}
                           onChange={(e) => {
-                            const value = e.target.value
+                            const value = normalizeAllegationLine(e.target.value)
                             setReport((prev) => {
                               const allegations = prev.allegations.map((item) =>
                                 item.wac_code === a.wac_code && item.case_category === a.case_category
@@ -670,8 +826,8 @@ export function InvestigationReportEditor({
               <Search className="h-4 w-4 text-tide-600" /> Investigative Process Included
             </h3>
             <p className="mb-3 font-sans text-xs text-ink-400">
-              Blank IR sections: Pre-investigation Activity, Investigation Activity, Observations,
-              Interviews, Document Review.
+              Blank DOH shell only (Pre-investigation / Observations / Interviews / Document Review).
+              Investigation activity beyond these labels is filled by the investigator.
             </p>
             <div className="space-y-2">
               {report.investigative_process.map((item, index) => (
@@ -716,7 +872,8 @@ export function InvestigationReportEditor({
               <FileText className="h-4 w-4 text-tide-600" /> Summary of Findings
             </h3>
             <p className="mb-3 font-sans text-xs text-ink-400">
-              Narrative overview of the results of investigation.
+              Framework starter for authorized WAC/RCW selections — complete the findings narrative
+              after investigation activities (interviews, observations, document review).
             </p>
             <textarea
               className="input min-h-[200px] font-serif leading-relaxed"
@@ -749,7 +906,8 @@ export function InvestigationReportEditor({
                           className="rounded-xl border border-ink-200/80 bg-white/60 p-4 dark:border-ink-700 dark:bg-ink-900/40"
                         >
                           <p className="prose-report mb-3 text-sm">
-                            <span className="font-semibold">Allegation:</span> {a.allegation_text}
+                            <span className="font-semibold">Allegation:</span>{' '}
+                            {normalizeAllegationLine(a.allegation_text)}
                           </p>
                           <div className="flex flex-wrap items-center gap-3">
                             <label className="font-sans text-xs font-semibold text-ink-500">Result</label>
@@ -837,13 +995,13 @@ export function InvestigationReportEditor({
             caseDetail={caseDetail}
             onRefresh={onCaseRefresh}
             onReportApplied={(detail) => {
-              if (detail.report) setReport(detail.report)
+              if (detail.report) setReport(normalizeReportAllegations({ ...detail.report }))
             }}
           />
         </div>
       ) : (
         <div className="rounded-xl border border-dashed border-ink-200/80 p-4 text-sm text-ink-500 dark:border-ink-700">
-          Open or save a case to unlock evidence links, process builder, defensibility checks, and review
+          Open or save a case to unlock evidence links, process builder, export checks, and review
           workflow.
         </div>
       )}

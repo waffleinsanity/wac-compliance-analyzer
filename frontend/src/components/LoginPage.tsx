@@ -3,7 +3,7 @@ import { FileCheck2 } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, setToken } from '../api'
 import { useAuth } from '../auth'
-import { GoogleSignInButton } from './GoogleSignInButton'
+import { GoogleSignInButton, isGoogleSignInEnabled } from './GoogleSignInButton'
 
 type Mode = 'login' | 'register' | 'forgot'
 
@@ -117,10 +117,12 @@ export function LoginPage() {
           <p className="mt-1 text-sm text-ink-500">
             {mode === 'forgot'
               ? 'We will email a reset link if that address is registered.'
-              : 'Sign in with Google, or use your username and password.'}
+              : isGoogleSignInEnabled
+                ? 'Sign in with Google, or use your username and password.'
+                : 'Sign in with your username and password.'}
           </p>
 
-          {mode !== 'forgot' && (
+          {mode !== 'forgot' && isGoogleSignInEnabled && (
             <div className="mt-6 space-y-4">
               <GoogleSignInButton
                 disabled={busy}

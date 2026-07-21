@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 import clsx from 'clsx'
-import type { InvestigationReport, WACComparison } from '../api'
+import type { InvestigationReport, QuoteFailure, WACComparison } from '../api'
+import { quoteFailureLabel } from '../investigatorLabels'
+import { normalizeAllegationLine } from '../allegationFormat'
 
 type Props = {
   comparisons: WACComparison[]
@@ -15,26 +17,57 @@ type Props = {
 function AccuracyBadge({ comparison }: { comparison: WACComparison }) {
   if (comparison.quote_ok === false) {
     return (
-      <span className="rounded-md bg-rose-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
-        Quote broken
+      <span className="rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
+        Needs statute review
       </span>
     )
   }
   if (comparison.low_confidence) {
     return (
-      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-        Low confidence
+      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+        Confirm subsection
       </span>
     )
   }
   if (comparison.quote_ok) {
     return (
-      <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
-        Verified
+      <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+        Statute verified
       </span>
     )
   }
   return null
+}
+
+/** Map a quote-integrity failure to a comparison index when possible. */
+function findComparisonIndex(comparisons: WACComparison[], failure: QuoteFailure): number {
+  const cite = failure.cite?.trim()
+  if (cite) {
+    const byCite = comparisons.findIndex(
+      (c) =>
+        c.code === cite ||
+        c.matched_subsections?.some((s) => s === cite || s.startsWith(cite) || cite.startsWith(s)),
+    )
+    if (byCite >= 0) return byCite
+  }
+
+  const field = failure.field || ''
+  const fromAllegation = field.startsWith('allegation:')
+    ? field.slice('allegation:'.length).trim()
+    : ''
+  const candidates = [fromAllegation, cite].filter(Boolean) as string[]
+
+  for (const token of candidates) {
+    const idx = comparisons.findIndex(
+      (c) =>
+        c.code === token ||
+        c.wac_id === token ||
+        c.code.endsWith(token) ||
+        token.includes(c.code),
+    )
+    if (idx >= 0) return idx
+  }
+  return -1
 }
 
 export function ReviewStep({ comparisons, complaintText, report, onBack, onContinue, busy }: Props) {
@@ -44,11 +77,12 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
   const total = comparisons.length
   const active = comparisons[activeIdx] || null
 
-  const goTo = (idx: number) => {
+  const goTo = (idx: number, opts?: { openPdf?: boolean }) => {
     if (!total) return
     const next = ((idx % total) + total) % total
     setActiveIdx(next)
-    setShowPdf(false)
+    const target = comparisons[next]
+    setShowPdf(opts?.openPdf === true || target?.quote_ok === false)
     setShowFullCode(false)
   }
 
@@ -63,6 +97,11 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
     if (activeIdx >= total) setActiveIdx(0)
   }, [total, activeIdx])
 
+  // Default-open Exact PDF panel when the active allegation has a broken quote.
+  useEffect(() => {
+    if (active?.quote_ok === false) setShowPdf(true)
+  }, [active?.wac_id, active?.quote_ok])
+
   useEffect(() => {
     if (total < 2) return
     const onKey = (e: KeyboardEvent) => {
@@ -74,14 +113,16 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
       e.preventDefault()
       setActiveIdx((i) => {
         const next = e.key === 'ArrowLeft' ? i - 1 : i + 1
-        return ((next % total) + total) % total
+        const idx = ((next % total) + total) % total
+        const target = comparisons[idx]
+        setShowPdf(target?.quote_ok === false)
+        setShowFullCode(false)
+        return idx
       })
-      setShowPdf(false)
-      setShowFullCode(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [total])
+  }, [total, comparisons])
 
   const grouped = useMemo(() => {
     const map: Record<string, WACComparison[]> = { BHA: [], RTF: [], RCW: [], Other: [] }
@@ -98,6 +139,8 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
     }
     return map
   }, [comparisons])
+
+  const quoteFailures = report?.quote_integrity?.failures ?? []
 
   const excerpts = active?.complaint_excerpts?.length
     ? active.complaint_excerpts.slice(0, 2)
@@ -138,10 +181,53 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
         </div>
       </div>
 
-      {report?.quote_integrity && !report.quote_integrity.ok && (
+      {quoteFailures.length > 0 && (
         <div className="rounded-xl border border-amber-300/80 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
-          Quote integrity issues ({report.quote_integrity.failures.length}). Check matched PDF text
-          before exporting.
+          <p className="font-medium">
+            Statute wording issues ({quoteFailures.length}). Jump to the allegation and check it
+            against the approved code text before exporting. If this draft was built before a recent
+            update, go back to Intake and rebuild the report.
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {quoteFailures.map((f, i) => {
+              const idx = findComparisonIndex(comparisons, f)
+              const label = f.cite || `Issue ${i + 1}`
+              const preview = (f.quote_preview || '').trim()
+              const canNav = idx >= 0
+              return (
+                <li key={`${f.field}-${f.cite ?? ''}-${i}`}>
+                  <button
+                    type="button"
+                    disabled={!canNav}
+                    onClick={() => canNav && goTo(idx, { openPdf: true })}
+                    className={clsx(
+                      'w-full rounded-lg border border-amber-300/60 bg-white/60 px-3 py-2 text-left transition dark:border-amber-700/60 dark:bg-amber-950/30',
+                      canNav
+                        ? 'hover:border-amber-500 hover:bg-amber-100/80 dark:hover:bg-amber-900/50'
+                        : 'cursor-default opacity-70',
+                    )}
+                  >
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="font-mono text-xs font-semibold">{label}</span>
+                      <span className="font-sans text-xs text-amber-800 dark:text-amber-200">
+                        {quoteFailureLabel(f.reason)}
+                      </span>
+                    </div>
+                    {preview && (
+                      <p className="mt-1 line-clamp-2 font-serif text-xs leading-snug text-ink-600 dark:text-ink-300">
+                        {preview}
+                      </p>
+                    )}
+                    {!canNav && (
+                      <p className="mt-1 font-sans text-[11px] text-amber-700/80 dark:text-amber-300/80">
+                        No matching allegation in this compare list.
+                      </p>
+                    )}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
 
@@ -210,33 +296,25 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
                     </div>
                     <div className="flex items-center gap-2">
                       <AccuracyBadge comparison={active} />
-                      <span
-                        className={clsx(
-                          'font-mono text-[10px]',
-                          allegationLen > 550 ? 'text-amber-700 dark:text-amber-300' : 'text-ink-400',
-                        )}
-                      >
-                        {allegationLen} chars
-                      </span>
                     </div>
                   </div>
                   <h3 className="mt-1 font-display text-lg leading-snug tracking-tight">{active.title}</h3>
                   {active.low_confidence && (
                     <p className="mt-1 font-sans text-xs text-amber-800 dark:text-amber-300">
-                      Weak overlap — closest subsection(s) under this code were selected; confirm the
-                      duty fits the complaint before relying on it.
+                      Limited match to the complaint — confirm the selected subsection fits the intake
+                      before relying on this allegation line.
                     </p>
                   )}
                 </header>
 
                 <article className="bg-tide-500/[0.06] px-5 py-5 dark:bg-tide-500/[0.08]">
                   <p className="prose-report whitespace-pre-wrap text-[15px] leading-snug text-ink-900 dark:text-ink-50">
-                    {active.allegation_draft || 'No allegation draft generated for this code.'}
+                    {normalizeAllegationLine(active.allegation_draft) ||
+                      'No allegation draft generated for this code.'}
                   </p>
                   {allegationLen > 480 && (
                     <p className="mt-2 font-sans text-xs text-amber-800 dark:text-amber-300">
-                      Allegation is longer than the target DOH line length — regenerate the draft or
-                      edit it down in the report editor.
+                      This allegation line is long — consider editing it down in the report editor.
                     </p>
                   )}
                 </article>
@@ -292,8 +370,16 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
                 type="button"
                 className="flex w-full items-center justify-between px-4 py-3 text-left font-sans text-sm font-medium"
                 onClick={() => setShowPdf((v) => !v)}
+                aria-expanded={showPdf}
               >
-                <span>Exact PDF subsection text (verification)</span>
+                <span>
+                  Exact PDF subsection text (verification)
+                  {active.quote_ok === false && (
+                    <span className="ml-2 font-sans text-[11px] font-normal text-rose-700 dark:text-rose-300">
+                      — review against approved code text
+                    </span>
+                  )}
+                </span>
                 {showPdf ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
               {showPdf && (
@@ -305,7 +391,7 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
                           {cite}
                         </div>
                         {active.matched_subsection_texts?.[i] && (
-                          <p className="mt-1.5 max-h-48 overflow-y-auto whitespace-pre-wrap font-serif text-sm leading-relaxed text-ink-700 dark:text-ink-200">
+                          <p className="mt-1.5 max-h-80 overflow-y-auto whitespace-pre-wrap font-serif text-sm leading-relaxed text-ink-700 dark:text-ink-200">
                             {active.matched_subsection_texts[i]}
                           </p>
                         )}
@@ -323,7 +409,7 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
                   </button>
                   {showFullCode && (
                     <p className="max-h-64 overflow-y-auto whitespace-pre-wrap font-serif text-sm leading-relaxed text-ink-600 dark:text-ink-300">
-                      {active.wac_text || active.wac_summary || 'Full code text not loaded in this draft payload.'}
+                      {active.wac_text || active.wac_summary || 'Full approved code text is not available for this selection.'}
                     </p>
                   )}
                 </div>

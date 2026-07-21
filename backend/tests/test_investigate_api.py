@@ -23,7 +23,16 @@ def test_investigate_assault_structure(client):
     data = res.json()
 
     assert data.get("regulatory_framework"), "missing Regulatory Framework"
-    assert len(data.get("evidentiary_examples") or []) == 5
+    # Evidentiary examples / findings narrative are human-owned — not auto-seeded.
+    assert (data.get("evidentiary_examples") or []) == []
+    summary = (data.get("summary_of_findings") or "").strip()
+    assert summary, "expected Summary of Findings framework starter"
+    assert "Department of Health" in summary
+    assert "Investigative findings (to be completed)" in summary
+    assert "…" not in summary
+    assert "..." not in summary
+    for wac in case["selected_wacs"]:
+        assert wac in summary or wac.replace("WAC ", "") in summary
     assert "primary investigative standard" in (data.get("authority_statement") or "").lower()
     assert data.get("quote_integrity", {}).get("ok") is True, data.get("quote_integrity")
 
@@ -37,6 +46,7 @@ def test_investigate_assault_structure(client):
         assert a.get("matched_subsections")
         assert a.get("match_reason")
         assert a.get("quote_ok") is True
+        assert "low_confidence" in a
 
     text = data["report_text"]
     assert text.startswith("Investigative Report")
@@ -58,6 +68,10 @@ def test_investigate_assault_structure(client):
     assert "Regulatory Framework:" not in text
     process = data.get("investigative_process") or []
     assert any(s.startswith("Pre-investigation Activity") for s in process)
+    # No complaint-keyword invention (APS/LE/theme-driven investigation steps)
+    joined = "\n".join(process).lower()
+    assert "adult protective" not in joined
+    assert "law enforcement" not in joined
 
 
 def test_investigate_confidentiality_includes_rcw(client):
@@ -74,7 +88,12 @@ def test_investigate_confidentiality_includes_rcw(client):
     data = res.json()
     assert any(e["instrument"] == "RCW" for e in data["regulatory_framework"])
     for a in data["allegations"]:
-        assert '"' in a["allegation_text"]
+        # Baseline shape: unquoted duty language after subsection labels
+        assert '"' not in a["allegation_text"]
+        assert "by having failed to" in a["allegation_text"].lower() or "as applied to the reported concern" in a[
+            "allegation_text"
+        ].lower()
+        assert a["allegation_text"].startswith("Potential violation")
     assert data["quote_integrity"]["ok"] is True
 
 

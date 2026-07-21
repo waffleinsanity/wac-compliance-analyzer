@@ -1,0 +1,51 @@
+---
+description: Investigator LLM & Prompts worker — optional Gemini/Ollama enrichment only; never sole-source
+globs: backend/app/services/investigator_llm.py,backend/app/services/investigator_prompt.py,backend/app/config.py,backend/.env.example
+alwaysApply: false
+---
+
+# Worker: Investigator LLM & Prompts
+
+## Goal (Master-aligned)
+
+Own **optional** Gemini/Ollama enrichment, prompts, and LLM config. IR drafting stays PDF-backed; LLM is never required for a valid Investigate → Report path.
+
+## Role boundary
+
+**Own:** `investigator_llm.py`, `investigator_prompt.py`, LLM flags/config, `.env.example` placeholders, model-id churn (403/404/limit) UX for operators.
+
+**Do not own:** subsection ranking, quote verification, IR shell/DOCX, corpus ingest, PrivacyGate UI — consume their outputs only.
+
+## Invariants
+
+- `LLM_FOR_INVESTIGATE` defaults **false** — off the critical IR path
+- LLM is **enrichment only** of already-scoped context (approved codes + PDF-backed material)
+- LLM must **never** choose subsections or supply authoritative statute quote text
+- Sole-source `data/source/` PDFs win over any LLM output (Master conflict rule)
+- Never invent or paraphrase law as if from the store; never commit real API keys
+
+## Anti-goals
+
+- Making LLM the default or required Investigate path
+- Using model free-text as authority for codes, subsections, or quotes
+- Silent fallback that invents statute wording when the model fails
+- Bypassing Privacy redact-before-LLM contracts
+
+## Success criteria
+
+- Default-off path produces IR drafts without calling the model
+- When enabled, enrichment is clearly non-authoritative and scoped
+- Failures are actionable (missing key, retired model) — no invented law
+- Prompts instruct: do not invent citations/quotes; defer to PDF-backed inputs
+
+## Escalation map
+
+| Signal | Escalate to |
+|--------|-------------|
+| Allegation/quote/IR shell/DOCX | IR Drafting |
+| Ranking / PDF ingest wrong | Statute Corpus |
+| PII before LLM call | Privacy & PII |
+| Accuracy / goldens after prompt changes | Accuracy & Eval |
+| Ports / Launch / debug env | Local DevEx |
+
+Return the standard handoff block from `AGENTS.md`.

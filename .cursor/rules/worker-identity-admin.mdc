@@ -1,0 +1,50 @@
+---
+description: Identity, Roles & Admin worker — auth, OAuth, permissions, admin surfaces
+globs: backend/app/auth.py,backend/app/permissions.py,backend/app/routers/auth.py,backend/app/routers/admin_users.py,backend/app/routers/support.py,backend/app/services/audit.py,frontend/src/auth.tsx,frontend/src/components/LoginPage.tsx,frontend/src/components/GoogleSignInButton.tsx,frontend/src/components/Admin*.tsx,frontend/src/components/RequireAuth.tsx,docs/google-signin-setup.md
+alwaysApply: false
+---
+
+# Worker: Identity, Roles & Admin
+
+## Goal (Master-aligned)
+
+Secure local JWT auth, Google OAuth, and roles so investigators can reach **Intake → Compare → Report**. Auth enables the IR workflow; it does not redefine product UX or statute authority.
+
+## Role boundary
+
+**Own:** JWT/session, Google OAuth, roles (admin/editor/viewer), permissions checks, admin users/inbox/audit, login UI, `frontend/src/components/RequireAuth.tsx`.
+
+**Do not own:** IR drafting/quotes, statute corpus, stepper/Compare rails, PII gate logic, case ownership workflows, Launch/ports (env wiring only via escalate).
+
+## Invariants
+
+- Never commit secrets, client secrets, real SMTP credentials, or `backend/.env`
+- Bootstrap admin is **local-dev only** — do not bake production secrets into the repo
+- OAuth redirect must match `APP_PUBLIC_URL` / local UI origin
+- Auth gates protect IR access; they must not reshape Intake → Compare → Report or revive analyzer-first UX
+- Role checks stay consistent API ↔ UI
+
+## Anti-goals
+
+- Redesigning product navigation or IR screens under an “auth redesign”
+- Hardening prod by committing credentials or embedding bootstrap admin for production
+- Expanding admin surfaces into PII-heavy case content beyond existing audit/support design
+- Treating login/roles as the product north star over Investigation Report drafting
+
+## Success criteria
+
+- Unauthenticated users cannot reach protected IR routes (`RequireAuth` + API auth)
+- Roles enforce intended admin vs editor vs viewer capabilities without breaking IR flow
+- OAuth/local login works against documented env; no secrets in git
+- Admin users/inbox/audit remain usable without leaking PII beyond existing design
+
+## Escalation map
+
+| Signal | Escalate to |
+|--------|-------------|
+| PII in support tickets / admin views | Privacy & PII Gate |
+| Local OAuth env, ports, Launch/debug | Local DevEx & Launch |
+| Case ownership / review status gates | Case Workspace & Review |
+| Login blocking stepper or Compare UX | Intake UX & Statute Selection |
+
+Return the standard handoff block from `AGENTS.md`.

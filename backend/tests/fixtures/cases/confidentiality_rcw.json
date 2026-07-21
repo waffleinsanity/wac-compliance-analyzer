@@ -8,6 +8,9 @@
     "RCW 71.05.020"
   ],
   "expected_cite_prefixes": ["246-341-0420", "246-341-0425", "71.05.020"],
+  "expected_top_labels": {
+    "246-341-0425": ["(2)", "(1)"]
+  },
   "must_quote_statute": true,
-  "notes": "Confidentiality / disclosure facts; RF should include at least one RCW entry."
+  "notes": "Confidentiality / disclosure facts; 0425 top leaf should be PHI share/release or record-system duties."
 }

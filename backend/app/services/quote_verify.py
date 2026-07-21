@@ -1,6 +1,7 @@
 """Quote fidelity checks against the local PDF statute store.
 
-Every quoted span in allegations / Regulatory Framework / evidentiary examples
+Statute language in allegations (Baseline unquoted duty phrases after subsection
+labels), plus any remaining double-quoted spans in framework / evidentiary examples,
 must be a contiguous substring of the cited PDF node text (whitespace-normalized).
 """
 
@@ -20,6 +21,12 @@ from app.services.wac_scope import (
 
 QUOTE_RE = re.compile(r'"([^"]+)"')
 ELLIPSIS_CHARS = ("…", "...", "\u2026")
+# Baseline allegation body after the connector: (1)(a) duty…; and (2) duty…
+_FAILED_TO_BODY_RE = re.compile(
+    r"by having failed to\s+(.+?)(?:\.\s*$|\.$)",
+    re.IGNORECASE | re.DOTALL,
+)
+_SUBSECTION_LABEL_RE = re.compile(r"^((?:\([0-9a-z]+\))+)\s+(.+)$", re.IGNORECASE)
 
 
 def normalize_ws(text: str) -> str:
@@ -29,6 +36,48 @@ def normalize_ws(text: str) -> str:
 
 def extract_quoted_spans(text: str) -> list[str]:
     return [m.group(1) for m in QUOTE_RE.finditer(text or "") if m.group(1).strip()]
+
+
+def extract_duty_spans(text: str) -> list[str]:
+    """Extract unquoted duty phrases after subsection labels (Baseline allegation shape).
+
+    Example:
+      … by having failed to (1)(a)(iii) adopting, periodically reviewing…; (1)(b) provide…
+    → ["adopting, periodically reviewing…", "provide…"]
+    """
+    m = _FAILED_TO_BODY_RE.search(text or "")
+    if not m:
+        return []
+    body = normalize_ws(m.group(1)).rstrip(".")
+    if not body:
+        return []
+    clauses = re.split(r";\s*(?:and\s+)?", body)
+    spans: list[str] = []
+    for clause in clauses:
+        clause = re.sub(r"^and\s+", "", clause.strip(), flags=re.IGNORECASE).strip()
+        if not clause:
+            continue
+        labeled = _SUBSECTION_LABEL_RE.match(clause)
+        if labeled:
+            duty = labeled.group(2).strip().rstrip(".")
+            if duty:
+                spans.append(duty)
+        else:
+            # Unlabeled fallback: whole clause is the duty phrase
+            spans.append(clause.rstrip("."))
+    return spans
+
+
+def extract_statute_spans(text: str) -> list[str]:
+    """Quoted spans plus Baseline-style unquoted duty phrases for store checks."""
+    spans = extract_quoted_spans(text)
+    seen = {normalize_ws(s) for s in spans}
+    for duty in extract_duty_spans(text):
+        key = normalize_ws(duty)
+        if key and key not in seen:
+            seen.add(key)
+            spans.append(duty)
+    return spans
 
 
 def _code_from_cite(cite: str) -> str:
@@ -68,12 +117,74 @@ def _fold_quotes(text: str) -> str:
     )
 
 
+def _fold_for_match(text: str) -> str:
+    """Normalize for substring checks — Baseline strips definitional quotes from duties."""
+    t = _fold_quotes(normalize_ws(text))
+    # Store: `"Release" means…`  Allegation: `Release means…`
+    t = re.sub(r"['\"]+", "", t)
+    return normalize_ws(t)
+
+
 def is_contiguous_substring(quote: str, source: str) -> bool:
-    q = _fold_quotes(normalize_ws(quote))
-    s = _fold_quotes(normalize_ws(source))
+    """True when quote is a contiguous substring of source (store-authored duties).
+
+    Tolerates definitional quotes, whitespace, and trailing punctuation so text we
+    just pulled from the PDF store does not false-fail against that same store.
+    """
+    q = _fold_for_match(quote)
+    s = _fold_for_match(source)
     if not q or not s:
         return False
-    return q in s
+    if q in s:
+        return True
+    q2 = q.rstrip(" .;,:")
+    s2 = s.rstrip(" .;,:")
+    return bool(q2) and q2 in s2
+
+
+def repair_allegation_text_from_store(text: str, wac_code: str) -> str:
+    """Rewrite labeled duty phrases using exact PDF store text for each cite.
+
+    Used after auto-draft so Compare never flags statute wording we ourselves emitted.
+    """
+    from app.services.wac_scope import (
+        duty_phrase_from_text,
+        normalize_statute_text,
+        validate_subsection_cite,
+    )
+
+    m = _FAILED_TO_BODY_RE.search(text or "")
+    if not m:
+        return text
+    code = re.sub(r"^(?:WAC|RCW)\s+", "", (wac_code or "").strip(), flags=re.IGNORECASE)
+    prefix = text[: m.start()]
+    body = m.group(1).strip().rstrip(".")
+    parts = re.split(r";\s*(?:and\s+)?", body)
+    rebuilt: list[str] = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        labeled = _SUBSECTION_LABEL_RE.match(part)
+        if not labeled:
+            rebuilt.append(part)
+            continue
+        label = labeled.group(1)
+        sub = validate_subsection_cite(code, f"{code}{label}")
+        if not sub or not sub.text:
+            rebuilt.append(part)
+            continue
+        duty = normalize_statute_text(sub.text).rstrip(" ;.")
+        if len(duty) > 320:
+            duty = duty_phrase_from_text(sub.text).rstrip(" ;.")
+        rebuilt.append(f"{label} {duty}".strip())
+    if not rebuilt:
+        return text
+    if len(rebuilt) == 1:
+        mid = rebuilt[0]
+    else:
+        mid = "; ".join(rebuilt[:-1]) + "; and " + rebuilt[-1]
+    return f"{prefix}by having failed to {mid}.".strip()
 
 
 @dataclass
@@ -143,7 +254,8 @@ def check_quoted_text(
 ) -> list[QuoteFailure]:
     failures: list[QuoteFailure] = []
     allowed = _allowed_codes(selected_codes)
-    spans = extract_quoted_spans(text)
+    # Allegations: Baseline unquoted duties; framework/examples may still use "…"
+    spans = extract_statute_spans(text)
     if not spans:
         return failures
 

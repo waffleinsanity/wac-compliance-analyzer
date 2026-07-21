@@ -10,6 +10,7 @@ import {
 } from '../api'
 import { useAuth } from '../auth'
 import { canEdit, canReview } from '../permissions'
+import { caseStatusLabel } from '../investigatorLabels'
 
 type Props = {
   caseDetail: CaseDetail
@@ -37,7 +38,8 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
     !editable ||
     caseDetail.status === 'final' ||
     caseDetail.status === 'in_review' ||
-    caseDetail.status === 'archived'
+    caseDetail.status === 'archived' ||
+    caseDetail.status === 'trashed'
 
   useEffect(() => {
     void api
@@ -90,7 +92,7 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
   const setStatus = async (status: string) => {
     await run(async () => {
       await api.setCaseStatus(caseDetail.id, status)
-      setInfo(`Status set to ${status}.`)
+      setInfo(`Status set to ${caseStatusLabel(status)}.`)
     })
   }
 
@@ -110,9 +112,9 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
         <p className="mt-1 text-xs text-ink-500">
           Organize evidence and process notes. Nothing here auto-finalizes findings — you stay in control.
         </p>
-        <div className="mt-2 font-mono text-xs">
-          Status: <span className="font-semibold">{caseDetail.status}</span>
-          {locked ? ' · locked for edit' : ''}
+        <div className="mt-2 font-sans text-xs text-ink-600 dark:text-ink-300">
+          Status: <span className="font-semibold">{caseStatusLabel(caseDetail.status)}</span>
+          {locked ? ' · locked for editing' : ''}
         </div>
       </div>
 
@@ -282,11 +284,18 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
         <form className="flex gap-2" onSubmit={submitComment}>
           <input
             className="input !h-8 flex-1 text-xs"
-            placeholder="Add a review note…"
+            placeholder={
+              caseDetail.status === 'trashed' ? 'Restore case before adding comments…' : 'Add a review note…'
+            }
             value={comment}
             onChange={(e) => setComment(e.target.value)}
+            disabled={caseDetail.status === 'trashed'}
           />
-          <button type="submit" className="btn-secondary !h-8 text-xs" disabled={busy}>
+          <button
+            type="submit"
+            className="btn-secondary !h-8 text-xs"
+            disabled={busy || caseDetail.status === 'trashed'}
+          >
             Post
           </button>
         </form>

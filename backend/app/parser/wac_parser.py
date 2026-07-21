@@ -38,7 +38,7 @@ class WACNode:
     code: str
     title: str
     text: str
-    level: str  # code | primary | secondary | tertiary
+    level: str  # code | primary | secondary | tertiary | quaternary
     parent_id: str | None
     hierarchy_path: str
     primary: str | None = None
@@ -146,9 +146,10 @@ _MARKER_RE = re.compile(
     r"(?:^|\n)\(("
     r"\d+"
     r"|[a-z]"
+    r"|[A-Z]"
     r"|[ivxlcdm]{2,}"
+    r"|[IVXLCDM]{2,}"
     r")\)\s+",
-    re.IGNORECASE,
 )
 _ROMAN_ONLY = re.compile(r"^[ivxlcdm]+$", re.IGNORECASE)
 
@@ -220,54 +221,67 @@ def _parse_subsections(
             )
         )
 
-        # Collect candidate markers inside this primary
-        raw_markers = list(re.finditer(r"(?:^|\n)\(([a-z]+|[ivxlcdm]+)\)\s+", p_body, re.IGNORECASE))
+        # Case-sensitive markers: (a) secondary, (i)/(ii) tertiary, (A) quaternary.
+        # IGNORECASE must not be used — uppercase (A) is not secondary (a).
+        raw_markers = list(
+            re.finditer(r"(?:^|\n)\(([a-z]+|[A-Z]+|[ivxlcdm]+|[IVXLCDM]+)\)\s+", p_body)
+        )
         if not raw_markers:
             continue
 
-        # Classify each marker as secondary letter vs tertiary roman
         classified: list[tuple[re.Match[str], str]] = []
-        tokens = [m.group(1).lower() for m in raw_markers]
+        raw_tokens = [m.group(1) for m in raw_markers]
+        tokens = [t.lower() for t in raw_tokens]
         for idx, m in enumerate(raw_markers):
+            raw_tok = raw_tokens[idx]
             tok = tokens[idx]
             nxt = tokens[idx + 1] if idx + 1 < len(tokens) else ""
             prev = tokens[idx - 1] if idx > 0 else ""
 
-            if len(tok) > 1 and _ROMAN_ONLY.match(tok):
+            # Uppercase letter(s) → quaternary (e.g. (A) (B) under (iii))
+            if raw_tok.isupper() and raw_tok.isalpha():
+                kind = "quaternary"
+            elif len(tok) > 1 and _ROMAN_ONLY.match(tok):
                 kind = "tertiary"
             elif tok in {"i", "v", "x"}:
                 # Ambiguous single char: tertiary if neighbors are roman-ish
                 romanish = (
                     (nxt.startswith(tok) and len(nxt) > 1)
-                    or (prev in {"i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"} and _is_roman_token(prev))
+                    or (
+                        prev in {"i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"}
+                        and _is_roman_token(prev)
+                    )
                     or nxt in {"ii", "iii", "iv", "vi", "vii", "viii", "ix", "xi", "xii"}
                     or (tok == "i" and nxt == "ii")
                     or (tok == "v" and nxt in {"vi", "vii"})
                     or (tok == "x" and nxt in {"xi", "xii"})
                 )
                 # Letter secondary if sequential after h/j etc.
-                letterish = prev in {"h", "j", "u", "w"} or (prev and len(prev) == 1 and prev.isalpha() and prev not in {"i", "v", "x"})
+                letterish = prev in {"h", "j", "u", "w"} or (
+                    prev and len(prev) == 1 and prev.isalpha() and prev not in {"i", "v", "x"}
+                )
                 if romanish and not (letterish and prev == "h" and tok == "i" and nxt == "j"):
                     kind = "tertiary"
                 elif letterish or (tok == "i" and prev == "h"):
                     kind = "secondary"
                 else:
-                    # Default: lone (i)/(v)/(x) under a primary with letter secondaries nearby → tertiary
-                    has_letter_secondary = any(len(t) == 1 and t.isalpha() and t not in {"i", "v", "x"} for t in tokens)
+                    has_letter_secondary = any(
+                        len(t) == 1 and t.isalpha() and t not in {"i", "v", "x"} for t in tokens
+                    )
                     kind = "tertiary" if has_letter_secondary or romanish else "secondary"
-            elif len(tok) == 1 and tok.isalpha():
+            elif len(tok) == 1 and tok.isalpha() and raw_tok.islower():
                 kind = "secondary"
             else:
                 kind = "tertiary"
             classified.append((m, kind))
 
-        # Build secondary/tertiary nodes from classified markers
+        # Build secondary/tertiary/quaternary nodes from classified markers
         secondary_indices = [idx for idx, (_, kind) in enumerate(classified) if kind == "secondary"]
         for s_pos, s_idx in enumerate(secondary_indices):
             sm, _ = classified[s_idx]
             sletter = sm.group(1).lower()
             s_start = sm.end()
-            # Secondary ends at next secondary marker, else end of primary
+            # Secondary ends at next secondary only — quaternary (A) stays inside this secondary
             if s_pos + 1 < len(secondary_indices):
                 s_end = classified[secondary_indices[s_pos + 1]][0].start()
             else:
@@ -298,7 +312,9 @@ def _parse_subsections(
 
             # Tertiaries belonging to this secondary
             t_start_idx = s_idx + 1
-            t_end_idx = secondary_indices[s_pos + 1] if s_pos + 1 < len(secondary_indices) else len(classified)
+            t_end_idx = (
+                secondary_indices[s_pos + 1] if s_pos + 1 < len(secondary_indices) else len(classified)
+            )
             tert_markers = [
                 classified[t]
                 for t in range(t_start_idx, t_end_idx)
@@ -308,7 +324,6 @@ def _parse_subsections(
                 troman = tm.group(1).lower()
                 t_body_start = tm.end()
                 t_body_end = tert_markers[t_i + 1][0].start() if t_i + 1 < len(tert_markers) else s_end
-                # Relative to p_body; clamp within secondary
                 t_body = p_body[t_body_start:t_body_end].strip()
                 tertiary_id = f"{secondary_id}({troman})"
                 nodes.append(
@@ -334,16 +349,63 @@ def _parse_subsections(
                     )
                 )
 
+                # Quaternaries (A)(B)(C) under this tertiary
+                next_tert_start = (
+                    tert_markers[t_i + 1][0].start() if t_i + 1 < len(tert_markers) else s_end
+                )
+                quat_markers = [
+                    classified[qi]
+                    for qi in range(t_start_idx, t_end_idx)
+                    if classified[qi][1] == "quaternary"
+                    and tm.end() <= classified[qi][0].start() < next_tert_start
+                ]
+                for q_i, (qm, _) in enumerate(quat_markers):
+                    qletter = qm.group(1).upper()
+                    q_body_start = qm.end()
+                    q_body_end = (
+                        quat_markers[q_i + 1][0].start()
+                        if q_i + 1 < len(quat_markers)
+                        else next_tert_start
+                    )
+                    q_body = p_body[q_body_start:q_body_end].strip()
+                    quaternary_id = f"{tertiary_id}({qletter})"
+                    nodes.append(
+                        WACNode(
+                            id=quaternary_id,
+                            chapter=chapter,
+                            code=code,
+                            title=title,
+                            text=q_body,
+                            level="quaternary",
+                            parent_id=tertiary_id,
+                            hierarchy_path=quaternary_id,
+                            primary=pnum,
+                            secondary=sletter,
+                            tertiary=troman,
+                            version_date=version_date,
+                            certified_date=certified_date,
+                            source_file=source_file,
+                            trigger_phrases=_generate_trigger_phrases(
+                                f"{title} ({pnum})({sletter})({troman})({qletter})",
+                                q_body,
+                                max_phrases=3,
+                            ),
+                            metadata={"full_reference": quaternary_id, "quaternary": qletter},
+                        )
+                    )
+
         # Orphan tertiaries directly under primary (no letter secondary)
         if not secondary_indices:
             tert_markers = [c for c in classified if c[1] == "tertiary"]
             # Also treat leftover secondary-classified romans as tertiary when no letters
             if not tert_markers:
-                tert_markers = classified
+                tert_markers = [c for c in classified if c[1] != "quaternary"]
             for t_i, (tm, _) in enumerate(tert_markers):
                 troman = tm.group(1).lower()
                 t_body_start = tm.end()
-                t_body_end = tert_markers[t_i + 1][0].start() if t_i + 1 < len(tert_markers) else len(p_body)
+                t_body_end = (
+                    tert_markers[t_i + 1][0].start() if t_i + 1 < len(tert_markers) else len(p_body)
+                )
                 t_body = p_body[t_body_start:t_body_end].strip()
                 # Represent as synthetic secondary-less tertiary path under primary
                 tertiary_id = f"{primary_id}({troman})"
@@ -422,6 +484,24 @@ def parse_all_sources(source_dir: Path) -> list[WACNode]:
         path = source_dir / name
         if path.exists():
             all_nodes.extend(parse_wac_pdf(path))
+
+    # Official single-code section PDFs override chapter extracts for that code
+    # (e.g. data/source/sections/WAC 246-341-0600.pdf certified on leg.wa.gov).
+    sections_dir = source_dir / "sections"
+    if sections_dir.is_dir():
+        override_codes: set[str] = set()
+        override_nodes: list[WACNode] = []
+        for path in sorted(sections_dir.glob("WAC *.pdf")):
+            parsed = parse_wac_pdf(path)
+            if not parsed:
+                continue
+            codes = {n.code for n in parsed}
+            override_codes |= codes
+            override_nodes.extend(parsed)
+        if override_codes:
+            all_nodes = [n for n in all_nodes if n.code not in override_codes]
+            all_nodes.extend(override_nodes)
+
     # Global dedupe
     deduped: dict[str, WACNode] = {}
     for node in all_nodes:

@@ -1,0 +1,57 @@
+---
+description: IR Drafting & Allegation worker — DOH IR pipeline, PDF-backed quotes, shell/DOCX
+globs: backend/app/services/investigation.py,backend/app/services/wac_scope.py,backend/app/services/quote_verify.py,backend/app/services/ir_blank.py,backend/app/services/template_corpus.py,backend/app/services/defensibility.py,backend/app/services/docx_export.py
+alwaysApply: false
+---
+
+# Worker: IR Drafting & Allegation
+
+## Master-aligned goal
+
+Produce PDF-backed allegations and DOH Investigation Report draft/export text from approved WAC/RCW + complaint, along Intake → Compare → Report.
+
+## Role boundary
+
+**Owns:** `investigation.py`, `wac_scope.py`, `quote_verify.py`, `ir_blank.py`, `template_corpus.py`, `defensibility.py`, `docx_export.py` — allegation draft, quote integrity, IR blank labels, template shell phrasing, DOCX emit.
+
+**Does not own:** PDF parse / Chroma / ingest (`data/source/` store), investigator LLM prompts, Cases/Review UI, Intake stepper UI, PII gate, auth, Launch/DevEx, accuracy goldens (consume/escalate only).
+
+## Invariants
+
+1. `data/source/` PDFs = **sole authority** for subsection choice and statute quote text.
+2. Example DOCX (`data/examples/`, `data/templates/`, `template_corpus`) = **shell phrasing only** — never code selection or quote wording.
+3. Flow context: Intake → Compare → Report; do not recenter legacy analyzer UX.
+4. LLM off critical IR path (`LLM_FOR_INVESTIGATE` defaults false); never treat LLM free-text as cite/quote authority.
+5. Never invent or paraphrase statute text as if from the PDF store; flag/fail unverified quotes.
+6. Allegation lines follow Baseline examples (`data/examples/Baseline Allegations RTF.txt`) — **no quotation marks** around duty language; opener is `Potential violation` (not `A potential violation`).
+7. Keep internal reason codes (`lexical_overlap`, `code_fallback`, quote failure enums) out of user-facing strings — UI maps via `investigatorLabels.ts`.
+8. **Product scope:** Assist **only** WAC-templated IR portions (allegation lines, Regulatory Framework, statute quotes / Compare verification, blank DOH process/facility shell labels). **Human owns** investigation activity, evidentiary interview/scripts, process steps beyond the blank shell, and Summary of Findings narrative — never auto-write those from complaint keywords or themes.
+
+## Anti-goals (refuse)
+
+- Inventing cites/quotes or “fixing” ranking by hardcoding statutes
+- Treating example DOCX as legal authority
+- Putting LLM output on the critical cite/quote path
+- Reintroducing analyzer-first findings/trigger-phrase framing as the IR default
+- Auto-seeding APS/LE/theme-driven process steps, fabricated evidentiary scripts, or findings narrative
+- Editing Corpus, Privacy, Auth, Launch, or Eval-owned paths
+
+## Success criteria
+
+- Allegations cite only PDF-backed subsections from approved selections
+- Emitted statute quotes pass `quote_verify` (or are explicitly flagged unverified)
+- DOH IR section labels / formal tone preserved; Report editor + DOCX stay compatible
+- Targeted tests green when touched: `test_quote_verify`, `test_allegation_source`, `test_subsection_ranking` (escalate Eval for broader goldens)
+
+## Escalation map
+
+| Need | Worker |
+|------|--------|
+| Ingest / empty corpus / ranking inputs wrong | Statute Corpus |
+| Golden / accuracy suite after IR change | Accuracy & Eval |
+| Cat 3/4 before draft text | Privacy & PII |
+| Optional enrichment only (not cites) | Investigator LLM |
+| Report editor / case persist / export pack | Case Review / Intake UX |
+| Ambiguous multi-domain or conflict | **Return to Master** |
+
+Deep skill: `wacmakr-ir-drafting`. Return `AGENTS.md` handoff block.

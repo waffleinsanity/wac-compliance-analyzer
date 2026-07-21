@@ -286,7 +286,7 @@ export type AuditLogEntry = {
   created_at?: string | null
 }
 
-export type CaseStatus = 'draft' | 'in_review' | 'final' | 'reopened' | 'archived'
+export type CaseStatus = 'draft' | 'in_review' | 'final' | 'reopened' | 'archived' | 'trashed'
 
 export type CaseSummary = {
   id: number
@@ -298,6 +298,8 @@ export type CaseSummary = {
   owner_user_id: number
   updated_at?: string | null
   created_at?: string | null
+  archived_at?: string | null
+  trashed_at?: string | null
 }
 
 export type CaseEvidence = {
@@ -352,6 +354,7 @@ export type CaseDetail = {
   status_changed_at?: string | null
   status_changed_by?: number | null
   archived_at?: string | null
+  trashed_at?: string | null
   created_at?: string | null
   updated_at?: string | null
   snapshots: CaseSnapshot[]
@@ -375,6 +378,28 @@ export type CaseAnalytics = {
 
 const TOKEN_KEY = 'wac_token'
 
+function formatApiErrorDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((item) => {
+        if (item && typeof item === 'object' && 'msg' in item) {
+          return String((item as { msg: unknown }).msg)
+        }
+        return typeof item === 'string' ? item : ''
+      })
+      .filter(Boolean)
+    if (msgs.length) return msgs.join('; ')
+  }
+  if (detail && typeof detail === 'object' && 'msg' in detail) {
+    return String((detail as { msg: unknown }).msg)
+  }
+  if (detail !== undefined && detail !== null) {
+    return typeof detail === 'object' ? fallback : String(detail)
+  }
+  return fallback
+}
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
 }
@@ -394,14 +419,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(path, { ...options, headers })
   if (!res.ok) {
-    let detail = res.statusText
+    let detail: unknown = res.statusText
     try {
       const data = await res.json()
-      detail = data.detail || JSON.stringify(data)
+      detail = data.detail ?? data
     } catch {
       /* ignore */
     }
-    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+    throw new Error(formatApiErrorDetail(detail, res.statusText))
   }
   if (res.status === 204) return undefined as T
   return res.json()
@@ -579,8 +604,11 @@ export const api = {
     })
   },
 
-  listCases: (include_archived = false) =>
-    request<CaseSummary[]>(`/api/cases?include_archived=${include_archived ? 'true' : 'false'}`),
+  listCases: (view: 'active' | 'archived' | 'trash' | boolean = 'active') => {
+    // boolean kept for older callers: true => archived
+    const mode = typeof view === 'boolean' ? (view ? 'archived' : 'active') : view
+    return request<CaseSummary[]>(`/api/cases?view=${encodeURIComponent(mode)}`)
+  },
   createCase: (payload: {
     case_id_label?: string
     title?: string
@@ -623,6 +651,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ status, note }),
     }),
+  /** Soft-delete — dedicated endpoint (more reliable than /status). */
+  trashCase: (id: number) =>
+    request<CaseDetail>(`/api/cases/${id}/trash`, { method: 'POST' }),
+  /** Restore from archive or trash. */
+  restoreCase: (id: number) =>
+    request<CaseDetail>(`/api/cases/${id}/restore`, { method: 'POST' }),
+  deleteCase: (id: number) =>
+    request<{ ok: boolean; deleted_id: number }>(`/api/cases/${id}`, { method: 'DELETE' }),
   addCaseComment: (id: number, body: string) =>
     request<CaseComment>(`/api/cases/${id}/comments`, {
       method: 'POST',
@@ -637,14 +673,14 @@ export const api = {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
     if (!res.ok) {
-      let detail = res.statusText
+      let detail: unknown = res.statusText
       try {
         const data = await res.json()
-        detail = data.detail || JSON.stringify(data)
+        detail = data.detail ?? data
       } catch {
         /* ignore */
       }
-      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+      throw new Error(formatApiErrorDetail(detail, res.statusText))
     }
     return res.blob()
   },
@@ -655,14 +691,14 @@ export const api = {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
     if (!res.ok) {
-      let detail = res.statusText
+      let detail: unknown = res.statusText
       try {
         const data = await res.json()
-        detail = data.detail || JSON.stringify(data)
+        detail = data.detail ?? data
       } catch {
         /* ignore */
       }
-      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+      throw new Error(formatApiErrorDetail(detail, res.statusText))
     }
     return res.blob()
   },

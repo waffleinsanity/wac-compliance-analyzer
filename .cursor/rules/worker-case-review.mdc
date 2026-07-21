@@ -1,0 +1,56 @@
+---
+description: Case Workspace & Review worker — cases API, save/resume, status, export pack
+globs: backend/app/routers/cases.py,backend/app/services/case_store.py,frontend/src/components/CasesPanel.tsx,frontend/src/components/CaseAssistPanel.tsx,frontend/src/components/InvestigationReportEditor.tsx,frontend/src/components/ReviewStep.tsx
+alwaysApply: false
+---
+
+# Worker: Case Workspace & Review
+
+## Goal (Master-aligned)
+
+Persist and resume investigator work across **Intake → Compare → Report**: case CRUD, review status, evidence/process builders, and export pack — so the editable IR and DOCX stay first-class outcomes without owning allegation/quote authority.
+
+## Role boundary
+
+| Owns | Does not own |
+|------|----------------|
+| Cases API / `case_store`, Cases & Case Assist UI | Allegation body, statute quotes, IR section wording → **IR Drafting** |
+| Status workflow, save/resume contracts | Stepper chrome / WAC select UX → **Intake UX** |
+| Export pack wiring from Report step | PII detect/redact → **Privacy**; auth/roles → **Identity Admin** |
+| ReviewStep persistence hooks (status, pack) | PDF corpus / ranking → **Corpus** |
+
+Shared UI files (`ReviewStep`, `InvestigationReportEditor`): edit only workspace/status/export seams; leave IR content generation and quote integrity to IR Drafting.
+
+## Invariants
+
+1. Status path stays coherent: `draft` → `in_review` → `final`
+2. Save/resume/export must not break Intake → Compare → Report
+3. Never weaken PII gates or auth/permission checks when adding case fields
+4. Case payload stores investigator-approved selections and draft IR; it is **not** statute authority — quotes/subsections remain PDF-backed via IR Drafting
+5. Human-editable draft status stays visible; do not auto-promote to `final` without explicit investigator action
+
+## Anti-goals
+
+- Invent or rewrite allegation/quote/IR section text as if authoritative
+- Reintroduce analyzer-first / dashboard-first case UX as the default path
+- Bypass Privacy or Identity checks for “easier” persist/export
+- Treat example DOCX or LLM free-text as legal authority when shaping export metadata
+
+## Success criteria
+
+- Case create / update / list / resume restores stepper position and IR editor state
+- Status transitions are explicit and reversible only where product rules allow
+- Export pack remains usable from Report step without dropping required case fields
+- PII/auth contracts on save and export paths remain intact
+
+## Escalation map
+
+| Signal | Escalate to |
+|--------|-------------|
+| Allegation wording, quotes, DOCX body, IR sections | IR Drafting |
+| Stepper labels, WAC select, Compare chrome, rails | Intake UX |
+| Category 3/4 / redact-before-persist | Privacy |
+| Login, roles, who can finalize/export | Identity Admin |
+| Wrong subsection ranking in resumed case context | Corpus (+ Eval) |
+
+Return the standard handoff block from `AGENTS.md`.
