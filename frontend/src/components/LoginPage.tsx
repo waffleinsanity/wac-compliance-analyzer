@@ -3,7 +3,7 @@ import { FileCheck2 } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, setToken } from '../api'
 import { useAuth } from '../auth'
-import { GoogleSignInButton, isGoogleSignInEnabled } from './GoogleSignInButton'
+import { GoogleSignInButton, fetchGoogleSignInEnabled } from './GoogleSignInButton'
 
 type Mode = 'login' | 'register' | 'forgot'
 
@@ -22,6 +22,17 @@ export function LoginPage() {
   const [info, setInfo] = useState('')
   const [busy, setBusy] = useState(false)
   const [completingGoogle, setCompletingGoogle] = useState(false)
+  const [googleEnabled, setGoogleEnabled] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchGoogleSignInEnabled().then((ok) => {
+      if (!cancelled) setGoogleEnabled(ok)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!loading && user) navigate('/', { replace: true })
@@ -117,12 +128,12 @@ export function LoginPage() {
           <p className="mt-1 text-sm text-ink-500">
             {mode === 'forgot'
               ? 'We will email a reset link if that address is registered.'
-              : isGoogleSignInEnabled
+              : googleEnabled
                 ? 'Sign in with Google, or use your username and password.'
                 : 'Sign in with your username and password.'}
           </p>
 
-          {mode !== 'forgot' && isGoogleSignInEnabled && (
+          {mode !== 'forgot' && googleEnabled && (
             <div className="mt-6 space-y-4">
               <GoogleSignInButton
                 disabled={busy}

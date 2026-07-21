@@ -1,21 +1,28 @@
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+import secrets
 
 from app.auth import (
     authenticate_user,
     clear_password_reset,
     create_access_token,
+    exchange_google_auth_code,
     get_current_user,
     get_user_by_email,
     get_user_by_username,
+    google_authorize_url,
+    google_configured,
+    google_redirect_uri,
     hash_password,
     hash_reset_token,
     issue_password_reset_token,
-    unique_username_from_email,
     user_to_out_dict,
+    upsert_google_user,
     validate_password_strength,
     verify_google_id_token,
     verify_password,
@@ -38,6 +45,8 @@ from app.schemas import (
 from app.services.email import send_password_reset_email, smtp_configured
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+_GOOGLE_STATE_COOKIE = "wac_google_oauth_state"
 
 
 def _token_for(user: User) -> TokenResponse:
@@ -106,42 +115,96 @@ def login(
     return _token_for(user)
 
 
-@router.post("/google", response_model=TokenResponse)
-def google_login(payload: GoogleAuthRequest, request: Request, db: Session = Depends(get_db)):
+def _login_redirect(query: str) -> RedirectResponse:
+    base = (settings.app_public_url or "http://localhost:5173").rstrip("/")
+    return RedirectResponse(url=f"{base}/login?{query}", status_code=302)
+
+
+@router.get("/google/status")
+def google_status():
+    """Public: whether Google OAuth is configured for this deployment."""
+    return {
+        "enabled": google_configured(),
+        "redirect_uri": google_redirect_uri() if google_configured() else None,
+        "app_public_url": (settings.app_public_url or "").rstrip("/") or None,
+    }
+
+
+@router.get("/google/start")
+@router.get("/google/authorize-url")
+def google_start(request: Request, response: Response):
+    """Begin server-side Google OAuth (full-page redirect)."""
     enforce_rate_limit(
         request,
         "google",
         settings.auth_rate_limit_google,
         settings.auth_rate_limit_window_seconds,
     )
-    info = verify_google_id_token(payload.id_token)
-    sub = info["sub"]
-    email = str(info["email"]).lower()
+    if not google_configured():
+        raise HTTPException(status_code=503, detail="Google Sign-In is not configured")
 
-    user = db.query(User).filter(User.google_sub == sub).first()
-    if not user:
-        user = get_user_by_email(db, email)
-        if user:
-            user.google_sub = sub
-        else:
-            user = User(
-                username=unique_username_from_email(db, email),
-                email=email,
-                # Empty string = no local password (SQLite column may still be NOT NULL)
-                hashed_password="",
-                google_sub=sub,
-                is_admin=False,
-                is_active=True,
-                must_change_password=False,
-            )
-            db.add(user)
+    state = secrets.token_urlsafe(24)
+    redirect = RedirectResponse(url=google_authorize_url(state=state), status_code=302)
+    redirect.set_cookie(
+        key=_GOOGLE_STATE_COOKIE,
+        value=state,
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https",
+        max_age=600,
+        path="/",
+    )
+    return redirect
 
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account is disabled")
 
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+@router.get("/google/callback")
+def google_callback(
+    request: Request,
+    db: Session = Depends(get_db),
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    """Google redirects here; exchange code and send the SPA a short-lived app JWT."""
+    cookie_state = request.cookies.get(_GOOGLE_STATE_COOKIE)
+
+    def _clear(resp: RedirectResponse) -> RedirectResponse:
+        resp.delete_cookie(_GOOGLE_STATE_COOKIE, path="/")
+        return resp
+
+    if error:
+        return _clear(_login_redirect(f"google_error={quote(error)}"))
+    if not code or not state or not cookie_state or state != cookie_state:
+        return _clear(_login_redirect("google_error=invalid_oauth_state"))
+
+    try:
+        info = exchange_google_auth_code(code)
+        user = upsert_google_user(db, info)
+        token = create_access_token(user.username)
+        return _clear(_login_redirect(f"google_token={quote(token)}"))
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else "Google sign-in failed"
+        return _clear(_login_redirect(f"google_error={quote(detail)}"))
+    except Exception:
+        return _clear(_login_redirect("google_error=Google%20sign-in%20failed"))
+
+
+@router.post("/google", response_model=TokenResponse)
+def google_login(payload: GoogleAuthRequest, request: Request, db: Session = Depends(get_db)):
+    """GIS ID-token or auth-code exchange (API clients). Prefer /google/start for the UI."""
+    enforce_rate_limit(
+        request,
+        "google",
+        settings.auth_rate_limit_google,
+        settings.auth_rate_limit_window_seconds,
+    )
+    if payload.code:
+        info = exchange_google_auth_code(payload.code, redirect_uri=payload.redirect_uri)
+    else:
+        if not payload.id_token:
+            raise HTTPException(status_code=400, detail="Provide a Google auth code or ID token")
+        info = verify_google_id_token(payload.id_token)
+    user = upsert_google_user(db, info)
     return _token_for(user)
 
 

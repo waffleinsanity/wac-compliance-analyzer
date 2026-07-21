@@ -5,7 +5,7 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 # Optional: enable Google button in the built SPA
-ARG VITE_GOOGLE_SIGNIN=false
+ARG VITE_GOOGLE_SIGNIN=true
 ARG VITE_GOOGLE_CLIENT_ID=
 ENV VITE_GOOGLE_SIGNIN=$VITE_GOOGLE_SIGNIN
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID

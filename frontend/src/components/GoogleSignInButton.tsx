@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 type Props = {
   disabled?: boolean
   buttonText?: 'signin_with' | 'continue_with' | 'signup_with'
@@ -11,25 +13,71 @@ const LABEL: Record<NonNullable<Props['buttonText']>, string> = {
   signup_with: 'Sign up with Google',
 }
 
-/** Show Google OAuth only when VITE_GOOGLE_SIGNIN=true and backend OAuth is configured. */
-export const isGoogleSignInEnabled = import.meta.env.VITE_GOOGLE_SIGNIN === 'true'
+type GoogleStatus = {
+  enabled: boolean
+  redirect_uri?: string | null
+}
+
+/** Relative start path — works for Vite proxy (local) and same-origin Railway. */
+export const GOOGLE_START_PATH = '/api/auth/google/start'
 
 /**
- * Always start OAuth on 127.0.0.1 — Google treats localhost as a different redirect URI.
- * Port follows the current UI port (default 5173).
+ * Prefer relative /api proxy locally. Only force 127.0.0.1 when the user opened
+ * the UI via localhost (Google console often lists 127.0.0.1 separately).
  */
 export function googleStartHref(): string {
-  if (typeof window === 'undefined') return '/api/auth/google/start'
-  const port = window.location.port || '5173'
-  return `http://127.0.0.1:${port}/api/auth/google/start`
+  if (typeof window === 'undefined') return GOOGLE_START_PATH
+  const { hostname, port, protocol } = window.location
+  if (hostname === 'localhost') {
+    const p = port || '5173'
+    return `http://127.0.0.1:${p}${GOOGLE_START_PATH}`
+  }
+  // Production / LAN / Railway: same-origin relative URL
+  if (!hostname || hostname === '127.0.0.1') {
+    return GOOGLE_START_PATH
+  }
+  // Absolute same-origin also fine; relative is enough
+  void protocol
+  return GOOGLE_START_PATH
 }
+
+export async function fetchGoogleSignInEnabled(): Promise<boolean> {
+  // Build-time override (local Vite) still works, but live builds rely on API status.
+  if (import.meta.env.VITE_GOOGLE_SIGNIN === 'true') return true
+  if (import.meta.env.VITE_GOOGLE_SIGNIN === 'false') return false
+  try {
+    const res = await fetch('/api/auth/google/status')
+    if (!res.ok) return false
+    const data = (await res.json()) as GoogleStatus
+    return Boolean(data.enabled)
+  } catch {
+    return false
+  }
+}
+
+/** @deprecated use fetchGoogleSignInEnabled — kept for LoginPage first paint */
+export const isGoogleSignInEnabled = import.meta.env.VITE_GOOGLE_SIGNIN !== 'false'
 
 export function GoogleSignInButton({
   disabled,
   buttonText = 'continue_with',
   width = 320,
+  onError,
 }: Props) {
-  if (!isGoogleSignInEnabled) {
+  const [ready, setReady] = useState(import.meta.env.VITE_GOOGLE_SIGNIN === 'true')
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const ok = await fetchGoogleSignInEnabled()
+      if (!cancelled) setReady(ok)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!ready) {
     return null
   }
 
@@ -42,9 +90,12 @@ export function GoogleSignInButton({
           e.preventDefault()
           return
         }
-        // Force 127.0.0.1 even if the user opened the app via localhost.
         e.preventDefault()
-        window.location.assign(googleStartHref())
+        try {
+          window.location.assign(googleStartHref())
+        } catch (err) {
+          onError?.(err instanceof Error ? err.message : 'Google sign-in failed')
+        }
       }}
       className="inline-flex items-center justify-center gap-3 rounded-lg border border-ink-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-800 shadow-sm transition hover:bg-ink-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:border-ink-600 dark:bg-ink-900 dark:text-ink-50 dark:hover:bg-ink-800"
       style={{ width, maxWidth: '100%' }}

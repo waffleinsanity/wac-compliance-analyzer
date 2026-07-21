@@ -176,6 +176,84 @@ def unique_username_from_email(db: Session, email: str) -> str:
     return candidate
 
 
+GOOGLE_CALLBACK_PATH = "/api/auth/google/callback"
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
+def google_configured() -> bool:
+    return bool(settings.google_client_id and settings.google_client_secret)
+
+
+def google_redirect_uri() -> str:
+    """Canonical OAuth redirect URI (must match Google Cloud Console exactly)."""
+    if settings.google_redirect_uri.strip():
+        return settings.google_redirect_uri.strip()
+    base = (settings.app_public_url or "http://localhost:5173").rstrip("/")
+    return f"{base}{GOOGLE_CALLBACK_PATH}"
+
+
+def google_authorize_url(*, state: str, redirect_uri: str | None = None) -> str:
+    from urllib.parse import urlencode
+
+    if not google_configured():
+        raise HTTPException(status_code=503, detail="Google Sign-In is not configured")
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": redirect_uri or google_redirect_uri(),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "online",
+        "include_granted_scopes": "true",
+        "prompt": "select_account",
+        "state": state,
+    }
+    return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+
+
+def google_authorize_url_is_accepted(redirect_uri: str | None = None) -> bool:
+    """Best-effort probe used by setup scripts (does not prove console config)."""
+    try:
+        google_authorize_url(state="probe", redirect_uri=redirect_uri)
+        return True
+    except HTTPException:
+        return False
+
+
+def exchange_google_auth_code(code: str, redirect_uri: str | None = None) -> dict:
+    """Exchange an OAuth authorization code for tokens; return verified ID token claims."""
+    import httpx
+
+    if not google_configured():
+        raise HTTPException(status_code=503, detail="Google Sign-In is not configured")
+    uri = redirect_uri or google_redirect_uri()
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            res = client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "redirect_uri": uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+    except Exception as exc:
+        logger.warning("Google token exchange failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Google sign-in failed") from exc
+
+    if res.status_code >= 400:
+        logger.warning("Google token exchange HTTP %s: %s", res.status_code, res.text[:300])
+        raise HTTPException(status_code=401, detail="Google sign-in failed")
+
+    payload = res.json()
+    id_token = payload.get("id_token")
+    if not id_token:
+        raise HTTPException(status_code=401, detail="Google did not return an ID token")
+    return verify_google_id_token(id_token)
+
+
 def verify_google_id_token(id_token: str) -> dict:
     if not settings.google_client_id:
         raise HTTPException(status_code=503, detail="Google Sign-In is not configured")
@@ -200,6 +278,43 @@ def verify_google_id_token(id_token: str) -> dict:
     if not info.get("email") or not info.get("email_verified"):
         raise HTTPException(status_code=401, detail="Google account email is not verified")
     return info
+
+
+def upsert_google_user(db: Session, info: dict) -> User:
+    """Find or create a user from verified Google ID token claims."""
+    sub = info["sub"]
+    email = str(info["email"]).lower()
+
+    user = db.query(User).filter(User.google_sub == sub).first()
+    if not user:
+        user = get_user_by_email(db, email)
+        if user:
+            user.google_sub = sub
+        else:
+            user = User(
+                username=unique_username_from_email(db, email),
+                email=email,
+                # Empty string = no local password (SQLite column may still be NOT NULL)
+                hashed_password="",
+                google_sub=sub,
+                role="editor",
+                is_admin=False,
+                is_active=True,
+                must_change_password=False,
+            )
+            db.add(user)
+
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is disabled")
+
+    display = (info.get("name") or "").strip()
+    if display and not user.display_name:
+        user.display_name = display[:128]
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def bootstrap_admin(db: Session) -> None:
