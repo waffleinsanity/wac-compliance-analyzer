@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import threading
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,19 +15,30 @@ from app.routers import admin_users, analysis, auth, cases, privacy, support, wa
 from app.services.usage_stats import backfill_from_cases
 
 
+def _background_corpus_startup() -> None:
+    """Heavy Chroma/PDF ingest must not block /api/health (Railway healthchecks)."""
+    db = SessionLocal()
+    try:
+        result = wac_store.ingest(db, force=False)
+        seeded = backfill_from_cases(db)
+        print(f"[startup] WAC store: {result}")
+        if seeded:
+            print(f"[startup] Seeded usage stats for {seeded} WACs from existing cases")
+    except Exception as exc:  # noqa: BLE001 — keep API up; surface in logs
+        print(f"[startup] WAC store ingest failed: {exc}")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     db = SessionLocal()
     try:
         bootstrap_admin(db)
-        result = wac_store.ingest(db, force=False)
-        seeded = backfill_from_cases(db)
-        print(f"[startup] WAC store: {result}")
-        if seeded:
-            print(f"[startup] Seeded usage stats for {seeded} WACs from existing cases")
     finally:
         db.close()
+    threading.Thread(target=_background_corpus_startup, name="wac-ingest", daemon=True).start()
     yield
 
 
