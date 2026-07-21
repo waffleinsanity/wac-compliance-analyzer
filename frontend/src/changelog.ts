@@ -31,6 +31,23 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.07.20.3',
+    buildTag: '2026.07.20.3',
+    date: '2026-07-20',
+    title: 'Full Navy EHIP platform parity pass',
+    summary:
+      'Closes the remaining useful EHIP SaaS gaps: update banner, invites, lockout, access requests, diagnostics install, retention UI, and collector protection.',
+    highlights: [
+      'App update banner + /api/version fingerprint; chunk-stale handler keeps sessions intact after deploys.',
+      'Client diagnostics ring buffer installed globally for richer bug reports; session-expired recovery on bug/feedback submit.',
+      'Invite codes + invite-only signup; login lockout (3/15m) with admin Unlock; email domain allowlist config.',
+      'Role elevation access requests (Account settings → Admin Access triage).',
+      'Admin Access tab: mint invites, review requests, run case retention.',
+      'Google unlink; robots.txt + known AI crawler block; health includes version.',
+    ],
+    areas: ['platform', 'auth', 'admin', 'security'],
+  },
+  {
     id: '2026.07.20.2',
     buildTag: '2026.07.20.2',
     date: '2026-07-20',

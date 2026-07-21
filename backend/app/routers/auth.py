@@ -29,9 +29,12 @@ from app.auth import (
     verify_password,
 )
 from app.config import settings
-from app.database import User, get_db
-from app.rate_limit import enforce_rate_limit
+from app.database import AccessRequest, User, get_db, utcnow
+from app.permissions import normalize_role, sync_admin_flag
+from app.rate_limit import enforce_rate_limit, client_ip
 from app.schemas import (
+    AccessRequestCreate,
+    AccessRequestOut,
     ChangePasswordRequest,
     ForgotPasswordRequest,
     GoogleAuthRequest,
@@ -43,7 +46,26 @@ from app.schemas import (
     TokenResponse,
     UserOut,
 )
+from app.services.audit import log_action
 from app.services.email import send_password_reset_email, smtp_configured
+from app.services.invite_codes import find_valid_invite, redeem_invite
+from app.services.login_lockout import (
+    clear_failed_logins,
+    is_lockout_active,
+    record_failed_login,
+)
+
+
+def _email_domain_allowed(email: str) -> bool:
+    raw = (settings.allowed_email_domains or "").strip()
+    if not raw:
+        return True
+    domains = {d.strip().lower().lstrip("@") for d in raw.split(",") if d.strip()}
+    if not domains:
+        return True
+    host = (email or "").split("@")[-1].strip().lower()
+    return host in domains
+
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -60,7 +82,17 @@ def _user_out(user: User) -> UserOut:
 
 @router.post("/register", response_model=TokenResponse)
 def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)):
-    if not settings.allow_public_registration:
+    invite = None
+    if payload.invite_code:
+        invite = find_valid_invite(db, payload.invite_code)
+        if not invite:
+            raise HTTPException(status_code=400, detail="Invalid or expired invite code")
+    elif not settings.allow_public_registration:
+        if settings.allow_invite_signup:
+            raise HTTPException(
+                status_code=403,
+                detail="Public registration is disabled. Ask an administrator for an invite code, or sign in with Google.",
+            )
         raise HTTPException(
             status_code=403,
             detail="Public registration is disabled. Sign in with Google, or ask an administrator for an account.",
@@ -72,23 +104,38 @@ def register(payload: RegisterRequest, request: Request, db: Session = Depends(g
         settings.auth_rate_limit_window_seconds,
     )
     validate_password_strength(payload.password)
+    email = str(payload.email).lower()
+    if not _email_domain_allowed(email):
+        raise HTTPException(status_code=403, detail="Email domain is not allowed for this deployment")
     if get_user_by_username(db, payload.username):
         raise HTTPException(status_code=400, detail="Username already registered")
-    email = str(payload.email).lower()
     if get_user_by_email(db, email):
         raise HTTPException(status_code=400, detail="Email already registered")
+    role = normalize_role(invite.role) if invite else "editor"
     user = User(
         username=payload.username,
         email=email,
         hashed_password=hash_password(payload.password),
-        role="editor",
-        is_admin=False,
+        role=role,
+        is_admin=role == "admin",
         is_active=True,
         must_change_password=False,
     )
+    sync_admin_flag(user)
     db.add(user)
     db.commit()
     db.refresh(user)
+    if invite:
+        redeem_invite(db, invite)
+    log_action(
+        db,
+        user_id=user.id,
+        action="auth.register",
+        entity_type="user",
+        entity_id=user.id,
+        details=f"role={role}; invite={'yes' if invite else 'no'}",
+        ip_address=client_ip(request),
+    )
     return _token_for(user)
 
 
@@ -104,20 +151,40 @@ def login(
         settings.auth_rate_limit_login,
         settings.auth_rate_limit_window_seconds,
     )
+    existing = get_user_by_username(db, form_data.username)
+    if existing:
+        locked, until = is_lockout_active(existing)
+        if locked:
+            mins = max(1, int(((until - utcnow()).total_seconds() if until else 0) / 60))
+            raise HTTPException(
+                status_code=403,
+                detail=f"Account locked after failed sign-in attempts. Try again in about {mins} minute(s), or ask an administrator to unlock.",
+            )
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        # Distinguish disabled account when credentials would otherwise match
-        existing = get_user_by_username(db, form_data.username)
-        if existing and existing.hashed_password and verify_password(
-            form_data.password, existing.hashed_password
-        ):
-            if not existing.is_active:
+        if existing and existing.hashed_password:
+            if verify_password(form_data.password, existing.hashed_password) and not existing.is_active:
                 raise HTTPException(status_code=403, detail="Account is disabled")
+            if existing.hashed_password and not verify_password(form_data.password, existing.hashed_password):
+                if record_failed_login(db, existing):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Account locked after 3 failed sign-in attempts. Try again in 15 minutes, or ask an administrator to unlock.",
+                    )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    clear_failed_logins(db, user)
+    log_action(
+        db,
+        user_id=user.id,
+        action="auth.login",
+        entity_type="user",
+        entity_id=user.id,
+        ip_address=client_ip(request),
+    )
     return _token_for(user)
 
 
@@ -173,6 +240,12 @@ def auth_config():
     """Public auth/UI flags (no secrets)."""
     return {
         "allow_public_registration": bool(settings.allow_public_registration),
+        "allow_invite_signup": bool(settings.allow_invite_signup),
+        "allowed_email_domains": [
+            d.strip().lower().lstrip("@")
+            for d in (settings.allowed_email_domains or "").split(",")
+            if d.strip()
+        ],
         "google_enabled": google_configured(),
     }
 
@@ -423,3 +496,112 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     db.add(user)
     db.commit()
     return MessageResponse(message="Password updated. You can sign in with your new password.")
+
+@router.post("/access-requests", response_model=AccessRequestOut)
+def create_access_request(
+    payload: AccessRequestCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    requested = normalize_role(payload.requested_role)
+    if requested not in {"editor", "admin"}:
+        raise HTTPException(status_code=400, detail="requested_role must be editor or admin")
+    current = normalize_role(user.role, is_admin=bool(user.is_admin))
+    if current == "admin" or (current == "editor" and requested == "editor"):
+        raise HTTPException(status_code=400, detail="You already have equal or higher access")
+    pending = (
+        db.query(AccessRequest)
+        .filter(AccessRequest.user_id == user.id, AccessRequest.status == "pending")
+        .first()
+    )
+    if pending:
+        raise HTTPException(status_code=400, detail="You already have a pending access request")
+    row = AccessRequest(
+        user_id=user.id,
+        requested_role=requested,
+        justification=(payload.justification or "").strip()[:2000],
+        status="pending",
+        created_at=utcnow(),
+        updated_at=utcnow(),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    log_action(
+        db,
+        user_id=user.id,
+        action="access_request.create",
+        entity_type="access_request",
+        entity_id=row.id,
+        details=f"requested={requested}",
+    )
+    return AccessRequestOut(
+        id=row.id,
+        user_id=row.user_id,
+        username=user.username,
+        email=user.email,
+        current_role=current,
+        requested_role=row.requested_role,
+        justification=row.justification or "",
+        status=row.status,
+        admin_note="",
+        created_at=row.created_at,
+        reviewed_at=row.reviewed_at,
+    )
+
+
+@router.get("/access-requests/mine", response_model=list[AccessRequestOut])
+def my_access_requests(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(AccessRequest)
+        .filter(AccessRequest.user_id == user.id)
+        .order_by(AccessRequest.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    current = normalize_role(user.role, is_admin=bool(user.is_admin))
+    return [
+        AccessRequestOut(
+            id=r.id,
+            user_id=r.user_id,
+            username=user.username,
+            email=user.email,
+            current_role=current,
+            requested_role=r.requested_role,
+            justification=r.justification or "",
+            status=r.status,
+            admin_note=r.admin_note or "",
+            created_at=r.created_at,
+            reviewed_at=r.reviewed_at,
+        )
+        for r in rows
+    ]
+
+
+@router.delete("/google/link", response_model=UserOut)
+def unlink_google(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user.google_sub:
+        raise HTTPException(status_code=400, detail="No Google account is linked")
+    if not user.hashed_password:
+        raise HTTPException(
+            status_code=400,
+            detail="Set a password before unlinking Google so you can still sign in",
+        )
+    user.google_sub = None
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    log_action(
+        db,
+        user_id=user.id,
+        action="auth.google.unlink",
+        entity_type="user",
+        entity_id=user.id,
+    )
+    return _user_out(user)

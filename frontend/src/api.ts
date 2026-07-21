@@ -269,6 +269,31 @@ export type UserFeedback = {
   user?: SupportUserBrief | null
 }
 
+export type InviteCode = {
+  id: number
+  code: string
+  role: string
+  max_uses: number
+  used_count: number
+  expires_at?: string | null
+  note?: string
+  created_at?: string | null
+}
+
+export type AccessRequest = {
+  id: number
+  user_id: number
+  username: string
+  email?: string | null
+  current_role: string
+  requested_role: string
+  justification: string
+  status: string
+  admin_note: string
+  created_at?: string | null
+  reviewed_at?: string | null
+}
+
 export type AdminInboxCounts = {
   open_bugs: number
   new_feedback: number
@@ -443,10 +468,10 @@ export const api = {
       started_at?: string
       pid?: number
     }>('/api/health'),
-  register: (username: string, password: string, email: string) =>
+  register: (username: string, password: string, email: string, invite_code?: string) =>
     request<{ access_token: string; username: string }>('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password, email }),
+      body: JSON.stringify({ username, password, email, invite_code: invite_code || null }),
     }),
   login: async (username: string, password: string) => {
     const body = new URLSearchParams({ username, password })
@@ -511,6 +536,31 @@ export const api = {
       `/api/admin/users/${userId}/temp-password`,
       { method: 'POST' },
     ),
+  unlockUser: (userId: number) =>
+    request<User>(`/api/admin/users/${userId}/unlock`, { method: 'POST' }),
+  listInvites: () => request<InviteCode[]>('/api/admin/invites'),
+  createInvite: (payload: { role?: string; max_uses?: number; note?: string; expires_in_days?: number | null }) =>
+    request<InviteCode>('/api/admin/invites', { method: 'POST', body: JSON.stringify(payload) }),
+  listAccessRequests: (status = 'pending') =>
+    request<AccessRequest[]>(`/api/admin/access-requests?status=${encodeURIComponent(status)}`),
+  reviewAccessRequest: (id: number, patch: { status: string; admin_note?: string }) =>
+    request<AccessRequest>(`/api/admin/access-requests/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  createAccessRequest: (payload: { requested_role: string; justification?: string }) =>
+    request<AccessRequest>('/api/auth/access-requests', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  myAccessRequests: () => request<AccessRequest[]>('/api/auth/access-requests/mine'),
+  unlinkGoogle: () => request<User>('/api/auth/google/link', { method: 'DELETE' }),
+  runRetention: () =>
+    request<{ archived: number; trash_purged: number; retention_days: number; trash_retention_days: number }>(
+      '/api/cases/retention/run',
+      { method: 'POST' },
+    ),
+  version: () => request<{ version: string; started_at?: string }>('/api/version'),
   createBugReport: (payload: {
     title: string
     description: string

@@ -47,6 +47,8 @@ class User(Base):
     must_change_password = Column(Boolean, default=False, nullable=False)
     password_reset_token_hash = Column(String(128), nullable=True)
     password_reset_expires = Column(DateTime(timezone=True), nullable=True)
+    failed_login_count = Column(Integer, default=0, nullable=False)
+    lockout_until = Column(DateTime(timezone=True), nullable=True)
 
     favorites = relationship("Favorite", back_populates="user", cascade="all, delete-orphan")
     custom_phrases = relationship(
@@ -269,6 +271,39 @@ class IrLearningSnippet(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class InviteCode(Base):
+    """Single-use or limited invite codes for gated signup (Navy EHIP pattern)."""
+
+    __tablename__ = "invite_codes"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(32), unique=True, nullable=False, index=True)
+    role = Column(String(32), default="viewer", nullable=False)  # admin|editor|viewer
+    max_uses = Column(Integer, default=1, nullable=False)
+    used_count = Column(Integer, default=0, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    note = Column(String(255), default="")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class AccessRequest(Base):
+    """Users request role elevation; admins approve/deny."""
+
+    __tablename__ = "access_requests"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    requested_role = Column(String(32), nullable=False)  # editor|admin
+    justification = Column(Text, default="")
+    status = Column(String(32), default="pending", index=True)  # pending|approved|denied|withdrawn
+    admin_note = Column(Text, default="")
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class BugReport(Base):
     __tablename__ = "bug_reports"
 
@@ -342,6 +377,8 @@ def _migrate_users_table() -> None:
         ("password_reset_expires", "ALTER TABLE users ADD COLUMN password_reset_expires DATETIME"),
         ("display_name", "ALTER TABLE users ADD COLUMN display_name VARCHAR(128)"),
         ("role", "ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'editor'"),
+        ("failed_login_count", "ALTER TABLE users ADD COLUMN failed_login_count INTEGER NOT NULL DEFAULT 0"),
+        ("lockout_until", "ALTER TABLE users ADD COLUMN lockout_until DATETIME"),
     ]
     with engine.begin() as conn:
         for name, sql in alters:

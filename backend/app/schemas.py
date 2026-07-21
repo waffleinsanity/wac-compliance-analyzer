@@ -11,6 +11,55 @@ class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=10, max_length=128)
     email: EmailStr
+    invite_code: str | None = Field(default=None, max_length=64)
+
+
+class InviteCreate(BaseModel):
+    role: str = "viewer"
+    max_uses: int = Field(default=1, ge=1, le=100)
+    note: str = Field(default="", max_length=255)
+    expires_in_days: int | None = Field(default=14, ge=1, le=365)
+
+
+class InviteOut(BaseModel):
+    id: int
+    code: str
+    role: str
+    max_uses: int
+    used_count: int
+    expires_at: datetime | None = None
+    note: str = ""
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class AccessRequestCreate(BaseModel):
+    requested_role: str = Field(default="editor")
+    justification: str = Field(default="", max_length=2000)
+
+
+class AccessRequestReview(BaseModel):
+    status: str  # approved|denied
+    admin_note: str = Field(default="", max_length=2000)
+
+
+class AccessRequestOut(BaseModel):
+    id: int
+    user_id: int
+    username: str = ""
+    email: str | None = None
+    current_role: str = ""
+    requested_role: str
+    justification: str = ""
+    status: str
+    admin_note: str = ""
+    created_at: datetime | None = None
+    reviewed_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
 
 
 class TokenResponse(BaseModel):

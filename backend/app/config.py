@@ -32,6 +32,10 @@ class Settings(BaseSettings):
 
     # Auth: public password registration (disable on shared/multi-user hosts)
     allow_public_registration: bool = True
+    # When public registration is off, allow signup only with a valid invite code
+    allow_invite_signup: bool = True
+    # Comma-separated email domains (empty = any). Example: "doh.wa.gov,wa.gov"
+    allowed_email_domains: str = ""
     # Refuse known default JWT secret when APP_PUBLIC_URL is https or RAILWAY_* is set
     require_secure_secret: bool = True
 

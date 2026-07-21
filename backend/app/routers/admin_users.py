@@ -15,10 +15,21 @@ from app.auth import (
     user_to_out_dict,
     validate_password_strength,
 )
-from app.database import User, get_db
+from app.database import AccessRequest, InviteCode, User, get_db, utcnow
 from app.permissions import ROLES, normalize_role, sync_admin_flag
-from app.schemas import AdminCreateUser, AdminUserUpdate, TempPasswordResponse, UserOut
+from app.schemas import (
+    AccessRequestOut,
+    AccessRequestReview,
+    AdminCreateUser,
+    AdminUserUpdate,
+    InviteCreate,
+    InviteOut,
+    TempPasswordResponse,
+    UserOut,
+)
 from app.services.audit import log_action
+from app.services.invite_codes import create_invite
+from app.services.login_lockout import unlock_user_logins
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -203,3 +214,131 @@ def set_temp_password(
         temporary_password=temp,
         must_change_password=True,
     )
+
+@router.post("/users/{user_id}/unlock", response_model=UserOut)
+def unlock_user(
+    user_id: int,
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    unlock_user_logins(db, user)
+    log_action(
+        db,
+        user_id=admin.id,
+        action="admin.user.unlock",
+        entity_type="user",
+        entity_id=user.id,
+        details="cleared login lockout",
+    )
+    db.refresh(user)
+    return _user_out(user)
+
+
+@router.get("/invites", response_model=list[InviteOut])
+def list_invites(_: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    rows = db.query(InviteCode).order_by(InviteCode.created_at.desc()).limit(200).all()
+    return [InviteOut.model_validate(r) for r in rows]
+
+
+@router.post("/invites", response_model=InviteOut)
+def mint_invite(
+    payload: InviteCreate,
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    role = normalize_role(payload.role)
+    if role not in ROLES:
+        raise HTTPException(status_code=400, detail="role must be admin, editor, or viewer")
+    expires_at = None
+    if payload.expires_in_days:
+        from datetime import timedelta
+
+        expires_at = utcnow() + timedelta(days=payload.expires_in_days)
+    row = create_invite(
+        db,
+        role=role,
+        max_uses=payload.max_uses,
+        expires_at=expires_at,
+        note=payload.note,
+        created_by=admin.id,
+    )
+    log_action(
+        db,
+        user_id=admin.id,
+        action="admin.invite.create",
+        entity_type="invite",
+        entity_id=row.id,
+        details=f"role={row.role}; max_uses={row.max_uses}",
+    )
+    return InviteOut.model_validate(row)
+
+
+def _access_out(db: Session, row: AccessRequest) -> AccessRequestOut:
+    u = db.query(User).filter(User.id == row.user_id).first()
+    return AccessRequestOut(
+        id=row.id,
+        user_id=row.user_id,
+        username=u.username if u else "",
+        email=u.email if u else None,
+        current_role=(u.role if u else "") or "",
+        requested_role=row.requested_role,
+        justification=row.justification or "",
+        status=row.status,
+        admin_note=row.admin_note or "",
+        created_at=row.created_at,
+        reviewed_at=row.reviewed_at,
+    )
+
+
+@router.get("/access-requests", response_model=list[AccessRequestOut])
+def list_access_requests(
+    status_filter: str | None = Query(default="pending", alias="status"),
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(AccessRequest).order_by(AccessRequest.created_at.desc())
+    if status_filter and status_filter != "all":
+        q = q.filter(AccessRequest.status == status_filter)
+    return [_access_out(db, r) for r in q.limit(200).all()]
+
+
+@router.patch("/access-requests/{request_id}", response_model=AccessRequestOut)
+def review_access_request(
+    request_id: int,
+    payload: AccessRequestReview,
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    row = db.query(AccessRequest).filter(AccessRequest.id == request_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if row.status != "pending":
+        raise HTTPException(status_code=400, detail="Request is no longer pending")
+    decision = (payload.status or "").strip().lower()
+    if decision not in {"approved", "denied"}:
+        raise HTTPException(status_code=400, detail="status must be approved or denied")
+    row.status = decision
+    row.admin_note = payload.admin_note or ""
+    row.reviewed_by = admin.id
+    row.reviewed_at = utcnow()
+    if decision == "approved":
+        user = db.query(User).filter(User.id == row.user_id).first()
+        if user:
+            user.role = normalize_role(row.requested_role)
+            sync_admin_flag(user)
+            db.add(user)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    log_action(
+        db,
+        user_id=admin.id,
+        action=f"admin.access_request.{decision}",
+        entity_type="access_request",
+        entity_id=row.id,
+        details=f"user={row.user_id}; role={row.requested_role}",
+    )
+    return _access_out(db, row)

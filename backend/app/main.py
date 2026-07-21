@@ -2,9 +2,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import threading
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.auth import assert_production_secret_safe, bootstrap_admin
@@ -13,6 +13,17 @@ from app.database import SessionLocal, init_db
 from app.rag.store import wac_store
 from app.routers import admin_users, analysis, auth, cases, privacy, support, wacs
 from app.services.usage_stats import backfill_from_cases
+
+_BOT_UA = (
+    "gptbot",
+    "chatgpt-user",
+    "ccbot",
+    "anthropic-ai",
+    "claude-web",
+    "google-extended",
+    "bytespider",
+    "petalbot",
+)
 
 
 def _background_corpus_startup() -> None:
@@ -57,6 +68,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def block_known_collectors(request: Request, call_next):
+    ua = (request.headers.get("user-agent") or "").lower()
+    if ua and any(bot in ua for bot in _BOT_UA):
+        return Response(status_code=403, content="Forbidden")
+    return await call_next(request)
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
+
 
 app.include_router(auth.router)
 app.include_router(admin_users.router)

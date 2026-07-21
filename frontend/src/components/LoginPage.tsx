@@ -24,6 +24,8 @@ export function LoginPage() {
   const [completingGoogle, setCompletingGoogle] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
   const [publicRegister, setPublicRegister] = useState(true)
+  const [inviteSignup, setInviteSignup] = useState(true)
+  const [inviteCode, setInviteCode] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -31,13 +33,23 @@ export function LoginPage() {
       const [googleOk, cfg] = await Promise.all([
         fetchGoogleSignInEnabled(),
         fetch('/api/auth/config')
-          .then(async (r) => (r.ok ? ((await r.json()) as { allow_public_registration?: boolean }) : null))
+          .then(async (r) =>
+            r.ok
+              ? ((await r.json()) as {
+                  allow_public_registration?: boolean
+                  allow_invite_signup?: boolean
+                })
+              : null,
+          )
           .catch(() => null),
       ])
       if (cancelled) return
       setGoogleEnabled(googleOk)
       if (cfg && typeof cfg.allow_public_registration === 'boolean') {
         setPublicRegister(cfg.allow_public_registration)
+      }
+      if (cfg && typeof cfg.allow_invite_signup === 'boolean') {
+        setInviteSignup(cfg.allow_invite_signup)
       }
     })()
     return () => {
@@ -49,9 +61,11 @@ export function LoginPage() {
     if (!loading && user) navigate('/', { replace: true })
   }, [loading, user, navigate])
 
+  const canRegister = publicRegister || inviteSignup
+
   useEffect(() => {
-    if (!publicRegister && mode === 'register') setMode('login')
-  }, [publicRegister, mode])
+    if (!canRegister && mode === 'register') setMode('login')
+  }, [canRegister, mode])
 
   // Complete server-side Google OAuth return: /login?google_token=... or google_error=...
   useEffect(() => {
@@ -98,7 +112,7 @@ export function LoginPage() {
         await login(username, password)
         navigate('/', { replace: true })
       } else if (mode === 'register') {
-        await register(username, password, email)
+        await register(username, password, email, inviteCode.trim() || undefined)
         navigate('/', { replace: true })
       } else {
         const res = await api.forgotPassword(email)
@@ -220,6 +234,22 @@ export function LoginPage() {
                 )}
               </div>
             )}
+            {mode === 'register' && (
+              <div>
+                <label className="label" htmlFor="login-invite">
+                  Invite code {publicRegister ? '(optional)' : '(required)'}
+                </label>
+                <input
+                  id="login-invite"
+                  className="input"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  required={!publicRegister}
+                  autoComplete="off"
+                  placeholder="Provided by an administrator"
+                />
+              </div>
+            )}
             {error && <p className="text-sm text-rose-600 whitespace-pre-wrap">{error}</p>}
             {info && <p className="text-sm text-tide-700 dark:text-tide-300">{info}</p>}
             <button type="submit" className="btn-primary w-full" disabled={busy}>
@@ -247,7 +277,7 @@ export function LoginPage() {
                 >
                   Forgot password?
                 </button>
-                {publicRegister && (
+                {canRegister && (
                   <button
                     type="button"
                     className="text-left text-tide-600 hover:underline"
@@ -260,14 +290,14 @@ export function LoginPage() {
                     Need an account? Register
                   </button>
                 )}
-                {!publicRegister && googleEnabled && (
+                {!canRegister && googleEnabled && (
                   <p className="text-xs text-ink-400">
                     New investigators: use Sign in with Google. Admins can also create accounts.
                   </p>
                 )}
               </>
             )}
-            {mode === 'register' && publicRegister && (
+            {mode === 'register' && canRegister && (
               <button
                 type="button"
                 className="text-left text-tide-600 hover:underline"

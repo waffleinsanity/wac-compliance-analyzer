@@ -85,7 +85,15 @@ export function BugReportDialog({ open, onClose, appContext }: Props) {
       reset()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit bug report')
+      const msg = err instanceof Error ? err.message : 'Failed to send bug report'
+      if (/401|unauthoriz|sign in|session/i.test(msg)) {
+        setError('Your session expired. Sign in again, then resubmit this report.')
+        window.setTimeout(() => {
+          window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`)
+        }, 1200)
+      } else {
+        setError(msg)
+      }
     } finally {
       setBusy(false)
     }

@@ -70,6 +70,21 @@ export function AdminUsersPanel() {
     }
   }
 
+  const unlock = async (userId: number) => {
+    setBusyId(userId)
+    setError('')
+    setInfo('')
+    try {
+      await api.unlockUser(userId)
+      setInfo('Login lockout cleared.')
+      await load(search)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unlock failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const createUser = async (e: FormEvent) => {
     e.preventDefault()
     setCreating(true)
@@ -258,6 +273,14 @@ export function AdminUsersPanel() {
                         onClick={() => issueTemp(u.id)}
                       >
                         Temp password
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost !h-8 !px-2 text-xs"
+                        disabled={busyId === u.id}
+                        onClick={() => void unlock(u.id)}
+                      >
+                        Unlock
                       </button>
                     </div>
                   </td>

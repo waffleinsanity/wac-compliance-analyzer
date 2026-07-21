@@ -229,6 +229,7 @@ def reload_templates(_: User = Depends(get_admin_user)):
 @router.get("/health")
 def health():
     from app.config import settings
+    from app.services.app_version import get_app_version
     from app.services.investigator_llm import llm_available
     from app.services.template_corpus import load_template_corpus
 
@@ -237,6 +238,7 @@ def health():
         "status": "ok",
         "pid": os.getpid(),
         "started_at": _started_at,
+        "version": get_app_version(),
         "features": dict(_HEALTH_FEATURES),
         "wac_nodes": len(wac_store.nodes),
         "wac_codes": len(wac_store.get_code_nodes()),
@@ -252,3 +254,11 @@ def health():
             "has_api_key": bool(settings.llm_api_key),
         },
     }
+
+
+@router.get("/version")
+def version():
+    """Public deploy fingerprint for the in-app update banner."""
+    from app.services.app_version import get_app_version
+
+    return {"version": get_app_version(), "started_at": _started_at}

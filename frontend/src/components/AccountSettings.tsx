@@ -147,7 +147,67 @@ export function AccountSettings({ open, onClose, forcePasswordChange = false }: 
                   After linking, Google sign-in opens this same account (including admin).
                 </p>
               )}
+              {user.has_google && user.has_password && (
+                <button
+                  type="button"
+                  className="btn-ghost mt-3"
+                  disabled={busy}
+                  onClick={() => {
+                    void (async () => {
+                      setBusy(true)
+                      setError('')
+                      setInfo('')
+                      try {
+                        await api.unlinkGoogle()
+                        await refresh()
+                        setInfo('Google account unlinked.')
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Failed to unlink Google')
+                      } finally {
+                        setBusy(false)
+                      }
+                    })()
+                  }}
+                >
+                  Unlink Google
+                </button>
+              )}
             </div>
+
+            {!forcePasswordChange && user.role !== 'admin' && (
+              <div className="mb-6 space-y-3 border-b border-ink-200/70 pb-6 dark:border-ink-700">
+                <h3 className="font-semibold">Request higher access</h3>
+                <p className="text-xs text-ink-500">
+                  Ask an administrator to elevate your role (viewer → editor, or editor → admin).
+                </p>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={busy || user.role === 'admin'}
+                  onClick={() => {
+                    void (async () => {
+                      setBusy(true)
+                      setError('')
+                      setInfo('')
+                      try {
+                        const next = user.role === 'viewer' ? 'editor' : 'admin'
+                        await api.createAccessRequest({
+                          requested_role: next,
+                          justification: 'Need elevated investigation access',
+                        })
+                        setInfo(`Access request submitted for ${next}.`)
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Request failed')
+                      } finally {
+                        setBusy(false)
+                      }
+                    })()
+                  }}
+                >
+                  Request {user.role === 'viewer' ? 'Editor' : 'Administrator'}
+                </button>
+              </div>
+            )}
 
             <form className="mb-6 space-y-3 border-b border-ink-200/70 pb-6 dark:border-ink-700" onSubmit={saveProfile}>
               <h3 className="font-semibold">Profile</h3>

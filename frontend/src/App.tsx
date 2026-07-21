@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Inbox,
   ScrollText,
+  KeyRound,
   NotebookPen,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -33,6 +34,7 @@ import {
 import { useAuth } from './auth'
 import { useTheme } from './theme'
 import { AccountSettings } from './components/AccountSettings'
+import { AdminAccessPanel } from './components/AdminAccessPanel'
 import { AdminAuditPanel } from './components/AdminAuditPanel'
 import { AdminInboxPanel } from './components/AdminInboxPanel'
 import { AdminUsersPanel } from './components/AdminUsersPanel'
@@ -54,7 +56,7 @@ import { canAccessAdmin, canEdit, canExport, roleLabel } from './permissions'
 import { normalizeReportAllegations } from './allegationFormat'
 
 type MainTab = 'analysis' | 'directory' | 'admin'
-type AdminSubTab = 'users' | 'inbox' | 'audit' | 'changelog'
+type AdminSubTab = 'users' | 'inbox' | 'audit' | 'access' | 'changelog'
 
 function applyReport(report: InvestigationReport | null): InvestigationReport | null {
   return report ? normalizeReportAllegations(report) : null
@@ -702,11 +704,6 @@ export default function App() {
             </div>
           </div>
 
-          {tab === 'analysis' && step !== 'report' && (
-            <div className="mx-4 mt-3">
-              <PrivacyScreenBanner />
-            </div>
-          )}
           {user && userCanEdit && !userCanExport && (
             <div className="mx-4 mt-3 rounded-xl border border-ink-200/80 bg-ink-50/80 px-3 py-2 text-sm text-ink-600 dark:border-ink-700 dark:bg-ink-900/40 dark:text-ink-300">
               Viewer role — you can create and edit cases and investigation reports in-system. Export, download, and copy are disabled; drafts stay in the case record.
@@ -751,7 +748,7 @@ export default function App() {
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
                   {step === 'workspace' && (
-                    <div className="mx-auto flex max-w-5xl flex-col gap-4">
+                    <div className="mx-auto flex min-h-full max-w-5xl flex-col gap-4">
                       <ComplaintStep
                         text={text}
                         onTextChange={(v) => {
@@ -801,6 +798,9 @@ export default function App() {
                           />
                         </div>
                       </details>
+                      <div className="mt-auto pt-2">
+                        <PrivacyScreenBanner />
+                      </div>
                     </div>
                   )}
                   {step === 'review' && report && (
@@ -853,6 +853,7 @@ export default function App() {
                     [
                       ['users', 'Users', Users],
                       ['inbox', 'Inbox', Inbox],
+                      ['access', 'Access', KeyRound],
                       ['audit', 'Audit', ScrollText],
                       ['changelog', 'Changelog', NotebookPen],
                     ] as const
@@ -875,6 +876,7 @@ export default function App() {
                 </div>
                 {adminSubTab === 'users' && <AdminUsersPanel />}
                 {adminSubTab === 'inbox' && <AdminInboxPanel />}
+                {adminSubTab === 'access' && <AdminAccessPanel />}
                 {adminSubTab === 'audit' && <AdminAuditPanel />}
                 {adminSubTab === 'changelog' && <ChangelogPanel />}
               </div>
