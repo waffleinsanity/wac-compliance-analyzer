@@ -83,7 +83,7 @@ def assert_case_editable(case: InvestigationCase, user: User | None = None) -> N
     from app.permissions import can_edit, user_role
 
     if user is not None and not can_edit(user_role(user)):
-        raise HTTPException(status_code=403, detail="Editor or admin role required to edit cases")
+        raise HTTPException(status_code=403, detail="Signed-in investigator role required to edit cases")
     assert_case_not_trashed(case, action="editing")
     if case.status not in EDITABLE_STATUSES:
         raise HTTPException(

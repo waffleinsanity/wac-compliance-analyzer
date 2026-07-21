@@ -32,6 +32,7 @@ class UserOut(BaseModel):
     has_password: bool = False
     has_google: bool = False
     can_edit: bool = True
+    can_export: bool = True
     can_review: bool = False
     can_access_admin: bool = False
 
@@ -329,7 +330,7 @@ class RegulatoryFrameworkEntry(BaseModel):
 
 class StatuteSearchRequest(BaseModel):
     text: str = ""
-    top_k: int = 25
+    top_k: int = 30
     exclude_codes: list[str] = Field(default_factory=list)
 
 

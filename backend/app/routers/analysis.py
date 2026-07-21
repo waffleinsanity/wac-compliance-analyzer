@@ -70,7 +70,7 @@ async def search_statutes(
     payload: StatuteSearchRequest,
     _: User = Depends(get_current_user),
 ):
-    """Full-corpus keyword RAG over local WAC + RCW PDFs (exact text excerpts)."""
+    """Full-corpus research RAG over local WAC + RCW PDFs (TF-IDF + Chroma blend)."""
     if not payload.text.strip():
         raise HTTPException(status_code=400, detail="Complaint text is required")
     if not wac_store.ready:
@@ -196,16 +196,19 @@ def ingest(
 
 
 @router.get("/templates")
-def list_templates(_: User = Depends(get_current_user)):
+def list_templates(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Show which example IR shell templates are loaded (phrasing only, not duty authority)."""
+    from app.services.ir_learning import corpus_stats
     from app.services.template_corpus import load_template_corpus
 
     corpus = load_template_corpus()
+    learned = corpus_stats(db)
     return {
         "example_files": [e.source_file for e in corpus.examples],
         "allegation_templates": sum(len(v) for v in corpus.by_code.values()),
         "codes_covered": sorted(corpus.by_code.keys()),
         "by_code_counts": {k: len(v) for k, v in sorted(corpus.by_code.items())},
+        "learned": learned,
         "reload": "POST /api/templates/reload",
     }
 

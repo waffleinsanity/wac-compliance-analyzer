@@ -22,8 +22,9 @@ export function StatuteSearchPanel({ hits, busy, onSearch, onAddCode, selectedId
       <div className="max-h-[28rem] space-y-2 overflow-y-auto p-3">
         {!hits.length && (
           <p className="px-1 py-8 text-center text-xs leading-relaxed text-muted-foreground">
-            Search local WAC/RCW language when you need research context. Add a hit only if it becomes an
-            officially approved code for this case.
+            Search local WAC/RCW language when you need research context. Uses the same
+            local PDF corpus ranking as investigation (TF-IDF + semantic blend). Add a hit
+            only if it becomes an officially approved code for this case.
           </p>
         )}
         {hits.map((hit) => {

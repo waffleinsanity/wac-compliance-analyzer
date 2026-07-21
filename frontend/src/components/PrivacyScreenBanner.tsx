@@ -1,0 +1,63 @@
+import { Shield } from 'lucide-react'
+import clsx from 'clsx'
+
+type Variant = 'workspace' | 'evidence'
+
+type Props = {
+  variant?: Variant
+  className?: string
+  compact?: boolean
+}
+
+const COPY: Record<Variant, { title: string; body: string }> = {
+  workspace: {
+    title: 'Privacy screen — Category 3/4 PII & PHI',
+    body:
+      'Complaint text is scanned for information beyond public Category 1 (including confidential and HIPAA-related identifiers). Flagged spans are audited in this workspace and can be redacted or censored before drafting, saving, or sending text to investigation tools. Public Category 1 content may remain. This is an assistive check, not a legal determination — investigators remain responsible for final sensitivity judgment.',
+  },
+  evidence: {
+    title: 'Privacy screen — Category 3/4 PII & PHI',
+    body:
+      'Do not attach evidence containing information beyond public Category 1 (including confidential and HIPAA-related PII/PHI). Complaint text is scanned, audited, and can be redacted or censored before draft or save. Evidence file scanning is not applied in this version — prefer de-identified exhibits. This is an assistive check, not a legal determination.',
+  },
+}
+
+export function PrivacyScreenBanner({ variant = 'workspace', className, compact = false }: Props) {
+  const { title, body } = COPY[variant]
+  return (
+    <div
+      role="status"
+      className={clsx(
+        'flex gap-3 rounded-xl border border-tide-500/25 bg-tide-500/[0.08] text-sm text-ink-700 dark:border-tide-400/20 dark:bg-tide-500/10 dark:text-ink-200',
+        compact ? 'px-3 py-2.5' : 'px-3.5 py-3',
+        className,
+      )}
+    >
+      <Shield
+        className={clsx(
+          'shrink-0 text-tide-700 dark:text-tide-300',
+          compact ? 'mt-0.5 h-3.5 w-3.5' : 'mt-0.5 h-4 w-4',
+        )}
+        aria-hidden
+      />
+      <div className="min-w-0 space-y-1">
+        <p
+          className={clsx(
+            'font-sans font-semibold text-ink-900 dark:text-ink-50',
+            compact ? 'text-xs' : 'text-[13px]',
+          )}
+        >
+          {title}
+        </p>
+        <p
+          className={clsx(
+            'leading-relaxed text-ink-600 dark:text-ink-300',
+            compact ? 'text-[11px]' : 'text-[13px]',
+          )}
+        >
+          {body}
+        </p>
+      </div>
+    </div>
+  )
+}

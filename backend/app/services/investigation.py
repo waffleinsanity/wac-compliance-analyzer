@@ -37,9 +37,11 @@ from app.services.template_corpus import (
     DOH_INTAKE_LABEL,
     DOH_PROCESS_LABEL,
     DOH_SUMMARY_LABEL,
+    _detect_themes,
     format_intake_narrative,
     load_template_corpus,
 )
+from app.services.ir_learning import learned_preamble, preferred_connector_for
 from app.services.wac_scope import (
     cite_prefix,
     draft_allegation_from_source,
@@ -387,6 +389,7 @@ def build_investigation_report(
 
     intake = _extract_intake(complaint_text)
     inv_date = investigation_date or date.today().strftime("%m/%d/%Y")
+    complaint_themes = _detect_themes(complaint_text)
 
     # Local investigator is instant; LLM is opt-in (settings.llm_for_investigate / use_llm)
     investigator = run_investigator(complaint_text, code_nodes, use_llm=use_llm)
@@ -400,12 +403,14 @@ def build_investigation_report(
     for node in code_nodes:
         # One TF-IDF pass per code — shared by allegation, matches, and Regulatory Framework
         ranked = score_relevant_subsections(complaint_text, node.code, max_items=4)
+        connector = preferred_connector_for(db, node.code, complaint_themes)
         draft = draft_allegation_from_source(
             node.code,
             node.title or node.code,
             intake,
             max_subs=2,
             relevant=ranked,
+            preferred_connector=connector,
         )
         allegation_text = normalize_allegation_line(draft.text)
         cites = draft.cites
@@ -526,6 +531,7 @@ def build_investigation_report(
 
     shell = _shell()
     preview = complaint_text.strip().replace("\n", " ")
+    preamble = learned_preamble(db) or shell.allegation_preamble or DOH_ALLEGATION_PREAMBLE
     report = InvestigationReport(
         title=IR_TITLE,
         subtitle="",
@@ -533,7 +539,7 @@ def build_investigation_report(
         case_id=case_id,
         facility_info=facility,
         intake_details=intake,
-        allegation_preamble=shell.allegation_preamble or DOH_ALLEGATION_PREAMBLE,
+        allegation_preamble=preamble,
         allegations=allegations,
         investigative_process=process,
         summary_of_findings=build_summary_of_findings(intake, allegations),

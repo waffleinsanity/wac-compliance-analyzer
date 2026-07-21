@@ -223,6 +223,7 @@ export type User = {
   has_password: boolean
   has_google: boolean
   can_edit?: boolean
+  can_export?: boolean
   can_review?: boolean
   can_access_admin?: boolean
 }
@@ -589,7 +590,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  searchStatutes: (text: string, top_k = 25, exclude_codes: string[] = []) =>
+  searchStatutes: (text: string, top_k = 30, exclude_codes: string[] = []) =>
     request<{ hits: StatuteHit[]; query_preview: string; total: number }>('/api/search-statutes', {
       method: 'POST',
       body: JSON.stringify({ text, top_k, exclude_codes }),

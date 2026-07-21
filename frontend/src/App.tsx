@@ -47,7 +47,8 @@ import { ReviewStep } from './components/ReviewStep'
 import { StatuteSearchPanel } from './components/StatuteSearchPanel'
 import { WACSelectionPanel } from './components/WACSelectionPanel'
 import { WorkflowStepper, type WorkflowStep } from './components/WorkflowStepper'
-import { canAccessAdmin, canEdit, roleLabel } from './permissions'
+import { PrivacyScreenBanner } from './components/PrivacyScreenBanner'
+import { canAccessAdmin, canEdit, canExport, roleLabel } from './permissions'
 import { normalizeReportAllegations } from './allegationFormat'
 
 type MainTab = 'analysis' | 'directory' | 'admin'
@@ -326,7 +327,8 @@ export default function App() {
     setSearchBusy(true)
     setError('')
     try {
-      const res = await api.searchStatutes(text, 25)
+      // Exclude already-approved codes; use expanded local RAG (TF-IDF + Chroma blend)
+      const res = await api.searchStatutes(text, 30, selectedCodes)
       setStatuteHits(res.hits)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Statute search failed')
@@ -462,6 +464,7 @@ export default function App() {
   )
 
   const userCanEdit = canEdit(user?.role, user?.is_admin)
+  const userCanExport = canExport(user?.role, user?.is_admin)
   const userCanAdmin = canAccessAdmin(user?.role, user?.is_admin)
 
   const casesPanel = (
@@ -697,9 +700,14 @@ export default function App() {
             </div>
           </div>
 
-          {user && !userCanEdit && (
+          {tab === 'analysis' && step !== 'report' && (
+            <div className="mx-4 mt-3">
+              <PrivacyScreenBanner />
+            </div>
+          )}
+          {user && userCanEdit && !userCanExport && (
             <div className="mx-4 mt-3 rounded-xl border border-ink-200/80 bg-ink-50/80 px-3 py-2 text-sm text-ink-600 dark:border-ink-700 dark:bg-ink-900/40 dark:text-ink-300">
-              Viewer role — you can open cases and browse WACs, but cannot create or edit investigation drafts.
+              Viewer role — you can create and edit cases and investigation reports in-system. Export, download, and copy are disabled; drafts stay in the case record.
             </div>
           )}
           {error && (
@@ -814,6 +822,7 @@ export default function App() {
                       onRebuild={rebuildCaseDraft}
                       onBack={() => setStep('review')}
                       canEdit={userCanEdit}
+                      canExport={userCanExport}
                     />
                   )}
                 </div>

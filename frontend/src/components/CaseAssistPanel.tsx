@@ -11,6 +11,7 @@ import {
 import { useAuth } from '../auth'
 import { canEdit, canReview } from '../permissions'
 import { caseStatusLabel } from '../investigatorLabels'
+import { PrivacyScreenBanner } from './PrivacyScreenBanner'
 
 type Props = {
   caseDetail: CaseDetail
@@ -164,7 +165,7 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
           </button>
         )}
         {!editable && (
-          <p className="text-xs text-ink-500">Viewer role — case is read-only.</p>
+          <p className="text-xs text-ink-500">Your account cannot edit this case.</p>
         )}
       </div>
 
@@ -172,10 +173,7 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
         <>
           <div>
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-400">Evidence</div>
-            <p className="mb-2 text-[11px] leading-relaxed text-ink-500">
-              Do not upload files containing Category 3/4 PII/PHI. File scanning is not applied in v1 —
-              prefer de-identified exhibits.
-            </p>
+            <PrivacyScreenBanner variant="evidence" compact className="mb-3" />
             <label className="btn-secondary inline-flex !h-8 cursor-pointer text-xs">
               <FileUp className="h-3.5 w-3.5" /> Attach file
               <input

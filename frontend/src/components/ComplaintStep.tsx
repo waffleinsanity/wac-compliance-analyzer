@@ -313,7 +313,7 @@ export function ComplaintStep({
               onClick={onAnalyze}
               title={
                 !canEdit
-                  ? 'Viewer role cannot draft reports'
+                  ? 'Your account cannot draft reports'
                   : selectedCount === 0
                     ? 'Select officially approved WACs for this case first'
                     : 'Draft report using only the approved WACs you selected'

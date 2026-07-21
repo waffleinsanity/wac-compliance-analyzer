@@ -337,6 +337,11 @@ def _tfidf_analyzer(text: str) -> list[str]:
     return grams
 
 
+def expand_ranking_query(complaint: str) -> str:
+    """Public alias: ranking-only query expansion (never mutates statute text)."""
+    return _expand_ranking_query(complaint)
+
+
 def _expand_ranking_query(complaint: str) -> str:
     """Append ranking-only aliases; PDF subsection text remains the documents."""
     out = complaint or ""
@@ -816,6 +821,7 @@ def draft_allegation_from_source(
     *,
     max_subs: int = MAX_DUTY_CLAUSES,
     relevant: list[ScopedSubsection] | None = None,
+    preferred_connector: str | None = None,
 ) -> AllegationDraft:
     """Build a concise DOH-shaped allegation from short exact PDF duty phrases.
 
@@ -823,9 +829,13 @@ def draft_allegation_from_source(
       Potential violation of WAC {code}, {title}, by having failed to (1)(a) …; and (2) ….
     Full subsection text stays in matched_subsections / Regulatory Framework — not here.
     Low-confidence is flagged on the draft object for the UI; wording stays allegation-shaped.
+    preferred_connector may come from the evolving IR learning bank (shell only).
     """
     code = code.replace("WAC ", "").replace("RCW ", "").strip()
     prefix = cite_prefix(code)
+    connector = (preferred_connector or "having failed to").strip().lower()
+    if connector not in {"having failed to", "failing to", "not", "violating"}:
+        connector = "having failed to"
     if relevant is None:
         relevant = score_relevant_subsections(
             complaint, code, max_items=max(max_subs, MAX_DUTY_CLAUSES)
@@ -866,7 +876,7 @@ def draft_allegation_from_source(
             top_score = 0.0
         if snippet:
             cite0 = f"{cite_label} " if cite_label else ""
-            text = _allegation_without_quotes(f"{opener}, by having failed to {cite0}{snippet}.").strip()
+            text = _allegation_without_quotes(f"{opener}, by {connector} {cite0}{snippet}.").strip()
         else:
             text = f"{opener}, as applied to the reported concern in the complaint intake."
         return AllegationDraft(
@@ -891,19 +901,19 @@ def draft_allegation_from_source(
         text = f"{opener}, as applied to the reported concern in the complaint intake."
     else:
         body = "; ".join(parts)
-        text = _allegation_without_quotes(f"{opener}, by having failed to {body}.")
+        text = _allegation_without_quotes(f"{opener}, by {connector} {body}.")
 
     # Hard trim: peer Allegation lines stay short; never dump multi-subsection walls of text
     if len(text) > ALLEGATION_TARGET_CHARS and len(quotes) > 1:
         label0, quote0 = quotes[0]
         cite0 = f"{label0} " if label0 else ""
-        text = _allegation_without_quotes(f"{opener}, by having failed to {cite0}{quote0}.").strip()
+        text = _allegation_without_quotes(f"{opener}, by {connector} {cite0}{quote0}.").strip()
     if len(text) > ALLEGATION_TARGET_CHARS + 40:
         # Last resort: shorten the single remaining duty phrase in place
         label0, quote0 = quotes[0]
         cite0 = f"{label0} " if label0 else ""
         short = duty_phrase_from_text(quote0, max_chars=90)
-        text = _allegation_without_quotes(f"{opener}, by having failed to {cite0}{short}.").strip()
+        text = _allegation_without_quotes(f"{opener}, by {connector} {cite0}{short}.").strip()
 
     return AllegationDraft(
         text=text,

@@ -76,7 +76,7 @@ def ensure_active(user: User) -> User:
 
 
 def user_to_out_dict(user: User) -> dict:
-    from app.permissions import can_access_admin, can_edit, can_review, user_role
+    from app.permissions import can_access_admin, can_edit, can_export, can_review, user_role
 
     role = user_role(user)
     return {
@@ -92,6 +92,7 @@ def user_to_out_dict(user: User) -> dict:
         "has_password": bool(user.hashed_password),  # empty string means Google-only / unset
         "has_google": bool(user.google_sub),
         "can_edit": can_edit(role),
+        "can_export": can_export(role),
         "can_review": can_review(role),
         "can_access_admin": can_access_admin(role),
     }

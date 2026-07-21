@@ -324,6 +324,7 @@ class WACStore:
         top_k: int = 20,
         *,
         selected_codes: set[str] | None = None,
+        exclude_codes: set[str] | None = None,
     ) -> list[tuple[WACNode, float]]:
         """Semantic backup over the local statute corpus.
 
@@ -342,13 +343,17 @@ class WACStore:
                 where = {"code": codes[0]}
             elif len(codes) > 1:
                 where = {"code": {"$in": codes}}
+        exclude_norm = {
+            c.replace("WAC ", "").replace("RCW ", "").strip() for c in (exclude_codes or set()) if c
+        }
         try:
             self._ensure_chroma()
             # When code-scoped, pull enough peers under that code for a light boost.
-            n_results = min(max(top_k, 12), 40) if where else min(top_k, 40)
+            # Over-fetch when excluding so we still fill top_k after filters.
+            fetch_k = min(max(top_k * 2, 24), 60) if exclude_norm else (min(max(top_k, 12), 40) if where else min(top_k, 40))
             raw = self._collection.query(
                 query_texts=[query[:4000]],
-                n_results=n_results,
+                n_results=fetch_k,
                 where=where,
             )
         except Exception:
@@ -359,6 +364,9 @@ class WACStore:
         for node_id, dist in zip(ids, dists):
             node = self.nodes.get(node_id)
             if not node:
+                continue
+            code_key = node.code.replace("WAC ", "").replace("RCW ", "")
+            if exclude_norm and code_key in exclude_norm:
                 continue
             # Chroma cosine distance → similarity-ish score
             score = max(0.0, 1.0 - float(dist))
@@ -374,29 +382,51 @@ class WACStore:
         top_k: int = 25,
         exclude_codes: set[str] | None = None,
     ) -> list[tuple[WACNode, float, str]]:
-        """Full-corpus keyword RAG: TF-IDF primary, Chroma as backup filler."""
-        tfidf_hits = self.search(query, selected_codes=None, top_k=top_k, exclude_codes=exclude_codes)
-        scored: dict[str, tuple[WACNode, float, str]] = {
-            n.id: (n, s, "tfidf") for n, s in tfidf_hits
+        """Full-corpus research RAG: TF-IDF + Chroma always blended, with query expansion.
+
+        Aligns optional research search with the IR ranking improvements in wac_scope
+        (expanded query, Chroma blend, leaf preference). Does not call the investigator LLM —
+        search stays local PDF-backed.
+        """
+        from app.services.wac_scope import expand_ranking_query
+
+        expanded = expand_ranking_query(query)
+        exclude_norm = {
+            c.replace("WAC ", "").replace("RCW ", "").strip() for c in (exclude_codes or set()) if c
         }
-        if len(scored) < top_k:
-            for node, score in self.search_chroma(query, top_k=top_k):
-                code_key = node.code.replace("WAC ", "").replace("RCW ", "")
-                if exclude_codes and code_key in {
-                    c.replace("WAC ", "").replace("RCW ", "") for c in exclude_codes
-                }:
-                    continue
-                prev = scored.get(node.id)
-                if not prev or score > prev[1]:
-                    scored[node.id] = (node, score, "chroma" if not prev else prev[2])
+        pool_k = max(top_k * 2, 40)
+
+        scored: dict[str, tuple[WACNode, float, str]] = {}
+        for node, score in self.search(
+            expanded,
+            selected_codes=None,
+            top_k=pool_k,
+            exclude_codes=exclude_norm or None,
+            min_score=0.015,
+        ):
+            scored[node.id] = (node, float(score), "tfidf")
+
+        # Always blend Chroma (not only when TF-IDF is short) — matches IR ranking practice
+        for node, score in self.search_chroma(
+            expanded,
+            top_k=pool_k,
+            exclude_codes=exclude_norm or None,
+        ):
+            chroma_score = float(score) * 0.85
+            prev = scored.get(node.id)
+            if not prev:
+                scored[node.id] = (node, chroma_score, "chroma")
+            else:
+                fused = max(prev[1], chroma_score)
+                reason = "tfidf+chroma" if chroma_score >= prev[1] * 0.85 else prev[2]
+                scored[node.id] = (node, fused, reason)
+
         # Keyword / trigger-phrase boost
-        q_lower = query.lower()
+        q_lower = (expanded or "").lower()
         tokens = {t for t in re.findall(r"[a-z0-9]{4,}", q_lower)}
         for node in self.nodes.values():
             code_key = node.code.replace("WAC ", "").replace("RCW ", "")
-            if exclude_codes and code_key in {
-                c.replace("WAC ", "").replace("RCW ", "") for c in exclude_codes
-            }:
+            if exclude_norm and code_key in exclude_norm:
                 continue
             phrase_hit = any(p.lower() in q_lower for p in node.trigger_phrases if len(p) >= 8)
             if not phrase_hit and tokens:
@@ -409,6 +439,20 @@ class WACStore:
                 prev = scored.get(node.id)
                 boost = 0.15 if not prev else prev[1] + 0.05
                 scored[node.id] = (node, max(prev[1] if prev else 0.0, boost), "keyword")
+
+        # Prefer actionable leaves / code headers for research browsing
+        level_boost = {
+            "quaternary": 0.06,
+            "tertiary": 0.05,
+            "secondary": 0.03,
+            "code": 0.04,
+            "primary": 0.01,
+        }
+        for node_id, (node, score, reason) in list(scored.items()):
+            bump = level_boost.get(node.level, 0.0)
+            if bump:
+                scored[node_id] = (node, score + bump, reason)
+
         ranked = sorted(scored.values(), key=lambda x: x[1], reverse=True)
         return ranked[:top_k]
 

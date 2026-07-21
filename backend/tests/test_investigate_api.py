@@ -40,7 +40,9 @@ def test_investigate_assault_structure(client):
         assert a["allegation_text"].lower().startswith(
             ("a potential violation", "potential violation")
         )
-        assert "by having failed to" in a["allegation_text"].lower() or '"' in a["allegation_text"]
+        assert "by having failed to" in a["allegation_text"].lower() or "by failing to" in a[
+            "allegation_text"
+        ].lower() or '"' in a["allegation_text"]
         assert "investigator review" not in a["allegation_text"].lower()
         assert len(a["allegation_text"]) <= 520
         assert a.get("matched_subsections")
@@ -90,9 +92,11 @@ def test_investigate_confidentiality_includes_rcw(client):
     for a in data["allegations"]:
         # Baseline shape: unquoted duty language after subsection labels
         assert '"' not in a["allegation_text"]
-        assert "by having failed to" in a["allegation_text"].lower() or "as applied to the reported concern" in a[
-            "allegation_text"
-        ].lower()
+        assert (
+            "by having failed to" in a["allegation_text"].lower()
+            or "by failing to" in a["allegation_text"].lower()
+            or "as applied to the reported concern" in a["allegation_text"].lower()
+        )
         assert a["allegation_text"].startswith("Potential violation")
     assert data["quote_integrity"]["ok"] is True
 

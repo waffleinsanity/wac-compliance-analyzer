@@ -232,6 +232,43 @@ class CaseComment(Base):
     case = relationship("InvestigationCase", back_populates="comments")
 
 
+class IrLearningSnippet(Base):
+    """Evolving IR writing-style bank harvested from completed/exported reports.
+
+    Statute duty wording still comes only from PDF-ingested WAC/RCW nodes.
+    These rows capture investigator-adjusted shell/shape (connectors, themes,
+    intake voice, process lines) so future drafts improve with use.
+    """
+
+    __tablename__ = "ir_learning_snippets"
+    __table_args__ = (
+        UniqueConstraint(
+            "section_type",
+            "wac_code",
+            "content_hash",
+            name="uq_ir_learning_snippet_hash",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    source_case_id = Column(Integer, ForeignKey("investigation_cases.id"), nullable=True, index=True)
+    source_snapshot_id = Column(Integer, ForeignKey("case_report_snapshots.id"), nullable=True)
+    harvested_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    trigger_event = Column(String(64), default="", index=True)  # export_docx|export_pack|submitted|finalized
+    section_type = Column(String(64), nullable=False, index=True)
+    # allegation_shape|intake_voice|process_line|preamble|summary_opener|wac_language
+    wac_code = Column(String(64), default="", index=True)
+    themes_json = Column(Text, default="[]")
+    connector = Column(String(64), default="")
+    text_excerpt = Column(Text, default="")
+    uses_a_prefix = Column(Boolean, default=False)
+    has_subsection_cites = Column(Boolean, default=False)
+    content_hash = Column(String(64), nullable=False, index=True)
+    weight = Column(Integer, default=1)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class BugReport(Base):
     __tablename__ = "bug_reports"
 

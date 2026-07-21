@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import Depends, HTTPException, status
+from fastapi import HTTPException, status
 
 Role = Literal["admin", "editor", "viewer"]
 
@@ -17,9 +17,9 @@ ROLE_LABELS: dict[str, str] = {
 }
 
 ROLE_DESCRIPTIONS: dict[str, str] = {
-    "admin": "Full control: users, inbox, audit, review finalize, and visibility into all cases",
-    "editor": "Create and edit only their own investigation cases; submit for review",
-    "viewer": "Read-only access to their own cases and the WAC directory",
+    "admin": "Full control: users, inbox, audit, review finalize, all cases, and export",
+    "editor": "Create and edit their own cases, generate IR drafts, and export/download reports",
+    "viewer": "Create and edit their own cases and IR drafts in-system; cannot export or copy the product",
 }
 
 
@@ -37,7 +37,12 @@ def is_admin_role(role: str | None) -> bool:
 
 
 def can_edit(role: str | None) -> bool:
-    """Editors and admins may create/edit investigation work."""
+    """Admins, editors, and viewers may create/edit investigation work in-app."""
+    return normalize_role(role) in {"admin", "editor", "viewer"}
+
+
+def can_export(role: str | None) -> bool:
+    """Only admins and editors may download/copy/export finished IR products."""
     return normalize_role(role) in {"admin", "editor"}
 
 
@@ -65,7 +70,18 @@ def require_role_edit(user) -> None:
     if not can_edit(user_role(user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Editor or admin role required",
+            detail="Signed-in investigator role required to edit cases",
+        )
+
+
+def require_role_export(user) -> None:
+    if not can_export(user_role(user)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Export and download require Editor or Administrator role. "
+                "Your draft stays saved in the case record."
+            ),
         )
 
 

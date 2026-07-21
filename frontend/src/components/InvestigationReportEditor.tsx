@@ -31,6 +31,7 @@ import {
   quoteFailureLabel,
 } from '../investigatorLabels'
 import { normalizeAllegationLine, normalizeReportAllegations } from '../allegationFormat'
+import { PrivacyScreenBanner } from './PrivacyScreenBanner'
 
 function caseStatusClass(status: string) {
   if (status === 'final') return 'status-chip-ready'
@@ -72,6 +73,8 @@ type Props = {
   onReportChange?: (report: InvestigationReport) => void
   onRebuild?: () => Promise<void>
   canEdit?: boolean
+  /** Download/copy/export of the finished IR product (editors/admins). */
+  canExport?: boolean
 }
 
 function AllegationBadge({ a }: { a: InvestigationAllegation }) {
@@ -197,6 +200,7 @@ export function InvestigationReportEditor({
   onReportChange,
   onRebuild,
   canEdit = true,
+  canExport = true,
 }: Props) {
   const [report, setReport] = useState(() => normalizeReportAllegations({ ...initial }))
   const [copied, setCopied] = useState(false)
@@ -288,6 +292,12 @@ export function InvestigationReportEditor({
     caseDetail?.status === 'draft' || caseDetail?.status === 'reopened'
 
   const ensureExportAllowed = async (): Promise<boolean> => {
+    if (!canExport) {
+      setExportError(
+        'Export, download, and copy require Editor or Administrator role. Your draft remains saved in the case record.',
+      )
+      return false
+    }
     setValidating(true)
     setExportError('')
     try {
@@ -432,6 +442,7 @@ export function InvestigationReportEditor({
 
   return (
     <div className="animate-rise space-y-5">
+      <PrivacyScreenBanner variant="evidence" />
       <div className="sticky top-0 z-20 -mx-1 space-y-3 rounded-xl border border-ink-200/70 bg-background/95 px-4 py-3 shadow-soft backdrop-blur-md dark:border-ink-700">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
@@ -480,21 +491,30 @@ export function InvestigationReportEditor({
                 {saving ? 'Saving…' : 'Save draft'}
               </button>
             )}
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={validating || !caseId || exportBlocked}
-              title={
-                exportBlocked
-                  ? 'Export blocked — fix statute wording first'
-                  : exportWarn
-                    ? 'Defensibility gaps remain — use Export DOCX anyway to acknowledge'
-                    : undefined
-              }
-              onClick={() => void exportDocx(false)}
-            >
-              <Download className="h-4 w-4" /> Export DOCX
-            </button>
+            {canExport ? (
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={validating || !caseId || exportBlocked}
+                title={
+                  exportBlocked
+                    ? 'Export blocked — fix statute wording first'
+                    : exportWarn
+                      ? 'Defensibility gaps remain — use Export DOCX anyway to acknowledge'
+                      : undefined
+                }
+                onClick={() => void exportDocx(false)}
+              >
+                <Download className="h-4 w-4" /> Export DOCX
+              </button>
+            ) : (
+              <span
+                className="inline-flex items-center rounded-lg border border-ink-200/80 bg-ink-50/80 px-3 py-2 text-xs text-ink-500 dark:border-ink-700 dark:bg-ink-900/40"
+                title="Viewer accounts keep the IR in the case record without download or copy"
+              >
+                In-record only (no export)
+              </span>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-200/60 pt-2 dark:border-ink-700">
@@ -517,6 +537,8 @@ export function InvestigationReportEditor({
               Rebuild draft
             </button>
           )}
+          {canExport && (
+            <>
           <button
             type="button"
             className="btn-ghost !px-2.5 !py-1 text-xs"
@@ -558,15 +580,22 @@ export function InvestigationReportEditor({
           >
             Export DOCX anyway
           </button>
+            </>
+          )}
         </div>
-        {exportBlocked && (
+        {canExport && exportBlocked && (
           <p className="text-[11px] text-rose-700 dark:text-rose-300">
             Export blocked until statute wording matches the approved codes. Fix cited language, then re-check.
           </p>
         )}
-        {!exportBlocked && exportWarn && (
+        {canExport && !exportBlocked && exportWarn && (
           <p className="text-[11px] text-amber-800 dark:text-amber-300">
             Defensibility gaps remain — use “Export DOCX anyway” after investigator review.
+          </p>
+        )}
+        {!canExport && (
+          <p className="text-[11px] text-ink-500">
+            Viewer role: edit and save the investigation report in this case. Export, download, and copy are disabled.
           </p>
         )}
       </div>

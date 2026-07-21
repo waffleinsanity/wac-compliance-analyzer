@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import zipfile
 from io import BytesIO
@@ -11,7 +12,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth import get_admin_user, get_current_user, get_editor_user
-from app.permissions import can_review, is_admin_role, require_role_edit, user_role
+from app.permissions import can_review, is_admin_role, require_role_edit, require_role_export, user_role
 from app.config import settings
 from app.database import (
     CaseComment,
@@ -61,12 +62,57 @@ from app.services.case_store import (
 from app.services.defensibility import check_defensibility
 from app.services.docx_export import build_deficiency_cite_sheet, build_investigation_docx
 from app.services.investigation import build_investigation_report
+from app.services.audit import log_action
+from app.services.ir_learning import harvest_completed_ir
 from app.services.pii_gate import ensure_clean_or_redact
 from app.services.quote_verify import verify_report_quotes
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
+logger = logging.getLogger(__name__)
 
 ALLOWED_EVIDENCE_EXT = {".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"}
+
+
+def _latest_snapshot_id(db: Session, case_id: int) -> int | None:
+    snap = (
+        db.query(CaseReportSnapshot)
+        .filter(CaseReportSnapshot.case_id == case_id)
+        .order_by(CaseReportSnapshot.version.desc())
+        .first()
+    )
+    return snap.id if snap else None
+
+
+def _harvest_ir_style(
+    db: Session,
+    case: InvestigationCase,
+    report: InvestigationReport,
+    user: User,
+    *,
+    trigger: str,
+) -> None:
+    """Best-effort: promote completed IR style into the evolving learning bank."""
+    try:
+        result = harvest_completed_ir(
+            db,
+            case,
+            report,
+            user,
+            trigger=trigger,
+            snapshot_id=_latest_snapshot_id(db, case.id),
+        )
+        log_action(
+            db,
+            user_id=user.id,
+            action="ir_learning_harvest",
+            entity_type="investigation_case",
+            entity_id=case.id,
+            details=f"trigger={trigger}; saved={result.get('saved', 0)}",
+            outcome="ok" if not result.get("error") else "error",
+        )
+    except Exception:
+        # Never block export/submit on learning failures
+        logger.exception("IR learning harvest failed for case %s", case.id)
 
 
 def _apply_privacy_to_complaint(case: InvestigationCase, text: str) -> str:
@@ -418,6 +464,7 @@ def update_status(
         report = _report_for_export(case)
         save_snapshot(db, case, report, user, note=payload.note or "Submitted for review")
         set_status(db, case, "in_review", user)
+        _harvest_ir_style(db, case, report, user, trigger="submitted")
     elif target == "final":
         if case.status not in {"in_review", "draft", "reopened"}:
             raise HTTPException(status_code=400, detail="Cannot finalize from current status")
@@ -429,6 +476,7 @@ def update_status(
         report = _report_for_export(case)
         save_snapshot(db, case, report, user, note=payload.note or "Marked final")
         set_status(db, case, "final", user)
+        _harvest_ir_style(db, case, report, user, trigger="finalized")
     elif target == "reopened":
         require_role_edit(user)
         if case.status not in {"final", "in_review"}:
@@ -530,6 +578,7 @@ def export_docx(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    require_role_export(user)
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
     assert_case_not_trashed(case, action="exporting")
@@ -550,6 +599,7 @@ def export_docx(
             detail="Defensibility gaps remain. Re-export with acknowledge_gaps=true after investigator review.",
         )
     content = build_investigation_docx(report, draft_label=_draft_label(case))
+    _harvest_ir_style(db, case, report, user, trigger="export_docx")
     filename = f"IR_{case.case_id_label or case.id}.docx"
     return Response(
         content=content,
@@ -566,6 +616,7 @@ def export_pack(
     db: Session = Depends(get_db),
 ):
     """Multi-doc pack: IR DOCX + deficiency cite sheet."""
+    require_role_export(user)
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
     assert_case_not_trashed(case, action="exporting")
@@ -588,6 +639,7 @@ def export_pack(
 
     ir = build_investigation_docx(report, draft_label=_draft_label(case))
     cites = build_deficiency_cite_sheet(report)
+    _harvest_ir_style(db, case, report, user, trigger="export_pack")
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(f"IR_{case.case_id_label or case.id}.docx", ir)
