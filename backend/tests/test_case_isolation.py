@@ -148,20 +148,31 @@ def test_google_does_not_auto_link_password_account(db):
 
 def test_link_google_attaches_to_existing_password_account(db):
     admin = _ensure_user(db, username="iso_link_admin", email="iso_link_admin@localhost", role="admin", is_admin=True)
+    admin.google_sub = None
+    db.add(admin)
+    db.commit()
+    db.refresh(admin)
     assert not admin.google_sub
 
     # Stray Google-only account that previously claimed this sub
-    stray = User(
-        username="iso_google_stray",
-        email="real.google@example.com",
-        hashed_password="",
-        google_sub="google-sub-admin-link",
-        role="editor",
-        is_admin=False,
-        is_active=True,
-    )
-    db.add(stray)
+    stray = db.query(User).filter(User.username == "iso_google_stray").first()
+    if not stray:
+        stray = User(
+            username="iso_google_stray",
+            email="real.google@example.com",
+            hashed_password="",
+            google_sub="google-sub-admin-link",
+            role="editor",
+            is_admin=False,
+            is_active=True,
+        )
+        db.add(stray)
+    else:
+        stray.google_sub = "google-sub-admin-link"
+        stray.email = "real.google@example.com"
+        db.add(stray)
     db.commit()
+    db.refresh(stray)
 
     linked = link_google_to_user(
         db,
