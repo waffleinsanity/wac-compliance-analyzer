@@ -37,8 +37,8 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
       key: 'wacs',
       label:
         context.approvedWacCount === 1
-          ? '1 approved WAC'
-          : `${context.approvedWacCount} approved WACs`,
+          ? '1 WAC'
+          : `${context.approvedWacCount} WACs`,
       tone: context.approvedWacCount > 0 ? 'ready' : 'warn',
     })
   }
@@ -47,8 +47,8 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
       key: 'quotes',
       label:
         context.quoteIssueCount === 1
-          ? '1 statute wording issue'
-          : `${context.quoteIssueCount} statute wording issues`,
+          ? '1 wording issue'
+          : `${context.quoteIssueCount} wording issues`,
       tone: 'warn',
     })
   }
@@ -61,8 +61,8 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
   }
 
   return (
-    <nav aria-label="Investigation workflow" className="w-full space-y-2">
-      <ol className="flex items-start">
+    <nav aria-label="Investigation workflow" className="w-full space-y-1.5 sm:space-y-2">
+      <ol className="flex items-center sm:items-start">
         {STEPS.map((s, idx) => {
           const active = s.id === step
           const done = idx < currentIdx
@@ -76,14 +76,15 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
                   disabled={!canGo}
                   onClick={() => canGo && onStepChange(s.id)}
                   className={clsx(
-                    'group flex w-full items-start gap-3 rounded-xl px-2 py-2 text-left transition',
+                    'group flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition sm:items-start sm:gap-3 sm:rounded-xl sm:px-2 sm:py-2',
                     canGo ? 'hover:bg-ink-100/80 dark:hover:bg-ink-800/50' : 'cursor-not-allowed opacity-40',
                     active && 'bg-tide-500/8',
                   )}
                 >
                   <span
                     className={clsx(
-                      'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-sm font-semibold transition',
+                      'flex shrink-0 items-center justify-center rounded-full border font-semibold transition',
+                      'h-7 w-7 text-xs sm:mt-0.5 sm:h-9 sm:w-9 sm:text-sm',
                       active && 'border-tide-600 bg-tide-600 text-white shadow-soft',
                       done && !active && 'border-cedar-500/40 bg-cedar-500/12 text-cedar-600',
                       !active &&
@@ -91,25 +92,25 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
                         'border-ink-300 bg-card text-ink-500 dark:border-ink-600 dark:bg-ink-900',
                     )}
                   >
-                    {done && !active ? <Check className="h-4 w-4" strokeWidth={2.5} /> : idx + 1}
+                    {done && !active ? <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={2.5} /> : idx + 1}
                   </span>
-                  <span className="min-w-0 pt-0.5">
+                  <span className="min-w-0 sm:pt-0.5">
                     <span
                       className={clsx(
-                        'block text-sm font-semibold tracking-tight',
+                        'block text-xs font-semibold tracking-tight sm:text-sm',
                         active ? 'text-ink-900 dark:text-ink-50' : 'text-ink-600 dark:text-ink-300',
                       )}
                     >
                       {s.label}
                     </span>
-                    <span className="mt-0.5 block text-xs text-ink-400">{s.hint}</span>
+                    <span className="mt-0.5 hidden text-xs text-ink-400 sm:block">{s.hint}</span>
                   </span>
                 </button>
               </li>
               {idx < STEPS.length - 1 && (
                 <li
                   aria-hidden
-                  className="flex w-6 shrink-0 items-start justify-center pt-[1.35rem] sm:w-10"
+                  className="flex w-4 shrink-0 items-center justify-center sm:w-10 sm:items-start sm:pt-[1.35rem]"
                 >
                   <span
                     className={clsx(
@@ -125,12 +126,12 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
       </ol>
 
       {chips.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 px-2" aria-label="Case context">
+        <div className="flex flex-wrap items-center gap-1 px-1 sm:gap-1.5 sm:px-2" aria-label="Case context">
           {chips.map((chip) => (
             <span
               key={chip.key}
               className={clsx(
-                'status-chip !px-2 !py-0.5 text-[10px] capitalize',
+                'status-chip !px-1.5 !py-0 text-[10px] capitalize sm:!px-2 sm:!py-0.5',
                 chip.tone === 'ready' && 'status-chip-ready',
                 chip.tone === 'warn' && 'status-chip-warn',
                 chip.tone === 'neutral' &&

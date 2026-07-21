@@ -29,7 +29,7 @@ export function PrivacyScreenBanner({ variant = 'workspace', className, compact 
       role="status"
       className={clsx(
         'flex gap-3 rounded-xl border border-tide-500/25 bg-tide-500/[0.08] text-sm text-ink-700 dark:border-tide-400/20 dark:bg-tide-500/10 dark:text-ink-200',
-        compact ? 'px-3 py-2.5' : 'px-3.5 py-3',
+        compact ? 'px-3 py-2' : 'px-3.5 py-3',
         className,
       )}
     >
@@ -52,7 +52,7 @@ export function PrivacyScreenBanner({ variant = 'workspace', className, compact 
         <p
           className={clsx(
             'leading-relaxed text-ink-600 dark:text-ink-300',
-            compact ? 'text-[11px]' : 'text-[13px]',
+            compact ? 'hidden text-[11px] sm:block' : 'text-[13px]',
           )}
         >
           {body}

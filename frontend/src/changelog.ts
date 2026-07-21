@@ -31,6 +31,20 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.07.21.2',
+    buildTag: '2026.07.21.2',
+    date: '2026-07-21',
+    title: 'Compact report chrome on small screens',
+    summary:
+      'Workflow stepper and Report sticky toolbar collapse on narrow viewports so investigators keep more of the draft in view.',
+    highlights: [
+      'Workflow stepper hides step hints and shrinks chips on small screens.',
+      'Report toolbar keeps primary Save/Export actions visible; secondary actions move under More.',
+      'Privacy banner and long subtitle hide on mobile Report to reclaim vertical space.',
+    ],
+    areas: ['platform', 'investigation'],
+  },
+  {
     id: '2026.07.21.1',
     buildTag: '2026.07.21.1',
     date: '2026-07-21',
