@@ -463,6 +463,7 @@ export default function App() {
         onAddCode={addCodeToSelection}
         selectedIds={selectedCodes}
         hasSelection={selectedCodes.length > 0}
+        comparisons={report?.comparisons}
       />
     </div>
   )
@@ -779,9 +780,10 @@ export default function App() {
                         <summary className="cursor-pointer list-none px-4 py-3 font-sans text-sm font-medium text-ink-600 marker:content-none dark:text-ink-300 [&::-webkit-details-marker]:hidden">
                           <span className="flex items-center justify-between gap-2">
                             <span>
-                              Optional research — corpus search
+                              Optional research — find stronger WAC/RCW fits
                               <span className="mt-0.5 block text-xs font-normal text-ink-400">
-                                Not authorization. Does not replace approved WACs in the left rail.
+                                Shows Strong / Moderate / Weak / None application — same scale as Compare.
+                                Not authorization; does not replace left-rail approvals.
                               </span>
                             </span>
                             <span className="text-xs text-ink-400 group-open:hidden">Show</span>
@@ -795,6 +797,7 @@ export default function App() {
                             onSearch={() => void searchStatutes()}
                             onAddCode={addCodeToSelection}
                             selectedIds={selectedCodes}
+                            comparisons={report?.comparisons}
                           />
                         </div>
                       </details>
@@ -811,6 +814,11 @@ export default function App() {
                       onBack={() => setStep('workspace')}
                       onContinue={() => setStep('report')}
                       busy={busy}
+                      statuteHits={statuteHits}
+                      searchBusy={searchBusy}
+                      onSearchStatutes={() => void searchStatutes()}
+                      onAddCode={addCodeToSelection}
+                      selectedIds={selectedCodes}
                     />
                   )}
                   {step === 'report' && report && (

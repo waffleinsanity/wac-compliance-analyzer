@@ -31,6 +31,20 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.07.21.1',
+    buildTag: '2026.07.21.1',
+    date: '2026-07-21',
+    title: 'Application strength on research and Compare',
+    summary:
+      'Optional corpus research and Compare now share Strong / Moderate / Weak / None application labels so investigators can spot WAC/RCW that may fit the complaint better than current approvals.',
+    highlights: [
+      'Shared application-strength scale on Optional research, Related suggestions, and Compare.',
+      'Research hits that look stronger than the weakest approved code are flagged “Stronger fit?”.',
+      'Compare page includes the same optional research panel for discovery without leaving the step.',
+    ],
+    areas: ['investigation', 'cases', 'platform'],
+  },
+  {
     id: '2026.07.20.3',
     buildTag: '2026.07.20.3',
     date: '2026-07-20',

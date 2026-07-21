@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Loader2, Plus, Sparkles } from 'lucide-react'
-import type { StatuteHit } from '../api'
+import type { StatuteHit, WACComparison } from '../api'
+import {
+  applicationStrengthFromMatch,
+  isStrongerThan,
+} from '../applicationStrength'
+import { ApplicationStrengthBadge } from './ApplicationStrengthBadge'
 
 type Props = {
   suggestions: StatuteHit[]
@@ -9,6 +14,7 @@ type Props = {
   onAddCode: (codeId: string) => void
   selectedIds: string[]
   hasSelection: boolean
+  comparisons?: WACComparison[]
 }
 
 export function RelatedStatutesPanel({
@@ -18,8 +24,24 @@ export function RelatedStatutesPanel({
   onAddCode,
   selectedIds,
   hasSelection,
+  comparisons = [],
 }: Props) {
   const [open, setOpen] = useState(false)
+
+  const weakestApproved = comparisons.reduce<ReturnType<typeof applicationStrengthFromMatch> | null>(
+    (worst, c) => {
+      const s = applicationStrengthFromMatch({
+        score: c.match_score,
+        reason: c.match_reason,
+        lowConfidence: c.low_confidence,
+        source: 'ir_match',
+      })
+      if (!worst) return s
+      const order = { none: 0, weak: 1, moderate: 2, strong: 3 }
+      return order[s] < order[worst] ? s : worst
+    },
+    null,
+  )
 
   return (
     <div className="flex min-h-0 flex-col border-t bg-muted/5">
@@ -32,10 +54,10 @@ export function RelatedStatutesPanel({
           <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
             {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             <Sparkles className="h-3.5 w-3.5" />
-            Research — not authorization
+            Research — find stronger fits
           </div>
           <p className="mt-0.5 pl-5 text-[11px] text-muted-foreground">
-            Related WAC/RCW suggestions · optional only
+            Related WAC/RCW with application strength · not authorization
           </p>
         </div>
       </button>
@@ -52,28 +74,44 @@ export function RelatedStatutesPanel({
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Suggest related'}
             </button>
           </div>
-          <div className="max-h-48 min-h-0 space-y-2 overflow-y-auto p-2">
+          <div className="max-h-56 min-h-0 space-y-2 overflow-y-auto p-2">
             {!hasSelection && (
               <p className="p-2 text-xs text-muted-foreground">
-                First select the officially approved WACs for this case. Related suggestions are optional
-                research afterward.
+                Select approved WACs first. Then suggest related codes that may apply more strongly to
+                the complaint.
               </p>
             )}
             {hasSelection && !suggestions.length && !busy && (
               <p className="p-2 text-xs text-muted-foreground">
-                Click “Suggest related” if you want optional secondary WAC/RCW language to research. Nothing
-                here is required for the Investigative Report.
+                Suggest related WAC/RCW to compare application strength (Strong / Moderate / Weak /
+                None) against your current approvals.
               </p>
             )}
             {suggestions.map((hit) => {
               const codeId = hit.level === 'code' ? hit.id : hit.id.split('(')[0]
               const selected = selectedIds.includes(codeId)
+              const strength = applicationStrengthFromMatch({
+                score: hit.score,
+                reason: hit.reason,
+                source: 'research',
+              })
+              const betterFit = Boolean(
+                weakestApproved && isStrongerThan(strength, weakestApproved) && !selected,
+              )
               return (
                 <div key={hit.id} className="rounded-md border bg-background p-2">
                   <div className="flex items-start justify-between gap-1">
                     <div className="min-w-0">
-                      <div className="font-mono text-[11px] font-semibold">
-                        {hit.instrument} {hit.code}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="font-mono text-[11px] font-semibold">
+                          {hit.instrument} {hit.code}
+                        </div>
+                        <ApplicationStrengthBadge
+                          strength={strength}
+                          source="research"
+                          short
+                          betterFit={betterFit}
+                        />
                       </div>
                       <div className="truncate text-[11px] text-muted-foreground">{hit.title}</div>
                     </div>

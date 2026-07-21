@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 import clsx from 'clsx'
-import type { InvestigationReport, QuoteFailure, WACComparison } from '../api'
+import type { InvestigationReport, QuoteFailure, StatuteHit, WACComparison } from '../api'
 import { quoteFailureLabel } from '../investigatorLabels'
 import { normalizeAllegationLine } from '../allegationFormat'
+import { ApplicationStrengthBadge } from './ApplicationStrengthBadge'
+import { StatuteSearchPanel } from './StatuteSearchPanel'
 
 type Props = {
   comparisons: WACComparison[]
@@ -12,6 +14,12 @@ type Props = {
   onBack: () => void
   onContinue: () => void
   busy: boolean
+  /** Optional research — find additional WACs/RCWs that may apply more strongly. */
+  statuteHits?: StatuteHit[]
+  searchBusy?: boolean
+  onSearchStatutes?: () => void
+  onAddCode?: (codeId: string) => void
+  selectedIds?: string[]
 }
 
 function AccuracyBadge({ comparison }: { comparison: WACComparison }) {
@@ -70,7 +78,19 @@ function findComparisonIndex(comparisons: WACComparison[], failure: QuoteFailure
   return -1
 }
 
-export function ReviewStep({ comparisons, complaintText, report, onBack, onContinue, busy }: Props) {
+export function ReviewStep({
+  comparisons,
+  complaintText,
+  report,
+  onBack,
+  onContinue,
+  busy,
+  statuteHits = [],
+  searchBusy = false,
+  onSearchStatutes,
+  onAddCode,
+  selectedIds = [],
+}: Props) {
   const [activeIdx, setActiveIdx] = useState(0)
   const [showPdf, setShowPdf] = useState(false)
   const [showFullCode, setShowFullCode] = useState(false)
@@ -167,8 +187,9 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
           </p>
           <h2 className="mt-1 font-display text-3xl tracking-tight">Working allegations</h2>
           <p className="mt-2 max-w-2xl font-sans text-sm text-ink-500">
-            One allegation line per approved code ({total} total). Use the arrows or code list to move
-            between codes.
+            One allegation line per approved code ({total} total). Application strength shows how
+            clearly each code fits the complaint. Use optional research below if another WAC/RCW may
+            apply more strongly.
           </p>
         </div>
         <div className="flex gap-2">
@@ -256,8 +277,17 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
                               : 'hover:bg-ink-100/70 dark:hover:bg-ink-800/50',
                           )}
                         >
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center justify-between gap-1">
                             <div className="font-mono text-xs font-semibold">{c.code}</div>
+                            <ApplicationStrengthBadge
+                              score={c.match_score}
+                              reason={c.match_reason}
+                              lowConfidence={c.low_confidence}
+                              source="ir_match"
+                              short
+                            />
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap gap-1">
                             <AccuracyBadge comparison={c} />
                           </div>
                           <div className="line-clamp-2 font-sans text-xs text-ink-500">{c.title}</div>
@@ -294,7 +324,13 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
                         {activeIdx + 1} of {total}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ApplicationStrengthBadge
+                        score={active.match_score}
+                        reason={active.match_reason}
+                        lowConfidence={active.low_confidence}
+                        source="ir_match"
+                      />
                       <AccuracyBadge comparison={active} />
                     </div>
                   </div>
@@ -302,7 +338,8 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
                   {active.low_confidence && (
                     <p className="mt-1 font-sans text-xs text-amber-800 dark:text-amber-300">
                       Limited match to the complaint — confirm the selected subsection fits the intake
-                      before relying on this allegation line.
+                      before relying on this allegation line. Optional research below can surface
+                      codes with stronger application.
                     </p>
                   )}
                 </header>
@@ -418,6 +455,34 @@ export function ReviewStep({ comparisons, complaintText, report, onBack, onConti
           </div>
         )}
       </div>
+
+      {onSearchStatutes && onAddCode && (
+        <details className="panel group">
+          <summary className="cursor-pointer list-none px-4 py-3 font-sans text-sm font-medium text-ink-600 marker:content-none dark:text-ink-300 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center justify-between gap-2">
+              <span>
+                Optional research — stronger WAC/RCW fits?
+                <span className="mt-0.5 block text-xs font-normal text-ink-400">
+                  Same Strong / Moderate / Weak / None scale as approved codes above. Not authorization.
+                </span>
+              </span>
+              <span className="text-xs text-ink-400 group-open:hidden">Show</span>
+              <span className="hidden text-xs text-ink-400 group-open:inline">Hide</span>
+            </span>
+          </summary>
+          <div className="border-t border-ink-200/70 px-2 pb-3 dark:border-ink-700">
+            <StatuteSearchPanel
+              hits={statuteHits}
+              busy={searchBusy}
+              onSearch={onSearchStatutes}
+              onAddCode={onAddCode}
+              selectedIds={selectedIds}
+              comparisons={comparisons}
+              compact
+            />
+          </div>
+        </details>
+      )}
     </div>
   )
 }
