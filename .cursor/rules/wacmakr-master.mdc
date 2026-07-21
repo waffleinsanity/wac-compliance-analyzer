@@ -37,6 +37,7 @@ Flow: **Intake → Compare → Report**. Legacy analyzer UX is secondary.
 - Local launch: prefer `Launch.bat` / API **stable** (no `--reload`); verify `GET /api/health` `features.case_trash` after start.
 - Soft-delete: trashed cases stay locked for edit/export/comments until restore.
 - Role checks: always pass `user` into `assert_case_editable`; never skip editor gates on mutate paths.
+- **Account isolation:** non-admin users only access cases they own (`owner_user_id`). Admins may see all. Never auto-link Google sign-in onto an existing password account. Prefer 404 (not 403) for foreign case IDs. Disable public registration on shared hosts (`ALLOW_PUBLIC_REGISTRATION=false`).
 
 ## Conflict resolution
 

@@ -281,28 +281,57 @@ def verify_google_id_token(id_token: str) -> dict:
 
 
 def upsert_google_user(db: Session, info: dict) -> User:
-    """Find or create a user from verified Google ID token claims."""
+    """Find or create a user from verified Google ID token claims.
+
+    Never silently attach Google to an existing password account — that would let
+    a pre-registered email collide with a later Google login and share cases.
+    """
     sub = info["sub"]
     email = str(info["email"]).lower()
 
     user = db.query(User).filter(User.google_sub == sub).first()
-    if not user:
-        user = get_user_by_email(db, email)
-        if user:
-            user.google_sub = sub
-        else:
-            user = User(
-                username=unique_username_from_email(db, email),
-                email=email,
-                # Empty string = no local password (SQLite column may still be NOT NULL)
-                hashed_password="",
-                google_sub=sub,
-                role="editor",
-                is_admin=False,
-                is_active=True,
-                must_change_password=False,
-            )
+    if user:
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="Account is disabled")
+        display = (info.get("name") or "").strip()
+        if display and not user.display_name:
+            user.display_name = display[:128]
             db.add(user)
+            db.commit()
+            db.refresh(user)
+        return user
+
+    existing = get_user_by_email(db, email)
+    if existing:
+        if existing.google_sub and existing.google_sub != sub:
+            raise HTTPException(
+                status_code=409,
+                detail="This email is already linked to a different Google account. Contact an administrator.",
+            )
+        # Password (or other) account already owns this email — do not auto-merge.
+        if (existing.hashed_password or "").strip():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "An account with this email already exists. "
+                    "Sign in with your password, or ask an administrator to link Google to your account."
+                ),
+            )
+        # Legacy empty-password row: safe to claim with this Google identity.
+        existing.google_sub = sub
+        user = existing
+    else:
+        user = User(
+            username=unique_username_from_email(db, email),
+            email=email,
+            hashed_password="",
+            google_sub=sub,
+            role="editor",
+            is_admin=False,
+            is_active=True,
+            must_change_password=False,
+        )
+        db.add(user)
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
@@ -315,6 +344,26 @@ def upsert_google_user(db: Session, info: dict) -> User:
     db.commit()
     db.refresh(user)
     return user
+
+
+_DEFAULT_SECRET = "wac-compliance-dev-secret-change-in-production"
+
+
+def assert_production_secret_safe() -> None:
+    """Fail closed when a shared/https deployment still uses the demo JWT secret."""
+    import os
+
+    if not settings.require_secure_secret:
+        return
+    if settings.secret_key != _DEFAULT_SECRET:
+        return
+    public = (settings.app_public_url or "").strip().lower()
+    on_railway = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
+    if on_railway or public.startswith("https://"):
+        raise RuntimeError(
+            "SECRET_KEY is still the development default. "
+            "Set a unique SECRET_KEY before serving a multi-user deployment."
+        )
 
 
 def bootstrap_admin(db: Session) -> None:

@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     case_trash_retention_days: int = 7
     case_upload_max_mb: int = 15
 
+    # Auth: public password registration (disable on shared/multi-user hosts)
+    allow_public_registration: bool = True
+    # Refuse known default JWT secret when APP_PUBLIC_URL is https or RAILWAY_* is set
+    require_secure_secret: bool = True
+
     wac_341_pdf: str = "WAC 246-341.pdf"
     wac_337_pdf: str = "WAC 246-337.pdf"
     rcw_source_pdfs: tuple[str, ...] = (

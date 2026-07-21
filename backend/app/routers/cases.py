@@ -488,8 +488,6 @@ def add_comment(
     assert_case_access(case, user)
     if case.status == "trashed":
         raise HTTPException(status_code=400, detail="Case is in trash. Restore it before adding comments.")
-    if not user.is_admin and case.owner_user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not allowed")
     comment = CaseComment(case_id=case.id, author_user_id=user.id, body=payload.body.strip())
     db.add(comment)
     case.updated_at = utcnow()

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.auth import bootstrap_admin
+from app.auth import assert_production_secret_safe, bootstrap_admin
 from app.config import settings
 from app.database import SessionLocal, init_db
 from app.rag.store import wac_store
@@ -32,6 +32,7 @@ def _background_corpus_startup() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    assert_production_secret_safe()
     init_db()
     db = SessionLocal()
     try:

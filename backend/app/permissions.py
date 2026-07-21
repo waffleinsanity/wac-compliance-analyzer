@@ -17,9 +17,9 @@ ROLE_LABELS: dict[str, str] = {
 }
 
 ROLE_DESCRIPTIONS: dict[str, str] = {
-    "admin": "Full control: users, inbox, audit, review finalize, and all editor tools",
-    "editor": "Create and edit investigation cases, generate drafts, submit for review",
-    "viewer": "Read-only access to cases and the WAC directory",
+    "admin": "Full control: users, inbox, audit, review finalize, and visibility into all cases",
+    "editor": "Create and edit only their own investigation cases; submit for review",
+    "viewer": "Read-only access to their own cases and the WAC directory",
 }
 
 

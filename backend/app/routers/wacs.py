@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, get_optional_user
 from app.database import Favorite, User, get_db
+from app.permissions import is_admin_role, user_role
 from app.rag.store import wac_store
 from app.schemas import FavoriteToggle, WACNodeOut, WACUsageStatOut, WACUsageStatsResponse
 from app.services.usage_stats import top_wacs, usage_counts_map
@@ -43,8 +44,11 @@ def _node_out(n, favs: set[str], usage: dict[str, int] | None = None) -> WACNode
 def popular_wacs(
     limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db),
-    _: User | None = Depends(get_optional_user),
+    user: User = Depends(get_current_user),
 ):
+    """Org-wide selection stats — admin only (avoids leaking other investigators' patterns)."""
+    if not is_admin_role(user_role(user)):
+        return WACUsageStatsResponse(items=[], total_tracked=0)
     rows = top_wacs(db, limit=limit, stat_type="selected")
     enriched: list[WACUsageStatOut] = []
     for row in rows:
@@ -72,7 +76,8 @@ def list_wacs(
     user: User | None = Depends(get_optional_user),
 ):
     favs = _favorites_set(db, user)
-    usage = usage_counts_map(db)
+    # Usage counts reflect org-wide case activity — only expose to admins.
+    usage = usage_counts_map(db) if user and is_admin_role(user_role(user)) else {}
     nodes = list(wac_store.nodes.values())
     if level:
         nodes = [n for n in nodes if n.level == level]

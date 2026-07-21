@@ -62,12 +62,13 @@ def get_case_or_404(db: Session, case_id: int) -> InvestigationCase:
 
 
 def assert_case_access(case: InvestigationCase, user: User) -> None:
+    """Owner or admin only. Non-owners get 404 (no case-existence oracle)."""
     from app.permissions import is_admin_role, user_role
 
     if is_admin_role(user_role(user)):
         return
     if case.owner_user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not allowed to access this case")
+        raise HTTPException(status_code=404, detail="Case not found")
 
 
 def assert_case_not_trashed(case: InvestigationCase, *, action: str = "continue") -> None:

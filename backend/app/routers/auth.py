@@ -59,6 +59,11 @@ def _user_out(user: User) -> UserOut:
 
 @router.post("/register", response_model=TokenResponse)
 def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)):
+    if not settings.allow_public_registration:
+        raise HTTPException(
+            status_code=403,
+            detail="Public registration is disabled. Sign in with Google, or ask an administrator for an account.",
+        )
     enforce_rate_limit(
         request,
         "register",
@@ -127,6 +132,16 @@ def google_status():
         "enabled": google_configured(),
         "redirect_uri": google_redirect_uri() if google_configured() else None,
         "app_public_url": (settings.app_public_url or "").rstrip("/") or None,
+        "allow_public_registration": bool(settings.allow_public_registration),
+    }
+
+
+@router.get("/config")
+def auth_config():
+    """Public auth/UI flags (no secrets)."""
+    return {
+        "allow_public_registration": bool(settings.allow_public_registration),
+        "google_enabled": google_configured(),
     }
 
 

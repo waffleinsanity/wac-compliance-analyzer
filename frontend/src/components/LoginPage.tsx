@@ -23,12 +23,23 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false)
   const [completingGoogle, setCompletingGoogle] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
+  const [publicRegister, setPublicRegister] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    void fetchGoogleSignInEnabled().then((ok) => {
-      if (!cancelled) setGoogleEnabled(ok)
-    })
+    void (async () => {
+      const [googleOk, cfg] = await Promise.all([
+        fetchGoogleSignInEnabled(),
+        fetch('/api/auth/config')
+          .then(async (r) => (r.ok ? ((await r.json()) as { allow_public_registration?: boolean }) : null))
+          .catch(() => null),
+      ])
+      if (cancelled) return
+      setGoogleEnabled(googleOk)
+      if (cfg && typeof cfg.allow_public_registration === 'boolean') {
+        setPublicRegister(cfg.allow_public_registration)
+      }
+    })()
     return () => {
       cancelled = true
     }
@@ -37,6 +48,10 @@ export function LoginPage() {
   useEffect(() => {
     if (!loading && user) navigate('/', { replace: true })
   }, [loading, user, navigate])
+
+  useEffect(() => {
+    if (!publicRegister && mode === 'register') setMode('login')
+  }, [publicRegister, mode])
 
   // Complete server-side Google OAuth return: /login?google_token=... or google_error=...
   useEffect(() => {
@@ -228,20 +243,27 @@ export function LoginPage() {
                 >
                   Forgot password?
                 </button>
-                <button
-                  type="button"
-                  className="text-left text-tide-600 hover:underline"
-                  onClick={() => {
-                    setMode('register')
-                    setError('')
-                    setInfo('')
-                  }}
-                >
-                  Need an account? Register
-                </button>
+                {publicRegister && (
+                  <button
+                    type="button"
+                    className="text-left text-tide-600 hover:underline"
+                    onClick={() => {
+                      setMode('register')
+                      setError('')
+                      setInfo('')
+                    }}
+                  >
+                    Need an account? Register
+                  </button>
+                )}
+                {!publicRegister && googleEnabled && (
+                  <p className="text-xs text-ink-400">
+                    New investigators: use Sign in with Google. Admins can also create accounts.
+                  </p>
+                )}
               </>
             )}
-            {mode === 'register' && (
+            {mode === 'register' && publicRegister && (
               <button
                 type="button"
                 className="text-left text-tide-600 hover:underline"
