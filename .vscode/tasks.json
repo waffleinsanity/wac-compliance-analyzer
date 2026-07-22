@@ -103,6 +103,16 @@
         "panel": "dedicated",
         "group": "wacmakr"
       }
+    },
+    {
+      "label": "WACMAKR: ensure stack (heal)",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/ensure-stack.ps1\" -OpenBrowser",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
     }
   ]
 }

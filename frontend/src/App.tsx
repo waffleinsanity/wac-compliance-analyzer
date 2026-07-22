@@ -47,11 +47,13 @@ import { FeedbackDialog } from './components/FeedbackDialog'
 import { InvestigationReportEditor } from './components/InvestigationReportEditor'
 import { PrivacyGate } from './components/PrivacyGate'
 import { RelatedStatutesPanel } from './components/RelatedStatutesPanel'
+import { ResizeHandle } from './components/ResizeHandle'
 import { ReviewStep } from './components/ReviewStep'
 import { StatuteSearchPanel } from './components/StatuteSearchPanel'
 import { WACSelectionPanel } from './components/WACSelectionPanel'
 import { WorkflowStepper, type WorkflowStep } from './components/WorkflowStepper'
 import { PrivacyScreenBanner } from './components/PrivacyScreenBanner'
+import { useResizableWidth } from './hooks/useResizableWidth'
 import { canAccessAdmin, canEdit, canExport, roleLabel } from './permissions'
 import { normalizeReportAllegations } from './allegationFormat'
 
@@ -81,6 +83,18 @@ export default function App() {
   const [showCasesDrawer, setShowCasesDrawer] = useState(false)
   const [tab, setTab] = useState<MainTab>('analysis')
   const [step, setStep] = useState<WorkflowStep>('workspace')
+  const wacRail = useResizableWidth({
+    storageKey: 'wacmakr.sidebar.wacWidth',
+    defaultWidth: 240,
+    minWidth: 200,
+    maxWidth: 480,
+  })
+  const casesRail = useResizableWidth({
+    storageKey: 'wacmakr.sidebar.casesWidth',
+    defaultWidth: 280,
+    minWidth: 220,
+    maxWidth: 520,
+  })
 
   const [wacs, setWacs] = useState<WACNode[]>([])
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
@@ -659,7 +673,10 @@ export default function App() {
           </div>
         )}
 
-        <aside className="sidebar-rail hidden h-full w-[240px] min-w-[220px] max-w-[260px] shrink-0 border-r border-ink-200/80 dark:border-ink-700 md:flex md:flex-col">
+        <aside
+          className="sidebar-rail relative hidden h-full shrink-0 border-r border-ink-200/80 dark:border-ink-700 md:flex md:flex-col"
+          style={{ width: wacRail.width }}
+        >
           <div className="border-b border-ink-200/80 px-3 py-3 dark:border-ink-700">
             <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
               <Search className="h-4 w-4 text-tide-600" />
@@ -670,6 +687,12 @@ export default function App() {
             </p>
           </div>
           <div className="min-h-0 flex-1">{wacPanel}</div>
+          <ResizeHandle
+            edge="right"
+            label="Resize Approved WACs panel"
+            onPointerDown={wacRail.onResizePointerDown('right')}
+            onNudge={wacRail.nudge}
+          />
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
@@ -892,7 +915,17 @@ export default function App() {
           </div>
         </main>
 
-        <aside className="hidden h-full w-[200px] min-w-[180px] max-w-[220px] shrink-0 border-l border-ink-200/80 bg-card/40 dark:border-ink-700 lg:flex lg:flex-col">
+        <aside
+          className="relative hidden h-full shrink-0 border-l border-ink-200/80 bg-card/40 dark:border-ink-700 lg:flex lg:flex-col"
+          style={{ width: casesRail.width }}
+        >
+          <ResizeHandle
+            edge="left"
+            label="Resize Cases panel"
+            onPointerDown={casesRail.onResizePointerDown('left')}
+            onNudge={casesRail.nudge}
+            className="!hidden lg:!block"
+          />
           {casesPanel}
         </aside>
 

@@ -58,11 +58,18 @@
       "serverReadyAction": {
         "pattern": "Local:\\s+https?://[^\\s]+",
         "uriFormat": "http://localhost:5173/login",
-        "action": "openExternally"
+        "action": "debugWithChrome"
       }
     },
     {
       "name": "WACMAKR: UI (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173/login",
+      "webRoot": "${workspaceFolder}/frontend/src"
+    },
+    {
+      "name": "WACMAKR: Open app (browser)",
       "type": "chrome",
       "request": "launch",
       "url": "http://localhost:5173/login",
@@ -72,7 +79,7 @@
   "compounds": [
     {
       "name": "WACMAKR: Full stack",
-      "configurations": ["WACMAKR: API (stable)", "WACMAKR: UI"],
+      "configurations": ["WACMAKR: API (stable)", "WACMAKR: UI", "WACMAKR: Open app (browser)"],
       "stopAll": true,
       "presentation": {
         "order": 1,

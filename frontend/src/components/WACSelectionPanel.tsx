@@ -177,29 +177,29 @@ export function WACSelectionPanel({
                           key={code.id}
                           title={fullLabel}
                           className={clsx(
-                            'group flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-muted/60',
+                            'group flex items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-muted/60',
                             selectedCodes.includes(code.id) && 'wac-row-selected',
                           )}
                         >
                           <input
                             type="checkbox"
-                            className="h-4 w-4 shrink-0 accent-tide-600"
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-tide-600"
                             checked={selectedCodes.includes(code.id)}
                             onChange={() => toggleCode(code.id)}
                             title={fullLabel}
                             aria-label={fullLabel}
                           />
                           <div className="min-w-0 flex-1" title={fullLabel}>
-                            <div className="truncate font-mono text-[13px] font-semibold" title={code.code}>
+                            <div className="font-mono text-[13px] font-semibold leading-tight">
                               {code.code}
                             </div>
-                            <div className="truncate text-xs leading-snug text-muted-foreground" title={code.title}>
+                            <div className="mt-0.5 line-clamp-2 break-words text-xs leading-snug text-muted-foreground">
                               {code.title}
                             </div>
                           </div>
                           <button
                             type="button"
-                            className="btn-ghost h-6 w-6 shrink-0 p-0"
+                            className="btn-ghost mt-0.5 h-6 w-6 shrink-0 p-0"
                             onClick={() => onToggleFavorite(code.id)}
                             title={
                               favoriteIds.has(code.id) || favoriteIds.has(code.code)

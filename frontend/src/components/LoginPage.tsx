@@ -171,7 +171,6 @@ export function LoginPage() {
               <GoogleSignInButton
                 disabled={busy}
                 buttonText="signin_with"
-                width={352}
                 onError={setError}
               />
               <div className="flex items-center gap-3 text-xs text-ink-400">

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 type Props = {
   disabled?: boolean
   buttonText?: 'signin_with' | 'continue_with' | 'signup_with'
-  width?: number
+  width?: number | string
   onError?: (message: string) => void
 }
 
@@ -22,22 +22,10 @@ type GoogleStatus = {
 export const GOOGLE_START_PATH = '/api/auth/google/start'
 
 /**
- * Prefer relative /api proxy locally. Only force 127.0.0.1 when the user opened
- * the UI via localhost (Google console often lists 127.0.0.1 separately).
+ * Always same-origin relative. Do not rewrite localhost → 127.0.0.1: Vite may only
+ * be bound to ::1/localhost, and Cursor's Simple Browser then gets ERR_CONNECTION_REFUSED.
  */
 export function googleStartHref(): string {
-  if (typeof window === 'undefined') return GOOGLE_START_PATH
-  const { hostname, port, protocol } = window.location
-  if (hostname === 'localhost') {
-    const p = port || '5173'
-    return `http://127.0.0.1:${p}${GOOGLE_START_PATH}`
-  }
-  // Production / LAN / Railway: same-origin relative URL
-  if (!hostname || hostname === '127.0.0.1') {
-    return GOOGLE_START_PATH
-  }
-  // Absolute same-origin also fine; relative is enough
-  void protocol
   return GOOGLE_START_PATH
 }
 
@@ -61,7 +49,7 @@ export const isGoogleSignInEnabled = import.meta.env.VITE_GOOGLE_SIGNIN !== 'fal
 export function GoogleSignInButton({
   disabled,
   buttonText = 'continue_with',
-  width = 320,
+  width = '100%',
   onError,
 }: Props) {
   const [ready, setReady] = useState(import.meta.env.VITE_GOOGLE_SIGNIN === 'true')
@@ -97,7 +85,7 @@ export function GoogleSignInButton({
           onError?.(err instanceof Error ? err.message : 'Google sign-in failed')
         }
       }}
-      className="inline-flex items-center justify-center gap-3 rounded-lg border border-ink-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-800 shadow-sm transition hover:bg-ink-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:border-ink-600 dark:bg-ink-900 dark:text-ink-50 dark:hover:bg-ink-800"
+      className="inline-flex h-10 w-full items-center justify-center gap-3 rounded-md border border-ink-200 bg-white px-4 text-sm font-medium text-ink-800 shadow-sm transition hover:bg-ink-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:border-ink-600 dark:bg-ink-900 dark:text-ink-50 dark:hover:bg-ink-800"
       style={{ width, maxWidth: '100%' }}
     >
       <GoogleGlyph />

@@ -443,7 +443,18 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  const res = await fetch(path, { ...options, headers })
+  let res: Response
+  try {
+    res = await fetch(path, { ...options, headers })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+      throw new Error(
+        'Cannot reach the API (http://127.0.0.1:8000). Start the stack with Launch.bat, then refresh.',
+      )
+    }
+    throw err instanceof Error ? err : new Error(msg)
+  }
   if (!res.ok) {
     let detail: unknown = res.statusText
     try {

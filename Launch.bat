@@ -130,7 +130,8 @@ if "%API_READY%"=="0" goto DONE
 echo.
 echo Application launched.
 echo   - Keep the "WAC API" and "WAC UI" windows open while using the app.
-echo   - Close those windows to stop the application.
+echo   - Starting keep-alive watcher (auto-restarts if API/UI die)...
+start "WAC KeepAlive" /MIN cmd /c call "%~dp0KeepAlive.bat"
 echo   - Sign in: admin / ChangeMeAdmin1!
 echo.
 pause

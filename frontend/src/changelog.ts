@@ -31,6 +31,20 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.07.21.3',
+    buildTag: '2026.07.21.3',
+    date: '2026-07-21',
+    title: 'Readable Cases panel',
+    summary:
+      'Cases rail is wider and title-first, with status chips restored so Draft / In review / Final stay scannable alongside search.',
+    highlights: [
+      'Human titles lead each card; compact status chips match the workflow stepper language.',
+      'Status filter chips return (All / Draft / In review / Final); search filters by title or case ID.',
+      'Archive and trash stay in a ⋯ menu so titles are not crushed by action buttons.',
+    ],
+    areas: ['cases', 'platform'],
+  },
+  {
     id: '2026.07.21.2',
     buildTag: '2026.07.21.2',
     date: '2026-07-21',

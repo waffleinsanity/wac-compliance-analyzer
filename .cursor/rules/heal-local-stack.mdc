@@ -1,0 +1,16 @@
+---
+description: When the local app fails to fetch or won't open, heal the stack yourself — never instruct the user to restart
+alwaysApply: true
+---
+
+# Local stack: heal, don't instruct
+
+If the UI shows **Failed to fetch**, API/UI won't load, or Cursor Browser won't open the app:
+
+1. **Do not** tell the user to run Launch.bat, open a folder, or refresh.
+2. Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ensure-stack.ps1 -OpenBrowser` from `C:\Users\Daniel\Projects\wac-compliance-analyzer` (or start `KeepAlive.bat`).
+3. Verify `http://127.0.0.1:8000/api/health` and `http://localhost:5173`.
+4. Open the app URL yourself (`Start-Process http://localhost:5173/login` and/or Cursor Simple Browser).
+5. If the wrong Cursor workspace is open (cache folder with `agent-transcripts` only), open the real repo with `cursor -r C:\Users\Daniel\Projects\wac-compliance-analyzer` — do not ask the user to do it.
+
+Repo path (authoritative): `C:\Users\Daniel\Projects\wac-compliance-analyzer`
