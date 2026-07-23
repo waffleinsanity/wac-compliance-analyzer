@@ -32,26 +32,22 @@ type Props = {
   onCaseRefresh?: () => void | Promise<void>
 }
 
-function AccuracyBadge({ comparison }: { comparison: WACComparison }) {
+function AccuracyNote({ comparison }: { comparison: WACComparison }) {
   if (comparison.quote_ok === false) {
     return (
-      <span className="rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
-        Needs statute review
-      </span>
+      <span className="font-sans text-xs text-rose-700 dark:text-rose-300">Needs statute review</span>
     )
   }
   if (comparison.low_confidence) {
     return (
-      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+      <span className="font-sans text-xs text-amber-800 dark:text-amber-300">
         Confirm subsection
       </span>
     )
   }
   if (comparison.quote_ok) {
     return (
-      <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
-        Statute verified
-      </span>
+      <span className="font-sans text-xs text-ink-500 dark:text-ink-400">Statute verified</span>
     )
   }
   return null
@@ -185,21 +181,21 @@ export function ReviewStep({
 
   if (!comparisons.length) {
     return (
-      <div className="panel animate-rise p-8 text-center font-sans text-sm text-ink-500">
+      <div className="animate-rise border border-dashed border-ink-300 px-6 py-12 text-center font-sans text-sm text-ink-500 dark:border-ink-600">
         Generate a draft report first to compare authorized WACs against the complaint.
       </div>
     )
   }
 
   return (
-    <div className="animate-rise space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="animate-rise space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-ink-200 pb-4 dark:border-ink-700">
         <div>
-          <p className="font-sans text-xs font-semibold uppercase tracking-[0.14em] text-tide-600 dark:text-tide-400">
-            Step 2 · Compare
-          </p>
-          <h2 className="mt-1 font-display text-3xl tracking-tight">Working allegations</h2>
-          <p className="mt-2 max-w-2xl font-sans text-sm text-ink-500">
+          <p className="compare-meta">Step 2 · Compare</p>
+          <h2 className="mt-1 font-display text-[1.75rem] tracking-tight text-ink-900 dark:text-ink-50 lg:text-3xl">
+            Working allegations
+          </h2>
+          <p className="mt-2 max-w-2xl font-sans text-sm leading-relaxed text-ink-500">
             One allegation line per approved code ({total} total). Application strength shows how
             clearly each code fits the complaint. Use optional research below if another WAC/RCW may
             apply more strongly.
@@ -223,8 +219,8 @@ export function ReviewStep({
       />
 
       {quoteFailures.length > 0 && (
-        <div className="rounded-xl border border-amber-300/80 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
-          <p className="font-medium">
+        <div className="border-l-2 border-amber-600 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950/35 dark:text-amber-100">
+          <p className="font-medium leading-snug">
             Statute wording issues ({quoteFailures.length}). Jump to the allegation and check it
             against the approved code text before exporting. If this draft was built before a recent
             update, go back to Intake and rebuild the report.
@@ -242,14 +238,14 @@ export function ReviewStep({
                     disabled={!canNav}
                     onClick={() => canNav && goTo(idx, { openPdf: true })}
                     className={clsx(
-                      'w-full rounded-lg border border-amber-300/60 bg-white/60 px-3 py-2 text-left transition dark:border-amber-700/60 dark:bg-amber-950/30',
+                      'w-full border-b border-amber-200/60 px-1 py-2 text-left transition last:border-0 dark:border-amber-800/40',
                       canNav
-                        ? 'hover:border-amber-500 hover:bg-amber-100/80 dark:hover:bg-amber-900/50'
+                        ? 'hover:bg-amber-100/50 dark:hover:bg-amber-900/30'
                         : 'cursor-default opacity-70',
                     )}
                   >
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="font-mono text-xs font-semibold">{label}</span>
+                      <span className="compare-cite font-semibold">{label}</span>
                       <span className="font-sans text-xs text-amber-800 dark:text-amber-200">
                         {quoteFailureLabel(f.reason)}
                       </span>
@@ -272,16 +268,14 @@ export function ReviewStep({
         </div>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-[188px_minmax(0,1fr)]">
-        <aside className="panel max-h-[42vh] overflow-y-auto p-2 lg:sticky lg:top-3 lg:max-h-[78vh]">
+      <div className="grid gap-5 lg:grid-cols-[11.5rem_minmax(0,1fr)]">
+        <aside className="max-h-[42vh] overflow-y-auto border-r border-ink-200 pr-3 dark:border-ink-700 lg:sticky lg:top-3 lg:max-h-[78vh]">
           {Object.entries(grouped).map(([label, items]) => {
             if (!items.length) return null
             return (
-              <div key={label} className="mb-2">
-                <div className="px-2 py-0.5 font-sans text-[11px] font-semibold uppercase tracking-wider text-ink-400">
-                  {label}
-                </div>
-                <ul className="space-y-0.5">
+              <div key={label} className="mb-4">
+                <div className="compare-rail-label">{label}</div>
+                <ul className="space-y-0">
                   {items.map((c) => {
                     const idx = comparisons.findIndex((x) => x.wac_id === c.wac_id)
                     const activeItem = idx === activeIdx
@@ -291,26 +285,27 @@ export function ReviewStep({
                           type="button"
                           onClick={() => goTo(idx)}
                           className={clsx(
-                            'w-full rounded-xl px-2.5 py-1.5 text-left transition',
+                            'w-full border-l-2 px-2.5 py-2 text-left transition',
                             activeItem
-                              ? 'bg-tide-500/12 ring-1 ring-tide-500/30'
-                              : 'hover:bg-ink-100/70 dark:hover:bg-ink-800/50',
+                              ? 'border-tide-600 bg-tide-500/8'
+                              : 'border-transparent hover:bg-ink-100/70 dark:hover:bg-ink-800/40',
                           )}
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-1">
-                            <div className="font-mono text-xs font-semibold">{c.code}</div>
+                          <div className="font-mono text-xs font-semibold tracking-tight">{c.code}</div>
+                          <div className="mt-0.5 line-clamp-2 font-sans text-[11px] leading-snug text-ink-500">
+                            {c.title}
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                             <ApplicationStrengthBadge
                               score={c.match_score}
                               reason={c.match_reason}
                               lowConfidence={c.low_confidence}
                               source="ir_match"
                               short
+                              tone="quiet"
                             />
+                            <AccuracyNote comparison={c} />
                           </div>
-                          <div className="mt-0.5 flex flex-wrap gap-1">
-                            <AccuracyBadge comparison={c} />
-                          </div>
-                          <div className="line-clamp-2 font-sans text-xs text-ink-500">{c.title}</div>
                         </button>
                       </li>
                     )
@@ -322,11 +317,11 @@ export function ReviewStep({
         </aside>
 
         {active && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div className="flex items-stretch gap-2">
               <button
                 type="button"
-                className="btn-secondary shrink-0 self-center !px-2.5"
+                className="btn-ghost shrink-0 self-center !px-2"
                 onClick={goPrev}
                 disabled={total < 2}
                 aria-label="Previous approved WAC"
@@ -335,28 +330,37 @@ export function ReviewStep({
                 <ChevronLeft className="h-5 w-5" />
               </button>
 
-              <section className="doc-surface min-w-0 flex-1 overflow-hidden">
-                <header className="border-b border-ink-200/70 px-5 py-4 dark:border-ink-700">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-sans text-[11px] font-semibold uppercase tracking-[0.14em] text-tide-600 dark:text-tide-400">
-                      Allegation line · {active.code}
-                      <span className="ml-2 font-mono normal-case tracking-normal text-ink-400">
+              <section className="doc-surface min-w-0 flex-1 overflow-hidden !rounded-none border-x-0 border-t-0 border-b-0 shadow-none sm:!rounded-md sm:border">
+                <header className="border-b border-ink-200 px-5 py-4 dark:border-ink-700">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                    <p className="compare-meta">
+                      Allegation{' '}
+                      <span className="normal-case tracking-normal text-ink-700 dark:text-ink-200">
                         {activeIdx + 1} of {total}
                       </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="mx-1.5 text-ink-300 dark:text-ink-600" aria-hidden>
+                        ·
+                      </span>
+                      <span className="compare-cite font-semibold normal-case tracking-normal text-ink-800 dark:text-ink-100">
+                        {active.code}
+                      </span>
+                    </p>
+                    <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
                       <ApplicationStrengthBadge
                         score={active.match_score}
                         reason={active.match_reason}
                         lowConfidence={active.low_confidence}
                         source="ir_match"
+                        tone="quiet"
                       />
-                      <AccuracyBadge comparison={active} />
+                      <AccuracyNote comparison={active} />
                     </div>
                   </div>
-                  <h3 className="mt-1 font-display text-lg leading-snug tracking-tight">{active.title}</h3>
+                  <h3 className="mt-2 font-display text-xl leading-snug tracking-tight text-ink-900 dark:text-ink-50">
+                    {active.title}
+                  </h3>
                   {active.low_confidence && (
-                    <p className="mt-1 font-sans text-xs text-amber-800 dark:text-amber-300">
+                    <p className="mt-2 font-sans text-xs leading-relaxed text-amber-800 dark:text-amber-300">
                       Limited match to the complaint — confirm the selected subsection fits the intake
                       before relying on this allegation line. Optional research below can surface
                       codes with stronger application.
@@ -364,35 +368,35 @@ export function ReviewStep({
                   )}
                 </header>
 
-                <article className="bg-tide-500/[0.06] px-5 py-5 dark:bg-tide-500/[0.08]">
-                  <p className="prose-report whitespace-pre-wrap text-[15px] leading-snug text-ink-900 dark:text-ink-50">
+                <article className="compare-allegation-body">
+                  <p className="compare-allegation-text whitespace-pre-wrap">
                     {normalizeAllegationLine(active.allegation_draft) ||
                       'No allegation draft generated for this code.'}
                   </p>
                   {allegationLen > 480 && (
-                    <p className="mt-2 font-sans text-xs text-amber-800 dark:text-amber-300">
+                    <p className="mt-3 font-sans text-xs text-amber-800 dark:text-amber-300">
                       This allegation line is long — consider editing it down in the report editor.
                     </p>
                   )}
                 </article>
 
                 {!!active.matched_subsections?.length && (
-                  <div className="flex flex-wrap gap-1.5 border-t border-ink-200/60 px-5 py-3 dark:border-ink-700">
-                    {active.matched_subsections.map((cite) => (
-                      <span
-                        key={cite}
-                        className="rounded-md border border-ink-200 bg-background px-2 py-0.5 font-mono text-[11px] dark:border-ink-600"
-                      >
-                        {cite}
-                      </span>
-                    ))}
+                  <div className="border-t border-ink-200 px-5 py-3 dark:border-ink-700">
+                    <p className="compare-meta mb-1.5">Matched subsections</p>
+                    <p className="flex flex-wrap gap-x-3 gap-y-1">
+                      {active.matched_subsections.map((cite) => (
+                        <span key={cite} className="compare-cite">
+                          {cite}
+                        </span>
+                      ))}
+                    </p>
                   </div>
                 )}
               </section>
 
               <button
                 type="button"
-                className="btn-secondary shrink-0 self-center !px-2.5"
+                className="btn-ghost shrink-0 self-center !px-2"
                 onClick={goNext}
                 disabled={total < 2}
                 aria-label="Next approved WAC"
@@ -402,37 +406,37 @@ export function ReviewStep({
               </button>
             </div>
 
-            <section className="panel space-y-3 p-4">
-              <h4 className="font-sans text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-400">
-                Complaint excerpts tied to this code
+            <section className="space-y-3 border-t border-ink-200 pt-4 dark:border-ink-700">
+              <h4 className="font-display text-base text-ink-800 dark:text-ink-100">
+                Complaint excerpts
               </h4>
+              <p className="compare-meta -mt-1">Tied to this code from the intake text</p>
               {excerpts.length ? (
-                <ul className="space-y-2">
+                <ul className="space-y-4">
                   {excerpts.map((ex, i) => (
-                    <li
-                      key={i}
-                      className="rounded-lg border border-ink-200/70 bg-muted/15 px-3 py-2 text-sm leading-relaxed text-ink-700 dark:border-ink-700 dark:text-ink-200"
-                    >
-                      {ex}
+                    <li key={i} className="compare-excerpt">
+                      <p className="compare-excerpt-text">{ex}</p>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-ink-400">No complaint excerpts linked to this code.</p>
+                <p className="font-sans text-sm text-ink-400">
+                  No complaint excerpts linked to this code.
+                </p>
               )}
             </section>
 
-            <section className="panel overflow-hidden">
+            <section className="border-t border-ink-200 dark:border-ink-700">
               <button
                 type="button"
-                className="flex w-full items-center justify-between px-4 py-3 text-left font-sans text-sm font-medium"
+                className="flex w-full items-center justify-between py-3.5 text-left font-sans text-sm font-medium text-ink-800 dark:text-ink-100"
                 onClick={() => setShowPdf((v) => !v)}
                 aria-expanded={showPdf}
               >
                 <span>
-                  Exact PDF subsection text (verification)
+                  Exact PDF subsection text
                   {active.quote_ok === false && (
-                    <span className="ml-2 font-sans text-[11px] font-normal text-rose-700 dark:text-rose-300">
+                    <span className="ml-2 font-sans text-xs font-normal text-rose-700 dark:text-rose-300">
                       — review against approved code text
                     </span>
                   )}
@@ -440,22 +444,22 @@ export function ReviewStep({
                 {showPdf ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
               {showPdf && (
-                <div className="space-y-3 border-t border-ink-200/70 px-4 py-3 dark:border-ink-700">
+                <div className="space-y-3 border-t border-ink-200 pb-2 pt-4 dark:border-ink-700">
                   {active.matched_subsections?.length ? (
                     active.matched_subsections.map((cite, i) => (
-                      <div key={cite} className="rounded-lg border border-ink-200/70 px-3 py-2.5 dark:border-ink-700">
-                        <div className="font-mono text-xs font-semibold text-tide-700 dark:text-tide-300">
+                      <div key={cite} className="space-y-1.5 border-l-2 border-tide-600/40 pl-3 dark:border-tide-400/30">
+                        <div className="compare-cite font-semibold text-tide-800 dark:text-tide-300">
                           {cite}
                         </div>
                         {active.matched_subsection_texts?.[i] && (
-                          <p className="mt-1.5 max-h-80 overflow-y-auto whitespace-pre-wrap font-serif text-sm leading-relaxed text-ink-700 dark:text-ink-200">
+                          <p className="max-h-80 overflow-y-auto whitespace-pre-wrap font-serif text-sm leading-relaxed text-ink-700 dark:text-ink-200">
                             {active.matched_subsection_texts[i]}
                           </p>
                         )}
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-ink-400">No matched subsections for this code.</p>
+                    <p className="font-sans text-sm text-ink-400">No matched subsections for this code.</p>
                   )}
                   <button
                     type="button"
@@ -477,8 +481,8 @@ export function ReviewStep({
       </div>
 
       {onSearchStatutes && onAddCode && (
-        <details className="panel group">
-          <summary className="cursor-pointer list-none px-4 py-3 font-sans text-sm font-medium text-ink-600 marker:content-none dark:text-ink-300 [&::-webkit-details-marker]:hidden">
+        <details className="group border-t border-ink-200 pt-3 dark:border-ink-700">
+          <summary className="cursor-pointer list-none font-sans text-sm font-medium text-ink-600 marker:content-none dark:text-ink-300 [&::-webkit-details-marker]:hidden">
             <span className="flex items-center justify-between gap-2">
               <span>
                 Optional research — stronger WAC/RCW fits?
@@ -490,7 +494,7 @@ export function ReviewStep({
               <span className="hidden text-xs text-ink-400 group-open:inline">Hide</span>
             </span>
           </summary>
-          <div className="border-t border-ink-200/70 px-2 pb-3 dark:border-ink-700">
+          <div className="mt-3">
             <StatuteSearchPanel
               hits={statuteHits}
               busy={searchBusy}

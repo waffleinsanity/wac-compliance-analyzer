@@ -17,6 +17,7 @@ from docx.shared import Pt
 from docx.text.paragraph import Paragraph
 
 from app.schemas import InvestigationReport
+from app.services.ir_blank import compose_actions_text, parse_actions_fields
 from app.services.ir_format import (
     allegation_export_line,
     conclusion_export_lines,
@@ -376,7 +377,12 @@ def smart_fill(template_path: Path | str, report: InvestigationReport) -> bytes:
     process_steps = [str(s) for s in (report.investigative_process or [])]
     summary = (report.summary_of_findings or "").strip()
     conclusions = conclusion_export_lines(report)
-    actions = (report.actions or "[To be determined after investigation]").strip()
+    det, ref = parse_actions_fields(
+        report.actions or "",
+        determination=getattr(report, "action_determination", "") or "",
+        referral=getattr(report, "action_referral", "") or "",
+    )
+    action_lines = compose_actions_text(det, ref).splitlines()
     alleg_lines = allegation_lines_with_compare(report)
 
     writers = {
@@ -389,7 +395,7 @@ def smart_fill(template_path: Path | str, report: InvestigationReport) -> bytes:
         "conclusion": lambda h: _write_plain_after(
             h, [""] + [line for c in conclusions for line in (c, "")]
         ),
-        "actions": lambda h: _write_plain_after(h, [actions] if actions else [""]),
+        "actions": lambda h: _write_plain_after(h, action_lines if action_lines else [""]),
     }
 
     # Replace from bottom to top so heading indices stay valid

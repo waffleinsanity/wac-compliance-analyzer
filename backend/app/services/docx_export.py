@@ -21,6 +21,8 @@ from app.services.ir_blank import (
     SUMMARY_HEADER,
     TITLE,
     blank_docx_path,
+    compose_actions_text,
+    parse_actions_fields,
 )
 from app.services.ir_format import (
     allegation_export_line,
@@ -252,13 +254,13 @@ def build_investigation_docx(
         _add_blank(doc, STYLE_BODY)
 
     _add(doc, ACTIONS_LABEL.strip(), STYLE_BODY, bold=True, size_pt=SIZE_SECTION)
-    _add(
-        doc,
-        (report.actions or "[To be determined after investigation]").strip(),
-        STYLE_BODY,
-        size_pt=SIZE_BODY,
-        indent=True,
+    det, ref = parse_actions_fields(
+        report.actions or "",
+        determination=getattr(report, "action_determination", "") or "",
+        referral=getattr(report, "action_referral", "") or "",
     )
+    for line in compose_actions_text(det, ref).splitlines():
+        _add(doc, line, STYLE_BODY, size_pt=SIZE_BODY, indent=True)
 
     buf = io.BytesIO()
     doc.save(buf)

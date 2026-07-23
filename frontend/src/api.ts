@@ -145,6 +145,8 @@ export type RegulatoryFrameworkEntry = {
     cite?: string
     label?: string
     text?: string
+    /** Parent list-intro prose (exact PDF); leaf body stays in text for quote verify. */
+    context?: string
     level?: string
     score?: number
   }[]
@@ -185,6 +187,10 @@ export type InvestigationReport = {
   summary_of_findings: string
   conclusions: InvestigationConclusion[]
   actions: string
+  /** Blank Actions: determination dropdown */
+  action_determination?: string
+  /** Blank Actions: referral dropdown */
+  action_referral?: string
   comparisons: WACComparison[]
   findings: ComplianceFinding[]
   report_text: string

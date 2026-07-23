@@ -181,9 +181,9 @@ def _local_code_investigation(
     complaint: str,
 ) -> CodeInvestigation:
     # Allegation + cites come ONLY from PDF-derived subsection text
-    draft = draft_allegation_from_source(code, title, complaint, max_subs=2)
+    draft = draft_allegation_from_source(code, title, complaint, max_subs=10)
     allegation, labels = normalize_allegation_line(draft.text), draft.cites
-    relevant = score_relevant_subsections(complaint, code, max_items=2)
+    relevant = score_relevant_subsections(complaint, code, max_items=14)
     known = []
     unclear = []
     if relevant and relevant[0].score < 0.08 and relevant[0].reason != "explicit_cite":
@@ -461,7 +461,7 @@ def _parse_llm_result(
         llm_cites = [str(x) for x in (raw.get("relevant_subsections") or [])]
         validated = filter_cites_to_source(code, llm_cites)
         draft = draft_allegation_from_source(
-            code, title_map[code], complaint_for_draft, max_subs=2
+            code, title_map[code], complaint_for_draft, max_subs=10
         )
         allegation, source_cites = normalize_allegation_line(draft.text), draft.cites
         # Prefer intersection of LLM suggestions with source-ranked cites when both exist
@@ -475,7 +475,7 @@ def _parse_llm_result(
                 # Rebuild using complaint + explicit cite strings so extract_explicit_cites can fire
                 hint = complaint_for_draft + " " + " ".join(merged)
                 draft = draft_allegation_from_source(
-                    code, title_map[code], hint, max_subs=2
+                    code, title_map[code], hint, max_subs=10
                 )
                 allegation, source_cites = normalize_allegation_line(draft.text), draft.cites
             subs = source_cites

@@ -50,6 +50,38 @@ FEDERAL_CERTIFICATION_PRIORITY_CHOICES = [
     "No Action Necessary",
 ]
 
+# Conclusion inline dropdown (blank SDT): only these two + empty "Choose an item."
+CONCLUSION_FINDING_CHOICES = [
+    "not in compliance",
+    "in compliance",
+]
+
+ACTION_DETERMINATION_CHOICES = [
+    "No Statement of Deficiency, No Further Action Required",
+    "Letter of No Deficiency",
+    "Statement of Deficiency with Directed Plan of Correction",
+    "Referred Statement of Deficiency to Office of Investigative and Legal Services",
+    "Memo to File",
+    "Statement of Deficiency, Plan of Correction Reviewed",
+    "Statement of Deficiency - No Plan of Correction Required",
+    "Statement of Deficiency, Plan of Correction Reviewed, On-site Re-visit",
+]
+
+# Preserve blank spelling "Referrred" (three r's) for CARF line.
+ACTION_REFERRAL_CHOICES = [
+    "Referred to Medical Commission",
+    "Referred to Nursing Commission",
+    "Referred to Office of Investigative and Legal Services",
+    "Referred to Health Care Authority",
+    "Referred back to Case Management Team",
+    "No Additional Referrals Needed",
+    "Referrred to Commission on Accreditation of Rehabilitation Facilities",
+    "Referred to Joint Commission",
+    "Referred to Council on Accreditation",
+]
+
+CHOOSE_ITEM = "Choose an item."
+
 # Blank process skeleton (section labels + starter lines investigators fill in)
 BLANK_PROCESS_SKELETON = [
     "Pre-investigation Activity:",
@@ -73,13 +105,13 @@ def blank_docx_path() -> Path:
 
 
 def conclusion_finding_phrase(result: str) -> str:
-    """Map editor result to blank-IR 'found the facility … with WAC' phrasing."""
+    """Map editor result to blank-IR finding dropdown value (or empty = Choose an item.)."""
     r = (result or "").strip().lower()
-    if r == "substantiated":
-        return "out of compliance"
-    if r == "unsubstantiated":
+    if r in {"substantiated", "out of compliance", "not in compliance"}:
+        return "not in compliance"
+    if r in {"unsubstantiated", "in compliance"}:
         return "in compliance"
-    return "pending determination of compliance"
+    return ""
 
 
 def format_conclusion_line(
@@ -93,7 +125,7 @@ def format_conclusion_line(
     code = (wac_code or "").replace("WAC ", "").replace("RCW ", "").strip()
     prefix = "RCW" if code.startswith("71.") else instrument
     title = (wac_title or "").strip()
-    finding = conclusion_finding_phrase(result)
+    finding = conclusion_finding_phrase(result) or CHOOSE_ITEM
     line = f"Allegation: The investigator found the facility {finding} with {prefix} {code}"
     if title:
         clean_title = title.replace("—", " - ").replace("–", " - ")
@@ -102,6 +134,47 @@ def format_conclusion_line(
         line += f", {clean_title}"
     line += "."
     extra = (deficiency_details or "").strip()
-    if extra and finding == "out of compliance":
+    if extra and finding == "not in compliance":
         line += f" {extra}"
     return line
+
+
+def compose_actions_text(determination: str = "", referral: str = "") -> str:
+    """Two blank Actions content-control lines under Actions:."""
+    d = (determination or "").strip() or CHOOSE_ITEM
+    r = (referral or "").strip() or CHOOSE_ITEM
+    return f"{d}\n{r}"
+
+
+def parse_actions_fields(
+    actions: str = "",
+    *,
+    determination: str = "",
+    referral: str = "",
+) -> tuple[str, str]:
+    """Prefer structured fields; else split legacy actions text into the two dropdowns."""
+    det = (determination or "").strip()
+    ref = (referral or "").strip()
+    if det or ref:
+        return det, ref
+    lines = [ln.strip() for ln in (actions or "").splitlines() if ln.strip()]
+    # Drop legacy placeholder
+    lines = [ln for ln in lines if ln.lower() not in {"[to be determined after investigation]"}]
+    if not lines:
+        return "", ""
+    known_det = {c.lower() for c in ACTION_DETERMINATION_CHOICES} | {CHOOSE_ITEM.lower()}
+    known_ref = {c.lower() for c in ACTION_REFERRAL_CHOICES} | {CHOOSE_ITEM.lower()}
+    if len(lines) >= 2:
+        a, b = lines[0], lines[1]
+        if a.lower() in known_det or b.lower() in known_ref:
+            return (
+                "" if a.lower() == CHOOSE_ITEM.lower() else a,
+                "" if b.lower() == CHOOSE_ITEM.lower() else b,
+            )
+        return a, b
+    only = lines[0]
+    if only.lower() in known_ref:
+        return "", only
+    if only.lower() == CHOOSE_ITEM.lower():
+        return "", ""
+    return only, ""

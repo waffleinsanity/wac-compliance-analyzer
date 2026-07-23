@@ -44,7 +44,10 @@ from app.services.wac_scope import (
     normalize_allegation_line,
     normalize_statute_text,
     score_relevant_subsections,
+    select_for_allegation,
     sentence_boundary_excerpt,
+    subsection_ancestor_context,
+    subsection_display_text,
 )
 
 
@@ -83,7 +86,7 @@ def draft_allegation(
         return text
 
     draft = draft_allegation_from_source(
-        node.code, node.title or node.code, intake, max_subs=2
+        node.code, node.title or node.code, intake, max_subs=10
     )
     return draft.text
 
@@ -99,37 +102,66 @@ def _chapter_bucket(code: str) -> str:
     return "Other"
 
 
-def _relevant_excerpts(complaint: str, node: Any, max_excerpts: int = 3) -> list[str]:
-    windows: list[str] = []
+def _relevant_excerpts(
+    complaint: str,
+    node: Any,
+    *,
+    matched_subs: list[Any] | None = None,
+    max_excerpts: int = 3,
+) -> list[str]:
+    """Pick complaint windows thematically aligned with matched allegation subsections.
+
+    When matched duties exist, prefer chunks that share their content tokens over
+    generic code-title keyword windows (avoids meds excerpts beside gambling cites).
+    """
+    chunks = [
+        c.strip()
+        for c in re.split(r"\n{2,}|(?<=[.!?])\s+", complaint)
+        if c and len(c.strip()) >= 35
+    ]
     code = node.code
-    chunks = re.split(r"\n{2,}|(?<=[.!?])\s+", complaint)
     code_re = re.compile(rf"\b{re.escape(code)}\b|WAC\s+{re.escape(code)}\b", re.IGNORECASE)
     stop = {
         "that", "with", "from", "this", "shall", "must", "have", "been", "under",
         "which", "their", "other", "agency", "facility", "services", "including",
-        "provide", "provided", "requirements", "section", "chapter",
+        "provide", "provided", "requirements", "section", "chapter", "staff",
+        "staffing", "personnel", "clinical", "treatment",
     }
-    title_tokens = [
-        t.lower()
-        for t in re.findall(r"[A-Za-z]{4,}", f"{node.title} {node.text[:500]}")
-        if t.lower() not in stop
-    ][:14]
 
+    focus_tokens: list[str] = []
+    if matched_subs:
+        blob = " ".join(
+            f"{getattr(s, 'title', '')} {getattr(s, 'text', '')}" for s in matched_subs
+        )
+        focus_tokens = [
+            t.lower()
+            for t in re.findall(r"[A-Za-z]{4,}", blob)
+            if t.lower() not in stop
+        ][:24]
+    if not focus_tokens:
+        focus_tokens = [
+            t.lower()
+            for t in re.findall(r"[A-Za-z]{4,}", f"{node.title} {node.text[:500]}")
+            if t.lower() not in stop
+        ][:14]
+
+    scored: list[tuple[int, str]] = []
     for chunk in chunks:
-        chunk = chunk.strip()
-        if len(chunk) < 35:
-            continue
         if code_re.search(chunk):
-            windows.append(chunk)
+            scored.append((100, chunk))
             continue
         lower = chunk.lower()
-        hits = sum(1 for t in title_tokens if t in lower)
+        hits = sum(1 for t in focus_tokens if t in lower)
         if hits >= 2:
-            windows.append(chunk)
+            scored.append((hits, chunk))
+        elif matched_subs and hits >= 1:
+            # Soft keep when allegation leaves are sparse but thematically present
+            scored.append((hits, chunk))
 
+    scored.sort(key=lambda x: (-x[0], -len(x[1])))
     seen: set[str] = set()
     out: list[str] = []
-    for w in windows:
+    for _, w in scored:
         key = w[:90].lower()
         if key in seen:
             continue
@@ -138,6 +170,10 @@ def _relevant_excerpts(complaint: str, node: Any, max_excerpts: int = 3) -> list
         if len(out) >= max_excerpts:
             break
     if not out:
+        # No thematic window for this code's matched duties — stay empty rather than
+        # attaching unrelated complaint text to an irrelevant comparison card.
+        if matched_subs is not None and len(matched_subs) == 0:
+            return []
         intake = _extract_intake(complaint)
         out.append(intake if len(intake) < 420 else intake[:420] + "…")
     return out
@@ -366,27 +402,27 @@ def build_investigation_report(
     framework_raw: list[dict[str, Any]] = []
 
     for node in code_nodes:
-        # One TF-IDF pass per code — shared by allegation, matches, and Regulatory Framework
-        ranked = score_relevant_subsections(complaint_text, node.code, max_items=4)
+        # Rank broadly; allegation selection keeps strong + upper-moderate (not full code).
+        ranked = score_relevant_subsections(complaint_text, node.code, max_items=14)
+        selected = select_for_allegation(
+            ranked, max_items=10, complaint=complaint_text
+        )
         connector = preferred_connector_for(db, node.code, complaint_themes)
         draft = draft_allegation_from_source(
             node.code,
             node.title or node.code,
             intake,
-            max_subs=2,
-            relevant=ranked,
+            max_subs=10,
+            relevant=selected,
             preferred_connector=connector,
         )
         allegation_text = normalize_allegation_line(draft.text)
         cites = draft.cites
-        # Allegation stays concise (top duties); review UI gets the closest cluster for verification.
-        relevant = ranked[:2]
-        closest = ranked[:4] or relevant
+        # Compare / chips follow allegation selection only — never fall back to weak leaves.
+        closest = selected
         prefix = cite_prefix(node.code)
-        # Cites/texts shown in Compare must match what the allegation line actually uses
-        # (draft.cites), not the full closest-4 ranking cluster — avoids false verify noise.
         cite_labels = list(draft.cites) or [
-            f"{node.code}{s.label}" if s.label else node.code for s in closest[:2]
+            f"{node.code}{s.label}" if s.label else node.code for s in closest[:10]
         ]
         matched = [
             f"{prefix} {c}" if not c.upper().startswith(("WAC ", "RCW ")) else c for c in cite_labels
@@ -398,8 +434,10 @@ def build_investigation_report(
             sub = next((s for s in closest if (s.label or "") == label), None)
             if sub is None and closest:
                 sub = closest[0]
-            matched_texts.append(normalize_statute_text(sub.text) if sub else "")
-        excerpts = _relevant_excerpts(complaint_text, node)
+            matched_texts.append(subsection_display_text(sub) if sub else "")
+        excerpts = _relevant_excerpts(
+            complaint_text, node, matched_subs=selected
+        )
         # Summary stays short for list chrome; expandable "full code" uses fuller body below.
         full_code = normalize_statute_text(node.text)
         wac_summary = full_code[:500] + ("…" if len(full_code) > 500 else "")
@@ -425,10 +463,11 @@ def build_investigation_report(
                         "cite": f"{prefix} {node.code}{s.label}" if s.label else f"{prefix} {node.code}",
                         "label": s.label,
                         "text": normalize_statute_text(s.text),
+                        "context": subsection_ancestor_context(s),
                         "level": s.level,
                         "score": s.score,
                     }
-                    for s in ranked[:4]
+                    for s in selected[:10]
                 ],
             }
         )
@@ -509,7 +548,9 @@ def build_investigation_report(
         investigative_process=process,
         summary_of_findings=build_summary_of_findings(intake, allegations, investigator),
         conclusions=conclusions,
-        actions="[To be determined after investigation]",
+        actions="Choose an item.\nChoose an item.",
+        action_determination="",
+        action_referral="",
         comparisons=comparisons,
         findings=[],
         report_text="",

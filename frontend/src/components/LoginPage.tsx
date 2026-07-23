@@ -1,5 +1,4 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { FileCheck2 } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, setToken } from '../api'
 import { useAuth } from '../auth'
@@ -139,19 +138,15 @@ export function LoginPage() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
       <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(31,127,120,0.14),_transparent_55%),linear-gradient(180deg,_#f3f6f8_0%,_#e8eef2_100%)] dark:bg-[radial-gradient(ellipse_at_top,_rgba(31,127,120,0.18),_transparent_50%),linear-gradient(180deg,_#12171e_0%,_#1a222c_100%)]"
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,_hsl(220_16%_96%)_0%,_hsl(220_14%_92%)_100%)] dark:bg-[linear-gradient(180deg,_hsl(220_16%_10%)_0%,_hsl(220_16%_8%)_100%)]"
         aria-hidden
       />
 
       <div className="relative w-full max-w-md animate-rise">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-tide-600 text-white shadow-soft">
-            <FileCheck2 className="h-7 w-7" />
-          </div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-ink-900 dark:text-ink-50">
-            WACMAKR
-          </h1>
-          <p className="mt-2 text-sm text-ink-500">
+          <h1 className="brand-mark mx-auto text-[2rem]">WACMAKR</h1>
+          <div className="brand-rule mx-auto" aria-hidden />
+          <p className="mt-3 text-sm text-ink-500">
             Sign in to access investigation workflows and case tools.
           </p>
         </div>

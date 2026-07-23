@@ -65,7 +65,7 @@ export function FavoritesSidebar({ favorites, onRemoveFromFavorites, onSelectWac
                 {items.map((fav) => (
                   <div
                     key={fav.id}
-                    className="group flex items-start gap-2 rounded-lg border p-2 hover:bg-muted/50"
+                    className="group flex items-start gap-2 border-b border-ink-100 py-2 last:border-0 dark:border-ink-800"
                   >
                     <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelectWacCode(fav.id)}>
                       <div className="truncate text-sm font-medium">{fav.code}</div>

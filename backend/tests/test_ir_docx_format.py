@@ -88,7 +88,8 @@ def test_plain_text_matches_blank_shell():
     assert "1. Allegation: Potential violation of WAC 246-341-0410" in text
     assert "Pre-investigation Activity:" in text
     assert "Investigation Activity:" in text
-    assert "1. Allegation: The investigator found the facility pending determination of compliance" in text
+    assert "1. Allegation: The investigator found the facility Choose an item. with" in text
+    assert "Choose an item.\nChoose an item." in text
     assert "Regulatory Framework" not in text
     assert "246-341-0410: Pending Investigation" not in text
 
@@ -112,7 +113,7 @@ def test_docx_export_uses_blank_styles_not_heading2_or_bullets():
     assert any(st == "Header" and t.startswith("Facility Address:") for st, t in texts)
     assert any(t.startswith("1. Allegation: Potential violation") for _, t in texts)
     assert any("Pre-investigation Activity" in t for _, t in texts)
-    assert any("found the facility pending determination of compliance" in t for _, t in texts)
+    assert any("found the facility Choose an item." in t for _, t in texts)
     alleg = next(p for p in doc.paragraphs if (p.text or "").strip().startswith("1. Allegation:"))
     assert alleg.paragraph_format.left_indent is not None
     assert alleg.paragraph_format.left_indent.inches == pytest.approx(0.5, abs=0.01)

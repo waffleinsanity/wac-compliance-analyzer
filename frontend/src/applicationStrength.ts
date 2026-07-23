@@ -4,9 +4,9 @@ export type ApplicationStrength = 'strong' | 'moderate' | 'weak' | 'none'
 
 export type ApplicationStrengthSource = 'ir_match' | 'research'
 
-/** Align with backend wac_scope.LOW_CONFIDENCE_SCORE for IR drafts. */
-export const IR_WEAK_SCORE = 0.15
-export const IR_STRONG_SCORE = 0.35
+/** Align with backend wac_scope score bands for IR drafts. */
+export const IR_WEAK_SCORE = 0.3
+export const IR_STRONG_SCORE = 0.5
 
 /** Corpus blend scores are typically lower than IR subsection scores. */
 export const RESEARCH_WEAK_SCORE = 0.06
@@ -59,6 +59,7 @@ export function applicationStrengthFromMatch(input: {
   const score = typeof input.score === 'number' && Number.isFinite(input.score) ? input.score : null
 
   if (reason === 'explicit_cite') return 'strong'
+  if (reason === 'structural_anchor') return 'moderate'
   if (reason === 'code_fallback') {
     if (score != null && score >= IR_STRONG_SCORE) return 'moderate'
     return score != null && score > 0 ? 'weak' : 'none'

@@ -1,0 +1,17 @@
+{
+  "notes": "Mirror of frontend/src/fixtures/localQuickDraft.ts — local admin demos only; not ingested by template_corpus.",
+  "scenarios": [
+    "assault_safety",
+    "confidentiality_phi",
+    "restraint_seclusion",
+    "medication_errors",
+    "assessment_isp",
+    "grievance_rights",
+    "infection_environment",
+    "qi_critical_incident",
+    "crisis_outreach",
+    "otp_dosing",
+    "youth_inpatient_rights",
+    "weak_overlap"
+  ]
+}

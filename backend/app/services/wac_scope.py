@@ -43,6 +43,21 @@ SOURCE_FILES = (
     "RCW 71.34.pdf",
 )
 
+DUTY_MAX_CHARS = 120
+# Allegation drafts may cite several duties so investigators can prune; not a full dump.
+MAX_DUTY_CLAUSES = 2  # legacy tight default for callers that still pass max_subs=2
+MAX_ALLEGATION_CLAUSES = 10
+MAX_RANKED_SUBSECTIONS = 14
+LOW_CONFIDENCE_SCORE = 0.15
+# Application bands (raw ranked scores after TF-IDF + light boosts):
+#   strong ≥ 0.50 | moderate 0.30–0.49 | weak < 0.30
+STRONG_SCORE = 0.50
+MODERATE_SCORE = 0.30
+# Include strong + upper half of moderate (≥ midpoint of 0.30–0.49).
+ALLEGATION_INCLUDE_MIN = 0.40
+ALLEGATION_TARGET_CHARS = 900
+DEFAULT_QUOTE_MAX_CHARS = DUTY_MAX_CHARS
+
 
 @dataclass
 class ScopedSubsection:
@@ -92,6 +107,58 @@ def subsection_label(node: Any) -> str:
         if val and re.fullmatch(r"[0-9a-z]+", str(val).strip(), re.I):
             return f"({val})"
     return ""
+
+
+def parent_subsection_labels(label: str) -> list[str]:
+    """'(4)(g)(i)' -> ['(4)', '(4)(g)'] (outermost first)."""
+    parts = re.findall(r"\([^)]+\)", label or "")
+    if len(parts) < 2:
+        return []
+    return ["".join(parts[:i]) for i in range(1, len(parts))]
+
+
+_CHILD_MARKER_RE = re.compile(
+    r"(?<!\w)\(([a-z]|[ivxlcdm]{1,6}|[A-Z]|\d{1,3})\)\s+",
+    re.IGNORECASE,
+)
+
+
+def own_clause_text(text: str) -> str:
+    """Text owned by this node before nested child markers (exclusive intro)."""
+    body = normalize_statute_text(text)
+    if not body:
+        return ""
+    m = _CHILD_MARKER_RE.search(body)
+    # Require enough parent prose so we do not cut a leaf that starts with a cite
+    if m and m.start() >= 20:
+        return body[: m.start()].rstrip()
+    return body
+
+
+def duty_phrase_from_subsection(sub: ScopedSubsection, max_chars: int = DUTY_MAX_CHARS) -> str:
+    """Allegation duty fragment: nearest list-intro parent + leaf duty when applicable."""
+    parents = parent_subsection_labels(sub.label)
+    intro = ""
+    if parents:
+        nearest = parents[-1]
+        parent = validate_subsection_cite(sub.code, f"{sub.code}{nearest}")
+        if parent:
+            candidate = own_clause_text(parent.text)
+            if candidate and (
+                candidate.rstrip().endswith(":")
+                or _is_list_intro_stub(candidate)
+                or len(candidate) <= 220
+            ):
+                intro = _strip_list_edge_punct(candidate)
+    leaf = duty_phrase_from_text(sub.text, max_chars=max_chars)
+    if intro and leaf:
+        if leaf.lower().startswith(intro[: min(40, len(intro))].lower()):
+            return leaf
+        combined = f"{intro} {leaf}"
+        if len(combined) <= max(max_chars + 80, 260):
+            return _strip_list_edge_punct(combined)
+        return leaf
+    return leaf
 
 
 def code_node_for(code: str) -> Any | None:
@@ -153,12 +220,46 @@ def validate_subsection_cite(code: str, cite: str) -> ScopedSubsection | None:
     else:
         label = cite if cite.startswith("(") else f"({cite})"
 
+    # Exact label / path only — never treat a longer child cite as the parent
+    # (e.g. "(4)(g)" must not resolve to "(4)(g)(i)").
     for sub in subsections_for_code(code):
-        if sub.label == label or sub.hierarchy_path.endswith(f"{code}{label}") or sub.hierarchy_path.endswith(label):
+        if sub.label == label:
             return sub
-        if f"{code}{label}" in sub.hierarchy_path.replace("WAC ", "").replace("RCW ", ""):
+        path = (sub.hierarchy_path or "").replace("WAC ", "").replace("RCW ", "")
+        if path == f"{code}{label}" or path.endswith(f"/{code}{label}"):
             return sub
     return None
+
+
+def subsection_ancestor_context(sub: ScopedSubsection, *, max_intro_chars: int = 320) -> str:
+    """Parent list-intro prose for a leaf (exclusive of the leaf itself)."""
+    intros: list[str] = []
+    for parent_label in parent_subsection_labels(sub.label):
+        parent = validate_subsection_cite(sub.code, f"{sub.code}{parent_label}")
+        if not parent:
+            continue
+        intro = own_clause_text(parent.text)
+        if not intro:
+            continue
+        if len(intro) > max_intro_chars and not intro.rstrip().endswith(":"):
+            continue
+        leaf_norm = normalize_statute_text(sub.text).lower()
+        if leaf_norm and intro.lower() in leaf_norm:
+            continue
+        if intro not in intros:
+            intros.append(intro)
+    return " ".join(intros).strip()
+
+
+def subsection_display_text(sub: ScopedSubsection, *, max_intro_chars: int = 320) -> str:
+    """Leaf statute text with ancestor list-intro context. Nodes stay distinct in the store."""
+    context = subsection_ancestor_context(sub, max_intro_chars=max_intro_chars)
+    leaf = normalize_statute_text(sub.text)
+    if not leaf:
+        return context
+    if not context:
+        return leaf
+    return f"{context} {leaf}".strip()
 
 
 def extract_explicit_cites(complaint: str, code: str) -> list[ScopedSubsection]:
@@ -294,6 +395,84 @@ _RANK_QUERY_ALIASES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bwithout\s+consent\b", re.I), " consent authorization share privacy "),
     (re.compile(r"\bneglect(?:ed|ing)?\b", re.I), " neglect abuse exploitation safety "),
 ]
+
+# Structural anchors: short umbrella duties that TF-IDF almost never matches to complaint
+# narratives, but nearly always apply when the parent code is authorized (e.g. 0410(1)(a)
+# "All administrative matters" for the administrator). Labels must exist in the PDF store.
+STRUCTURAL_ANCHORS: dict[str, tuple[str, ...]] = {
+    # Administrator key responsibilities — (1)(a)–(c) are the program/facility umbrella.
+    "246-341-0410": ("(1)(a)", "(1)(b)", "(1)(c)"),
+    # Agency policies / staffing — adequate staffing is the recurring structural duty.
+    "246-341-0420": ("(3)",),
+    # RTF governance — resources, authority, and staff supervision from peer IR baselines.
+    "246-337-045": ("(1)(a)(iii)", "(1)(c)", "(3)(b)"),
+}
+
+# Allegation overlap gate: ignore ultra-generic WAC phrasing when comparing to the complaint.
+_ALLEGATION_BOILERPLATE_TOKENS = frozenset(
+    {
+        "agency",
+        "services",
+        "service",
+        "provide",
+        "providing",
+        "provided",
+        "ensure",
+        "ensuring",
+        "must",
+        "shall",
+        "including",
+        "requirements",
+        "requirement",
+        "section",
+        "chapter",
+        "facility",
+        "treatment",
+        "individual",
+        "individuals",
+        "patient",
+        "patients",
+        "resident",
+        "residents",
+        "receive",
+        "receives",
+        "accordance",
+        "appropriately",
+        "following",
+        "within",
+        "under",
+        "other",
+        "such",
+        "also",
+    }
+)
+# Role/staffing words appear in nearly every personnel leaf — alone they do not justify a cite.
+_ALLEGATION_WEAK_ROLE_TOKENS = frozenset(
+    {
+        "staff",
+        "staffing",
+        "supervision",
+        "personnel",
+        "employee",
+        "employees",
+        "clinical",
+        "credential",
+        "credentialed",
+        "licensed",
+        "training",
+        "trained",
+        "provider",
+        "providers",
+    }
+)
+# Domain markers that disqualify a leaf when absent from the complaint (e.g. gambling on a meds case).
+_ALLEGATION_DOMAIN_EXCLUSIVE_TOKENS = frozenset(
+    {
+        "gambling",
+        "gambler",
+        "casino",
+    }
+)
 
 
 # Conservative morphology only — avoid stripping "reported"→"report" (false (2)(k) hits).
@@ -506,7 +685,7 @@ def score_relevant_subsections(
 
     ranked: list[ScopedSubsection] = []
     for sub, score in zip(subs, scores):
-        # Prefer specific leaves; penalize long dumps that survived the container filter
+        # Prefer specific leaves, but keep short primary duties competitive ((2), (3)).
         level_boost = (
             0.1
             if sub.level == "quaternary"
@@ -514,6 +693,8 @@ def score_relevant_subsections(
             if sub.level == "tertiary"
             else 0.05
             if sub.level == "secondary"
+            else 0.04
+            if sub.level == "primary" and len(sub.text) <= 360
             else 0.0
         )
         penalty = min(0.14, max(0.0, (len(sub.text) - 220) / 3500.0))
@@ -524,6 +705,7 @@ def score_relevant_subsections(
         sub.reason = "lexical_overlap"
         ranked.append(sub)
     ranked.sort(key=lambda s: (-s.score, _level_rank(s.level), len(s.text)))
+    _boost_sibling_coverage(ranked)
 
     filtered = [s for s in ranked if s.score >= min_score]
     if not filtered:
@@ -561,7 +743,158 @@ def score_relevant_subsections(
             closest.reason = "code_fallback"
         filtered = [closest]
 
+    filtered = _apply_structural_anchors(code, filtered, all_subs)
     return _merge_explicit_and_lexical(explicit, filtered, max_items=max_items)
+
+
+def _boost_sibling_coverage(ranked: list[ScopedSubsection]) -> None:
+    """When one child under a primary is strong, lift near-threshold siblings in that branch.
+
+    Helps general duties under the same parent (e.g. (1)(a)/(b)/(c)) enter the
+    upper-moderate include band without selecting the entire code.
+    """
+    by_primary: dict[str, list[ScopedSubsection]] = {}
+    for s in ranked:
+        m = re.match(r"(\(\d+\))", s.label or "")
+        if not m:
+            continue
+        by_primary.setdefault(m.group(1), []).append(s)
+    for group in by_primary.values():
+        if not any(s.score >= STRONG_SCORE or s.reason == "explicit_cite" for s in group):
+            # Also lift when the branch already has an upper-moderate hit
+            if not any(s.score >= ALLEGATION_INCLUDE_MIN for s in group):
+                continue
+        for s in group:
+            if MODERATE_SCORE <= s.score < ALLEGATION_INCLUDE_MIN:
+                s.score = min(ALLEGATION_INCLUDE_MIN + 0.02, s.score + 0.09)
+
+
+def _apply_structural_anchors(
+    code: str,
+    ranked: list[ScopedSubsection],
+    all_subs: list[ScopedSubsection],
+) -> list[ScopedSubsection]:
+    """Ensure curated umbrella duties enter the include band when the code is selected."""
+    code = code.replace("WAC ", "").replace("RCW ", "").strip()
+    wanted = STRUCTURAL_ANCHORS.get(code)
+    if not wanted:
+        return ranked
+    by_label = {s.label: s for s in all_subs if s.label}
+    by_key = {s.label or s.hierarchy_path: s for s in ranked}
+    for lab in wanted:
+        src = by_label.get(lab)
+        if not src:
+            continue
+        key = src.label or src.hierarchy_path
+        existing = by_key.get(key)
+        if existing is not None:
+            if existing.score < ALLEGATION_INCLUDE_MIN and existing.reason != "explicit_cite":
+                existing.score = ALLEGATION_INCLUDE_MIN
+                existing.reason = "structural_anchor"
+            continue
+        ranked.append(
+            ScopedSubsection(
+                code=src.code,
+                label=src.label,
+                hierarchy_path=src.hierarchy_path,
+                title=src.title,
+                text=src.text,
+                level=src.level,
+                score=ALLEGATION_INCLUDE_MIN,
+                reason="structural_anchor",
+                instrument=src.instrument,
+            )
+        )
+        by_key[key] = ranked[-1]
+    ranked.sort(key=lambda s: (-s.score, _level_rank(s.level), len(s.text)))
+    return ranked
+
+
+def _allegation_content_tokens(text: str) -> set[str]:
+    """Unigram content tokens for allegation↔complaint overlap (no bigrams)."""
+    return {
+        t
+        for t in _tfidf_analyzer(text or "")
+        if "_" not in t
+        and len(t) >= 4
+        and t not in _ALLEGATION_BOILERPLATE_TOKENS
+    }
+
+
+def subsection_passes_complaint_overlap(complaint: str, sub: ScopedSubsection) -> bool:
+    """Require real complaint substance overlap — not boilerplate / weak role words alone.
+
+    Prefer dropping a duty over citing an irrelevant leaf (e.g. problem-gambling staffing
+    on a medication-error complaint). Explicit cites and structural anchors skip this gate.
+    """
+    if sub.reason in {"explicit_cite", "structural_anchor"}:
+        return True
+    complaint_c = _clean(complaint)
+    if not complaint_c:
+        # No complaint context (unit tests / callers): do not invent a rejection.
+        return True
+    # Use ranking-query expansion so aliases (assault→harassment) count for overlap.
+    c_toks = _allegation_content_tokens(_expand_ranking_query(complaint_c))
+    s_toks = _allegation_content_tokens(f"{sub.title} {sub.text}")
+    if not s_toks:
+        return False
+    exclusive = (s_toks & _ALLEGATION_DOMAIN_EXCLUSIVE_TOKENS) - c_toks
+    if exclusive:
+        return False
+    shared = c_toks & s_toks
+    strong_shared = shared - _ALLEGATION_WEAK_ROLE_TOKENS
+    if strong_shared:
+        return True
+    # Weak-role-only overlap is insufficient unless TF-IDF is already strong.
+    return bool(shared) and float(sub.score) >= STRONG_SCORE
+
+
+def select_for_allegation(
+    ranked: list[ScopedSubsection],
+    *,
+    max_items: int = MAX_ALLEGATION_CLAUSES,
+    complaint: str = "",
+) -> list[ScopedSubsection]:
+    """Strong + upper-moderate + structural anchors for allegation/compare chips.
+
+    Applies a complaint-overlap gate so weak TF-IDF leaves (gambling staffing, generic
+    clinical supervision on a meds complaint, etc.) are dropped rather than forced in.
+    Floor keeps at most top-2 leaves that pass the gate and clear the low-confidence
+    noise floor — never invents a 'best of the worst' cite with no substance overlap.
+    Caps at max_items so investigators prune rather than face a full-code dump.
+    """
+    if not ranked:
+        return []
+    selected: list[ScopedSubsection] = []
+    used: set[str] = set()
+    for s in ranked:
+        key = s.label or s.hierarchy_path
+        if key in used:
+            continue
+        if s.reason in {"explicit_cite", "structural_anchor"}:
+            selected.append(s)
+            used.add(key)
+        elif s.score >= ALLEGATION_INCLUDE_MIN and subsection_passes_complaint_overlap(
+            complaint, s
+        ):
+            selected.append(s)
+            used.add(key)
+        if len(selected) >= max_items:
+            return selected
+    # Floor: fill up to 2 with overlap-passing leaves above noise (not arbitrary weak).
+    for s in ranked:
+        if len(selected) >= min(2, max_items):
+            break
+        key = s.label or s.hierarchy_path
+        if key in used:
+            continue
+        if s.score < LOW_CONFIDENCE_SCORE:
+            continue
+        if not subsection_passes_complaint_overlap(complaint, s):
+            continue
+        selected.append(s)
+        used.add(key)
+    return selected[:max_items]
 
 
 def format_scoped_context(code: str, title: str, full_text: str, relevant: list[ScopedSubsection]) -> str:
@@ -602,15 +935,6 @@ def strip_foreign_wac_mentions(text: str, allowed_codes: set[str]) -> str:
             continue
         kept.append(p)
     return " ".join(kept).strip()
-
-
-# Lexical match below this is flagged low-confidence in the UI (allegation shape unchanged).
-LOW_CONFIDENCE_SCORE = 0.15
-# Peer IR Allegation lines are short (~200–450 chars). Keep duty excerpts tight.
-DUTY_MAX_CHARS = 120
-MAX_DUTY_CLAUSES = 2
-ALLEGATION_TARGET_CHARS = 420
-DEFAULT_QUOTE_MAX_CHARS = DUTY_MAX_CHARS
 
 
 def sanitize_for_outer_quotes(text: str) -> str:
@@ -784,7 +1108,7 @@ def exact_quotes_from_subsections(
         body = _clean(s.text)
         if len(body.split()) < 4:
             continue
-        quote = duty_phrase_from_text(body, max_chars=max_chars)
+        quote = duty_phrase_from_subsection(s, max_chars=max_chars)
         if len(quote.split()) < 3:
             continue
         out.append((s.label, quote))
@@ -819,17 +1143,15 @@ def draft_allegation_from_source(
     title: str,
     complaint: str,
     *,
-    max_subs: int = MAX_DUTY_CLAUSES,
+    max_subs: int = MAX_ALLEGATION_CLAUSES,
     relevant: list[ScopedSubsection] | None = None,
     preferred_connector: str | None = None,
 ) -> AllegationDraft:
-    """Build a concise DOH-shaped allegation from short exact PDF duty phrases.
+    """Build a DOH-shaped allegation from ranked PDF duty phrases.
 
-    Shape matches Baseline Allegations RTF / peer IR lines (no quotation marks):
+    Includes strong + upper-moderate subsections (see select_for_allegation) so
+    investigators can prune — not a full-code dump. Shape:
       Potential violation of WAC {code}, {title}, by having failed to (1)(a) …; and (2) ….
-    Full subsection text stays in matched_subsections / Regulatory Framework — not here.
-    Low-confidence is flagged on the draft object for the UI; wording stays allegation-shaped.
-    preferred_connector may come from the evolving IR learning bank (shell only).
     """
     code = code.replace("WAC ", "").replace("RCW ", "").strip()
     prefix = cite_prefix(code)
@@ -837,25 +1159,41 @@ def draft_allegation_from_source(
     if connector not in {"having failed to", "failing to", "not", "violating"}:
         connector = "having failed to"
     if relevant is None:
-        relevant = score_relevant_subsections(
-            complaint, code, max_items=max(max_subs, MAX_DUTY_CLAUSES)
+        ranked = score_relevant_subsections(
+            complaint, code, max_items=max(max_subs, MAX_RANKED_SUBSECTIONS)
         )
+        relevant = select_for_allegation(ranked, max_items=max_subs, complaint=complaint)
     else:
-        relevant = relevant[: max(max_subs, MAX_DUTY_CLAUSES)]
-    quotes = exact_quotes_from_subsections(relevant, max_quotes=MAX_DUTY_CLAUSES)
-    cites = [f"{code}{s.label}" if s.label else code for s in relevant[:MAX_DUTY_CLAUSES]]
-
-    top_score = max((s.score for s in relevant), default=0.0)
-    top_reason = relevant[0].reason if relevant else "code_fallback"
-    if relevant and relevant[0].reason == "code_fallback":
-        top_reason = "code_fallback"
-    low_confidence = top_reason == "code_fallback" or top_score < LOW_CONFIDENCE_SCORE
+        relevant = select_for_allegation(
+            list(relevant), max_items=max_subs, complaint=complaint
+        )
 
     clean_title = _clean(title).replace("—", " - ").replace("–", " - ")
     # Keep title short in the allegation line
     if len(clean_title) > 80:
         clean_title = clean_title[:77].rstrip() + "…"
     opener = f"Potential violation of {prefix} {code}, {clean_title}"
+
+    # No complaint-aligned duties under this code — prefer empty cites over irrelevant leaves.
+    if not relevant:
+        return AllegationDraft(
+            text=f"{opener}, as applied to the reported concern in the complaint intake.",
+            cites=[],
+            match_reason="code_fallback",
+            match_score=0.0,
+            low_confidence=True,
+        )
+
+    # Shorter duty phrases when many cites so the line stays editable, not a wall of text
+    per_quote = DUTY_MAX_CHARS if len(relevant) <= 3 else max(72, DUTY_MAX_CHARS - 20 * (len(relevant) - 3))
+    quotes = exact_quotes_from_subsections(relevant, max_quotes=max_subs, max_chars=per_quote)
+    cites = [f"{code}{s.label}" if s.label else code for s in relevant[:max_subs]]
+
+    top_score = max((s.score for s in relevant), default=0.0)
+    top_reason = relevant[0].reason if relevant else "code_fallback"
+    if relevant and relevant[0].reason == "code_fallback":
+        top_reason = "code_fallback"
+    low_confidence = top_reason == "code_fallback" or top_score < LOW_CONFIDENCE_SCORE
 
     if not quotes:
         # Prefer the closest ranked subsection text before falling back to the whole code body.
@@ -865,10 +1203,10 @@ def draft_allegation_from_source(
         snippet = ""
         cite_label = ""
         if relevant:
-            snippet = duty_phrase_from_text(relevant[0].text, max_chars=DUTY_MAX_CHARS)
+            snippet = duty_phrase_from_subsection(relevant[0], max_chars=DUTY_MAX_CHARS)
             cite_label = relevant[0].label or ""
             if not cites:
-                cites = [f"{code}{s.label}" if s.label else code for s in relevant[:MAX_DUTY_CLAUSES]]
+                cites = [f"{code}{s.label}" if s.label else code for s in relevant[:max_subs]]
         if not snippet:
             node = code_node_for(code)
             snippet = duty_phrase_from_text(node.text if node else "", max_chars=DUTY_MAX_CHARS)
@@ -903,21 +1241,36 @@ def draft_allegation_from_source(
         body = "; ".join(parts)
         text = _allegation_without_quotes(f"{opener}, by {connector} {body}.")
 
-    # Hard trim: peer Allegation lines stay short; never dump multi-subsection walls of text
-    if len(text) > ALLEGATION_TARGET_CHARS and len(quotes) > 1:
-        label0, quote0 = quotes[0]
-        cite0 = f"{label0} " if label0 else ""
-        text = _allegation_without_quotes(f"{opener}, by {connector} {cite0}{quote0}.").strip()
-    if len(text) > ALLEGATION_TARGET_CHARS + 40:
-        # Last resort: shorten the single remaining duty phrase in place
+    # Prefer shortening duties over dropping cites — investigators prune excess chips.
+    if len(text) > ALLEGATION_TARGET_CHARS and len(quotes) > 2:
+        short_parts: list[str] = []
+        for i, (label, quote) in enumerate(quotes):
+            cite = f"{label} " if label else ""
+            short = duty_phrase_from_text(quote, max_chars=64)
+            frag = f"{cite}{_strip_list_edge_punct(short)}".strip()
+            if not frag:
+                continue
+            short_parts.append(frag if i == 0 else f"and {frag}")
+        if short_parts:
+            text = _allegation_without_quotes(
+                f"{opener}, by {connector} {'; '.join(short_parts)}."
+            )
+    if len(text) > ALLEGATION_TARGET_CHARS + 120 and len(quotes) > 1:
+        # Cite list with first duty only — keep all cites on the draft object for chips
         label0, quote0 = quotes[0]
         cite0 = f"{label0} " if label0 else ""
         short = duty_phrase_from_text(quote0, max_chars=90)
-        text = _allegation_without_quotes(f"{opener}, by {connector} {cite0}{short}.").strip()
+        also = "; ".join(lab for lab, _ in quotes[1:] if lab)
+        if also:
+            text = _allegation_without_quotes(
+                f"{opener}, by {connector} {cite0}{short}; see also {also}."
+            )
+        else:
+            text = _allegation_without_quotes(f"{opener}, by {connector} {cite0}{short}.").strip()
 
     return AllegationDraft(
         text=text,
-        cites=cites[:MAX_DUTY_CLAUSES],
+        cites=cites[:max_subs],
         match_reason=top_reason,
         match_score=top_score,
         low_confidence=low_confidence,
@@ -953,7 +1306,8 @@ def regulatory_framework_entries(
             {
                 "cite": f"{prefix} {code}{s.label}" if s.label else f"{prefix} {code}",
                 "label": s.label,
-                "text": s.text,
+                "text": normalize_statute_text(s.text),
+                "context": subsection_ancestor_context(s),
                 "level": s.level,
                 "score": s.score,
             }

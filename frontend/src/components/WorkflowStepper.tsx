@@ -26,17 +26,17 @@ type Props = {
 
 export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props) {
   const currentIdx = STEPS.findIndex((s) => s.id === step)
-  const chips: { key: string; label: string; tone: 'neutral' | 'ready' | 'warn' }[] = []
+  const meta: { key: string; label: string; tone: 'neutral' | 'ready' | 'warn' }[] = []
 
   if (context?.approvedWacCount != null) {
-    chips.push({
+    meta.push({
       key: 'wacs',
       label: context.approvedWacCount === 1 ? '1 WAC' : `${context.approvedWacCount} WACs`,
       tone: context.approvedWacCount > 0 ? 'ready' : 'warn',
     })
   }
   if (context?.quoteIssueCount != null && context.quoteIssueCount > 0) {
-    chips.push({
+    meta.push({
       key: 'quotes',
       label:
         context.quoteIssueCount === 1
@@ -46,7 +46,7 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
     })
   }
   if (context?.caseStatus) {
-    chips.push({
+    meta.push({
       key: 'status',
       label: caseStatusLabel(context.caseStatus),
       tone: context.caseStatus === 'final' ? 'ready' : 'neutral',
@@ -56,14 +56,13 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
   return (
     <nav
       aria-label="Investigation workflow"
-      className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5"
+      className="flex w-full flex-wrap items-center gap-x-4 gap-y-1.5"
     >
-      <ol className="flex min-w-0 flex-1 items-center">
+      <ol className="flex min-w-0 flex-1 items-baseline gap-0">
         {STEPS.map((s, idx) => {
           const active = s.id === step
           const done = idx < currentIdx
           const canGo = unlocked[s.id] || done || active
-          const connectorFilled = idx < currentIdx
           return (
             <Fragment key={s.id}>
               <li className="min-w-0">
@@ -73,27 +72,30 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
                   onClick={() => canGo && onStepChange(s.id)}
                   title={s.hint}
                   className={clsx(
-                    'group flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-left transition lg:gap-2 lg:px-2 lg:py-1.5',
-                    canGo ? 'hover:bg-ink-100/80 dark:hover:bg-ink-800/50' : 'cursor-not-allowed opacity-40',
-                    active && 'bg-tide-500/8',
+                    'group flex items-baseline gap-1.5 px-0.5 py-1 text-left transition',
+                    canGo ? 'hover:opacity-90' : 'cursor-not-allowed opacity-40',
                   )}
                 >
                   <span
                     className={clsx(
-                      'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold transition lg:h-7 lg:w-7 lg:text-xs',
-                      active && 'border-tide-600 bg-tide-600 text-white shadow-soft',
-                      done && !active && 'border-cedar-500/40 bg-cedar-500/12 text-cedar-600',
-                      !active &&
-                        !done &&
-                        'border-ink-300 bg-card text-ink-500 dark:border-ink-600 dark:bg-ink-900',
+                      'font-mono text-[10px] tabular-nums',
+                      active ? 'text-tide-700 dark:text-tide-300' : 'text-ink-400',
                     )}
                   >
-                    {done && !active ? <Check className="h-3 w-3 lg:h-3.5 lg:w-3.5" strokeWidth={2.5} /> : idx + 1}
+                    {done && !active ? (
+                      <Check className="inline h-3 w-3" strokeWidth={2.5} aria-hidden />
+                    ) : (
+                      String(idx + 1).padStart(2, '0')
+                    )}
                   </span>
                   <span
                     className={clsx(
-                      'text-xs font-semibold tracking-tight lg:text-sm',
-                      active ? 'text-ink-900 dark:text-ink-50' : 'text-ink-600 dark:text-ink-300',
+                      'font-display text-sm tracking-tight lg:text-[15px]',
+                      active
+                        ? 'border-b-2 border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
+                        : done
+                          ? 'text-ink-600 dark:text-ink-300'
+                          : 'text-ink-500 dark:text-ink-400',
                     )}
                   >
                     {s.label}
@@ -101,13 +103,8 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
                 </button>
               </li>
               {idx < STEPS.length - 1 && (
-                <li aria-hidden className="flex w-3 shrink-0 items-center justify-center lg:w-6">
-                  <span
-                    className={clsx(
-                      'h-px w-full rounded-full',
-                      connectorFilled ? 'bg-tide-500/60' : 'bg-ink-200 dark:bg-ink-700',
-                    )}
-                  />
+                <li aria-hidden className="mx-2 flex items-center text-ink-300 dark:text-ink-600 lg:mx-3">
+                  <span className="text-[10px]">/</span>
                 </li>
               )}
             </Fragment>
@@ -115,20 +112,19 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
         })}
       </ol>
 
-      {chips.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1" aria-label="Case context">
-          {chips.map((chip) => (
+      {meta.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1" aria-label="Case context">
+          {meta.map((item) => (
             <span
-              key={chip.key}
+              key={item.key}
               className={clsx(
-                'status-chip !px-1.5 !py-0 text-[10px] capitalize',
-                chip.tone === 'ready' && 'status-chip-ready',
-                chip.tone === 'warn' && 'status-chip-warn',
-                chip.tone === 'neutral' &&
-                  'border-ink-200 bg-ink-50 text-ink-600 dark:border-ink-600 dark:bg-ink-900 dark:text-ink-300',
+                'font-sans text-[11px]',
+                item.tone === 'ready' && 'text-tide-800 dark:text-tide-300',
+                item.tone === 'warn' && 'text-cedar-600 dark:text-[#d4a574]',
+                item.tone === 'neutral' && 'text-ink-500 dark:text-ink-400',
               )}
             >
-              {chip.label}
+              {item.label}
             </span>
           ))}
         </div>

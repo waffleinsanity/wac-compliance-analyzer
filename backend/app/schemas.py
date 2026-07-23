@@ -434,8 +434,11 @@ class InvestigationReport(BaseModel):
     investigative_process: list[str] = []
     summary_of_findings: str = ""
     conclusions: list[InvestigationConclusion] = []
-    actions: str = "[To be determined after investigation]"
-    comparisons: list[WACComparison]
+    actions: str = "Choose an item.\nChoose an item."
+    # Blank Actions: content controls (determination + referral)
+    action_determination: str = ""
+    action_referral: str = ""
+    comparisons: list[WACComparison] = []
     findings: list[ComplianceFinding]
     report_text: str
     selected_count: int

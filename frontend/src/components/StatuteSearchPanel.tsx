@@ -73,7 +73,7 @@ export function StatuteSearchPanel({
             weakestApproved && isStrongerThan(strength, weakestApproved) && !selected,
           )
           return (
-            <div key={hit.id} className="rounded-xl border border-ink-200/70 bg-muted/20 p-3 dark:border-ink-700">
+            <div key={hit.id} className="border-b border-ink-200/80 py-3 last:border-0 dark:border-ink-700">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -85,6 +85,7 @@ export function StatuteSearchPanel({
                       source="research"
                       short
                       betterFit={betterFit}
+                      tone="quiet"
                     />
                   </div>
                   <div className="truncate text-xs text-muted-foreground">{hit.title}</div>

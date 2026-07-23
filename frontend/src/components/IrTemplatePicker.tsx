@@ -92,16 +92,14 @@ export function IrTemplatePicker({
       className={
         compact
           ? 'min-w-0 max-w-full'
-          : 'rounded-xl border border-ink-200/80 bg-card/60 px-4 py-3 dark:border-ink-700'
+          : 'border-b border-ink-200 pb-3 dark:border-ink-700'
       }
     >
       <div className={compact ? 'flex flex-wrap items-center gap-2' : 'space-y-2'}>
         {!compact && (
           <div>
-            <p className="font-sans text-xs font-semibold uppercase tracking-[0.12em] text-tide-600 dark:text-tide-400">
-              IR template
-            </p>
-            <p className="mt-0.5 font-sans text-xs text-ink-500">
+            <p className="compare-meta">IR template</p>
+            <p className="mt-1 font-sans text-xs text-ink-500">
               Export fills your DOCX shell (letterhead kept) with edited sections and Compare notes.
               Missing DOH headings will block Download.
             </p>

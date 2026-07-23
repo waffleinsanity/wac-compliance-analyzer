@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   ArrowLeft,
   Building2,
@@ -40,9 +40,14 @@ import {
   type ProcessFields,
 } from '../processTemplate'
 import {
+  ACTION_DETERMINATION_CHOICES,
+  ACTION_REFERRAL_CHOICES,
+  CHOOSE_ITEM,
   FEDERAL_CERTIFICATION_PRIORITY_CHOICES,
   INVESTIGATION_TYPE_CHOICES,
   STATE_LICENSING_PRIORITY_CHOICES,
+  composeActionsText,
+  parseActionsFields,
 } from '../irTemplateChoices'
 import { IrTemplatePicker } from './IrTemplatePicker'
 
@@ -82,41 +87,41 @@ type Props = {
 function AllegationBadge({ a }: { a: InvestigationAllegation }) {
   if (a.quote_ok === false) {
     return (
-      <span className="rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
-        Needs statute review
-      </span>
+      <span className="font-sans text-xs text-rose-700 dark:text-rose-300">Needs statute review</span>
     )
   }
   if (a.low_confidence) {
     return (
-      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-        Confirm subsection
-      </span>
+      <span className="font-sans text-xs text-amber-800 dark:text-amber-300">Confirm subsection</span>
     )
   }
   if (a.quote_ok) {
     return (
-      <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
-        Statute verified
-      </span>
+      <span className="font-sans text-xs text-ink-500 dark:text-ink-400">Statute verified</span>
     )
   }
   return null
 }
 
 function findingSelectClass(phrase: FindingPhrase) {
-  if (phrase === 'out of compliance')
+  if (phrase === 'not in compliance')
     return 'border-rose-400/50 bg-rose-50 text-rose-900 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-100'
   if (phrase === 'in compliance')
     return 'border-emerald-400/50 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100'
   return 'border-amber-400/50 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100'
 }
 
+function displayFinding(phrase: FindingPhrase): string {
+  return phrase || CHOOSE_ITEM
+}
+
 function buildPlainText(report: InvestigationReport): string {
   // Always rebuild from structured fields so Copy/.txt match DOCX (never stale report_text).
   const fi = report.facility_info
+  const { determination, referral } = parseActionsFields(report)
   const lines: string[] = [
     'Investigative Report',
+    report.subtitle || CHOOSE_ITEM,
     `Facility Address: ${fi.facility_address || ''}`,
     `Laboratory Director: ${fi.laboratory_director || 'N/A'}`,
     `CLIA Number: ${fi.clia_number || 'N/A'}`,
@@ -124,8 +129,8 @@ function buildPlainText(report: InvestigationReport): string {
     `Medicare Number: ${fi.medicare_number || 'N/A'}`,
     `Shell Number: ${fi.shell_number || 'N/A'}`,
     `Date(s) of Investigation: ${fi.investigation_dates || report.investigation_date || ''}`,
-    `State Licensing Priority: ${fi.state_licensing_priority || ''}`,
-    `Federal Certification Priority: ${fi.federal_certification_priority || ''}`,
+    `State Licensing Priority: ${fi.state_licensing_priority || CHOOSE_ITEM}`,
+    `Federal Certification Priority: ${fi.federal_certification_priority || CHOOSE_ITEM}`,
     '',
     'Intake Details: (List of concerns reported in the original complaint.)',
     '',
@@ -163,17 +168,17 @@ function buildPlainText(report: InvestigationReport): string {
   report.allegations.forEach((a, i) => {
     const c = byCode[a.wac_code]
     const result = c?.result || 'Pending Investigation'
-    const finding = resultToFindingPhrase(result)
+    const finding = displayFinding(resultToFindingPhrase(result))
     const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
     let line = `${i + 1}. Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
     if (a.wac_title) line += `, ${a.wac_title}`
     line += '.'
-    if (c?.deficiency_details && finding === 'out of compliance') {
+    if (c?.deficiency_details && finding === 'not in compliance') {
       line += ` ${c.deficiency_details}`
     }
     lines.push(line, '')
   })
-  lines.push('Actions:', report.actions)
+  lines.push('Actions:', composeActionsText(determination, referral))
   return lines.join('\n')
 }
 
@@ -224,19 +229,93 @@ function IrProcessLine({ step }: { step: string }) {
 }
 
 /** On-screen IR that mirrors Download DOCX layout (blank shell + live field values). */
-function DocumentPreview({ report }: { report: InvestigationReport }) {
+function DocumentPreview({
+  report,
+  onChange,
+  canEdit = false,
+}: {
+  report: InvestigationReport
+  onChange?: (next: InvestigationReport) => void
+  canEdit?: boolean
+}) {
   const fi = report.facility_info
   const byCode = Object.fromEntries(report.conclusions.map((c) => [c.wac_code, c]))
-  const facilityLines: [string, string][] = [
-    ['Facility Address:', fi.facility_address || ''],
-    ['Laboratory Director:', fi.laboratory_director || 'N/A'],
-    ['CLIA Number:', fi.clia_number || 'N/A'],
-    ['Credential Number:', fi.credential_number || ''],
-    ['Medicare Number:', fi.medicare_number || 'N/A'],
-    ['Shell Number:', fi.shell_number || 'N/A'],
-    ['Date(s) of Investigation:', fi.investigation_dates || report.investigation_date || ''],
-    ['State Licensing Priority:', fi.state_licensing_priority || ''],
-    ['Federal Certification Priority:', fi.federal_certification_priority || ''],
+  const { determination, referral } = parseActionsFields(report)
+  const editable = Boolean(canEdit && onChange)
+
+  const patch = (partial: Partial<InvestigationReport>) => {
+    if (!onChange) return
+    onChange({ ...report, ...partial })
+  }
+  const patchFacility = (key: keyof FacilityInfo, value: string) => {
+    if (!onChange) return
+    onChange({
+      ...report,
+      facility_info: { ...report.facility_info, [key]: value },
+    })
+  }
+  const setActions = (nextDet: string, nextRef: string) => {
+    patch({
+      action_determination: nextDet,
+      action_referral: nextRef,
+      actions: composeActionsText(nextDet, nextRef),
+    })
+  }
+
+  const facilityLines: [string, string, (() => ReactNode) | null][] = [
+    ['Facility Address:', fi.facility_address || '', null],
+    ['Laboratory Director:', fi.laboratory_director || 'N/A', null],
+    ['CLIA Number:', fi.clia_number || 'N/A', null],
+    ['Credential Number:', fi.credential_number || '', null],
+    ['Medicare Number:', fi.medicare_number || 'N/A', null],
+    ['Shell Number:', fi.shell_number || 'N/A', null],
+    [
+      'Date(s) of Investigation:',
+      fi.investigation_dates || report.investigation_date || '',
+      null,
+    ],
+    [
+      'State Licensing Priority:',
+      fi.state_licensing_priority || '',
+      editable
+        ? () => (
+            <select
+              className="ir-inline-select"
+              value={fi.state_licensing_priority || ''}
+              onChange={(e) => patchFacility('state_licensing_priority', e.target.value)}
+              aria-label="State Licensing Priority"
+            >
+              <option value="">{CHOOSE_ITEM}</option>
+              {STATE_LICENSING_PRIORITY_CHOICES.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          )
+        : null,
+    ],
+    [
+      'Federal Certification Priority:',
+      fi.federal_certification_priority || '',
+      editable
+        ? () => (
+            <select
+              className="ir-inline-select"
+              value={fi.federal_certification_priority || ''}
+              onChange={(e) => patchFacility('federal_certification_priority', e.target.value)}
+              aria-label="Federal Certification Priority"
+            >
+              <option value="">{CHOOSE_ITEM}</option>
+              {FEDERAL_CERTIFICATION_PRIORITY_CHOICES.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          )
+        : null,
+    ],
   ]
 
   return (
@@ -251,15 +330,35 @@ function DocumentPreview({ report }: { report: InvestigationReport }) {
       <div className="ir-doc-scroll">
         <div className="ir-doc-page" role="document" aria-label="Investigation Report preview">
           <h1 className="ir-doc-title">Investigative Report</h1>
-          <p className="ir-body mb-4 text-center italic text-ink-800">
-            {report.subtitle || 'Choose an item.'}
-          </p>
+          {editable ? (
+            <p className="ir-body mb-4 text-center">
+              <select
+                className="ir-inline-select text-center italic"
+                value={report.subtitle || ''}
+                onChange={(e) => patch({ subtitle: e.target.value })}
+                aria-label="Investigation type"
+              >
+                <option value="">{CHOOSE_ITEM}</option>
+                {INVESTIGATION_TYPE_CHOICES.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </p>
+          ) : (
+            <p className="ir-body mb-4 text-center italic text-ink-800">
+              {report.subtitle || CHOOSE_ITEM}
+            </p>
+          )}
           <div className="mb-4 space-y-0">
-            {facilityLines.map(([label, value]) => (
+            {facilityLines.map(([label, value, control]) => (
               <p key={label} className="ir-body">
                 <span className="ir-facility-label">{label}</span>{' '}
                 <span className="ir-facility-value">
-                  {value || (label.includes('Priority') ? 'Choose an item.' : '')}
+                  {control
+                    ? control()
+                    : value || (label.includes('Priority') ? CHOOSE_ITEM : '')}
                 </span>
               </p>
             ))}
@@ -313,18 +412,49 @@ function DocumentPreview({ report }: { report: InvestigationReport }) {
             <ol className="ir-allegation-list">
               {report.allegations.map((a) => {
                 const c = byCode[a.wac_code]
+                const idx = report.conclusions.findIndex((x) => x.wac_code === a.wac_code)
                 const result = c?.result || 'Pending Investigation'
                 const finding = resultToFindingPhrase(result)
                 const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-                let line = `Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
-                if (a.wac_title) line += `, ${a.wac_title}`
-                line += '.'
-                if (c?.deficiency_details && finding === 'out of compliance') {
-                  line += ` ${c.deficiency_details}`
-                }
+                const title = a.wac_title ? `, ${a.wac_title}` : ''
+                const extra =
+                  c?.deficiency_details && finding === 'not in compliance'
+                    ? ` ${c.deficiency_details}`
+                    : ''
                 return (
                   <li key={`conc-preview-${a.wac_code}`} className="whitespace-pre-wrap">
-                    {line}
+                    Allegation: The investigator found the facility{' '}
+                    {editable && idx >= 0 ? (
+                      <select
+                        className="ir-inline-select"
+                        value={finding}
+                        aria-label={`Finding for ${a.wac_code}`}
+                        onChange={(e) => {
+                          const phrase = e.target.value as FindingPhrase
+                          const next = report.conclusions.map((row, i) =>
+                            i === idx
+                              ? {
+                                  ...row,
+                                  result: findingPhraseToResult(phrase),
+                                  deficiency_cited: phrase === 'not in compliance',
+                                }
+                              : row,
+                          )
+                          patch({ conclusions: next })
+                        }}
+                      >
+                        <option value="">{CHOOSE_ITEM}</option>
+                        {FINDING_PHRASES.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      displayFinding(finding)
+                    )}{' '}
+                    with {instrument} {a.wac_code}
+                    {title}.{extra}
                   </li>
                 )
               })}
@@ -332,7 +462,45 @@ function DocumentPreview({ report }: { report: InvestigationReport }) {
           </div>
           <div className="space-y-2">
             <p className="ir-section-title">Actions:</p>
-            <p className="ir-body ir-indent whitespace-pre-wrap">{report.actions || '—'}</p>
+            {editable ? (
+              <>
+                <p className="ir-body ir-indent">
+                  <select
+                    className="ir-inline-select w-full max-w-full"
+                    value={determination}
+                    aria-label="Action determination"
+                    onChange={(e) => setActions(e.target.value, referral)}
+                  >
+                    <option value="">{CHOOSE_ITEM}</option>
+                    {ACTION_DETERMINATION_CHOICES.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </p>
+                <p className="ir-body ir-indent">
+                  <select
+                    className="ir-inline-select w-full max-w-full"
+                    value={referral}
+                    aria-label="Action referral"
+                    onChange={(e) => setActions(determination, e.target.value)}
+                  >
+                    <option value="">{CHOOSE_ITEM}</option>
+                    {ACTION_REFERRAL_CHOICES.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="ir-body ir-indent">{determination || CHOOSE_ITEM}</p>
+                <p className="ir-body ir-indent">{referral || CHOOSE_ITEM}</p>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -638,11 +806,11 @@ export function InvestigationReportEditor({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Flush under Intake / Compare / Report — outside the padded scroll pane */}
-      <div className="shrink-0 border-b border-ink-200/70 bg-card/50 px-3 py-2 dark:border-ink-700 sm:px-4">
+      <div className="shrink-0 border-b border-ink-200 bg-card px-3 py-2 dark:border-ink-700 sm:px-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-              <h2 className="font-display text-lg tracking-tight text-ink-900 dark:text-ink-50 sm:text-xl">
+              <h2 className="font-display text-xl tracking-tight text-ink-900 dark:text-ink-50 sm:text-2xl">
                 Investigative Report
               </h2>
               {statusMeta.length > 0 && (
@@ -658,17 +826,17 @@ export function InvestigationReportEditor({
 
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <div
-              className="inline-flex rounded-md bg-ink-100/80 p-0.5 text-xs dark:bg-ink-800/70"
+              className="inline-flex border-b border-ink-200 text-xs dark:border-ink-700"
               role="group"
               aria-label="Report view mode"
             >
               <button
                 type="button"
                 className={clsx(
-                  'inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 font-medium transition',
+                  'inline-flex items-center gap-1.5 border-b-2 px-2.5 py-1.5 font-medium transition',
                   viewMode === 'preview'
-                    ? 'bg-background text-ink-900 shadow-sm dark:bg-ink-900 dark:text-ink-50'
-                    : 'text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
+                    ? 'border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
+                    : 'border-transparent text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
                 )}
                 onClick={() => setViewMode('preview')}
                 title="Preview the Investigation Report as it will appear in Download DOCX"
@@ -679,10 +847,10 @@ export function InvestigationReportEditor({
               <button
                 type="button"
                 className={clsx(
-                  'inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 font-medium transition',
+                  'inline-flex items-center gap-1.5 border-b-2 px-2.5 py-1.5 font-medium transition',
                   viewMode === 'edit'
-                    ? 'bg-background text-ink-900 shadow-sm dark:bg-ink-900 dark:text-ink-50'
-                    : 'text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
+                    ? 'border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
+                    : 'border-transparent text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
                 )}
                 onClick={() => setViewMode('edit')}
                 title="Edit structured fields"
@@ -735,7 +903,7 @@ export function InvestigationReportEditor({
               <summary className="btn-ghost !h-8 !px-2 text-xs marker:content-none [&::-webkit-details-marker]:hidden">
                 More
               </summary>
-              <div className="absolute right-0 z-30 mt-1 min-w-[11rem] rounded-lg border border-ink-200/80 bg-card p-1 shadow-soft dark:border-ink-700">
+              <div className="absolute right-0 z-30 mt-1 min-w-[11rem] rounded-md border border-ink-200 bg-card p-1 dark:border-ink-700">
                 {canEdit && caseId && onRebuild && (
                   <button
                     type="button"
@@ -793,7 +961,7 @@ export function InvestigationReportEditor({
       </div>
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 sm:p-4 lg:space-y-3 lg:p-5">
-      <details className="rounded-lg border border-ink-200/70 px-3 py-2 dark:border-ink-700">
+      <details className="border-b border-ink-200 px-0 py-2 dark:border-ink-700">
         <summary className="cursor-pointer font-sans text-xs font-medium text-ink-600 dark:text-ink-300">
           IR template · {caseDetail?.ir_template?.name || 'Built-in blank'}
         </summary>
@@ -809,19 +977,19 @@ export function InvestigationReportEditor({
       </details>
 
       {exportError && (
-        <div className="rounded-lg border border-rose-300/80 bg-rose-50 px-3 py-2.5 text-sm text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100">
+        <div className="border-l-2 border-rose-600 bg-rose-50 px-3 py-2.5 text-sm text-rose-950 dark:bg-rose-950/40 dark:text-rose-100">
           {exportError}
         </div>
       )}
       {info && (
-        <div className="rounded-lg border border-tide-500/25 bg-tide-500/8 px-3 py-2.5 text-sm text-tide-900 dark:text-tide-100">
+        <div className="border-l-2 border-tide-600 bg-tide-500/8 px-3 py-2.5 text-sm text-tide-900 dark:text-tide-100">
           {info}
         </div>
       )}
 
       {exportWarn && canExport && (
-        <div className="flex gap-3 rounded-lg border border-ink-200/80 bg-ink-50/80 px-3 py-2.5 text-sm text-ink-700 dark:border-ink-700 dark:bg-ink-900/50 dark:text-ink-200">
-          <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden />
+        <div className="flex gap-3 border-l-2 border-cedar-500 bg-ink-50/80 px-3 py-2.5 text-sm text-ink-700 dark:bg-ink-900/50 dark:text-ink-200">
+          <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-sm bg-amber-500" aria-hidden />
           <div className="min-w-0 space-y-1">
             <p className="font-medium text-ink-900 dark:text-ink-50">
               {report.quote_integrity?.ok === false
@@ -867,16 +1035,20 @@ export function InvestigationReportEditor({
       )}
 
       <div className="mx-auto grid max-w-6xl gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-      <article className={clsx('overflow-hidden', viewMode === 'preview' ? 'doc-surface !bg-transparent !shadow-none' : 'doc-surface')}>
+      <article className={clsx('overflow-hidden', viewMode === 'preview' ? 'doc-surface !bg-transparent !shadow-none !border-0' : 'doc-surface')}>
         {viewMode === 'preview' ? (
-          <DocumentPreview report={report} />
+          <DocumentPreview
+            report={report}
+            canEdit={canEdit}
+            onChange={(next) => setReport(normalizeReportAllegations({ ...next }))}
+          />
         ) : (
         <>
-        <div className="border-b border-ink-200/80 bg-gradient-to-b from-[#f3efe6] to-transparent px-6 py-8 text-center dark:border-ink-700 dark:from-ink-900/80">
-          <h1 className="font-display text-2xl font-semibold tracking-[0.04em] text-ink-900 dark:text-ink-50 sm:text-3xl">
+        <div className="border-b border-ink-200 px-6 py-7 text-center dark:border-ink-700">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink-900 dark:text-ink-50 sm:text-3xl">
             Investigative Report
           </h1>
-          <div className="mx-auto mt-3 h-px w-24 animate-draw bg-tide-500/50" />
+          <div className="mx-auto mt-3 h-0.5 w-16 bg-tide-600/60 dark:bg-tide-400/50" />
           <p className="mt-3 font-sans text-xs text-ink-400">
             {report.selected_count} authorized codes · DOH facility IR structure ·{" "}
             {Math.round(report.duration_ms)} ms · switch to Document preview to see export layout
@@ -976,7 +1148,7 @@ export function InvestigationReportEditor({
           {report.authority_statement && (
             <section>
               <h3 className="mb-2 font-display text-lg">Authority</h3>
-              <p className="rounded-xl border bg-muted/20 px-4 py-3 text-sm leading-relaxed">
+              <p className="border-l-2 border-ink-300 bg-muted/20 px-4 py-3 text-sm leading-relaxed dark:border-ink-600">
                 {report.authority_statement}
               </p>
             </section>
@@ -992,7 +1164,7 @@ export function InvestigationReportEditor({
               </p>
               <div className="space-y-3">
                 {report.regulatory_framework.map((entry) => (
-                  <div key={`${entry.instrument}-${entry.code}`} className="rounded-xl border px-4 py-3">
+                  <div key={`${entry.instrument}-${entry.code}`} className="border-b border-ink-200 px-1 py-3 last:border-0 dark:border-ink-700">
                     <div className="font-mono text-xs font-semibold">
                       {entry.instrument} {entry.code}
                     </div>
@@ -1001,6 +1173,11 @@ export function InvestigationReportEditor({
                       {(entry.subsections || []).map((sub, i) => (
                         <li key={`${entry.code}-${i}`} className="text-sm">
                           <div className="font-mono text-[11px] font-semibold">{sub.cite}</div>
+                          {!!sub.context?.trim() && (
+                            <p className="mt-0.5 whitespace-pre-wrap font-serif text-xs leading-relaxed text-ink-500 dark:text-ink-400">
+                              {sub.context}
+                            </p>
+                          )}
                           <p className="mt-0.5 whitespace-pre-wrap font-serif text-xs leading-relaxed">
                             {sub.text}
                           </p>
@@ -1038,18 +1215,18 @@ export function InvestigationReportEditor({
                       <div
                         key={`${category}-${a.wac_code}`}
                         id={allegationAnchorId(a.wac_code)}
-                        className="scroll-mt-28 rounded-xl border border-cedar-500/20 bg-cedar-500/[0.04] px-4 py-3 transition"
+                        className="scroll-mt-28 border-l-[3px] border-cedar-500/35 px-4 py-3 transition"
                       >
-                        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                        <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
                           <span className="font-serif text-sm font-semibold text-ink-800 dark:text-ink-100">
-                            {allegNum}. Allegation:
+                            {allegNum}. Allegation
                           </span>
-                          <span className="rounded-md bg-ink-900 px-2 py-0.5 font-mono text-[11px] font-semibold text-ink-50 dark:bg-ink-100 dark:text-ink-900">
+                          <span className="compare-cite font-semibold text-ink-800 dark:text-ink-100">
                             {a.wac_code}
                           </span>
                           <span className="font-sans text-xs text-ink-500">{a.wac_title}</span>
                           <AllegationBadge a={a} />
-                          <Pencil className="ml-auto h-3.5 w-3.5 text-ink-400" />
+                          <Pencil className="ml-auto h-3.5 w-3.5 shrink-0 self-center text-ink-400" />
                         </div>
                         <textarea
                           className="input min-h-[88px] font-serif text-sm leading-relaxed"
@@ -1067,13 +1244,13 @@ export function InvestigationReportEditor({
                           }}
                         />
                         {!!a.matched_subsections?.length && (
-                          <div className="mt-2 flex flex-wrap gap-1">
+                          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                             {a.matched_subsections.map((s) => (
-                              <span key={s} className="rounded border bg-background px-1.5 py-0.5 font-mono text-[10px]">
+                              <span key={s} className="compare-cite">
                                 {s}
                               </span>
                             ))}
-                          </div>
+                          </p>
                         )}
                       </div>
                       )
@@ -1180,7 +1357,7 @@ export function InvestigationReportEditor({
             </p>
 
             {(report.areas_of_concern?.length || report.investigation_methods?.length || report.clarifying_questions?.length) ? (
-              <div className="mb-4 rounded-xl border border-tide-500/25 bg-tide-500/[0.06] px-3.5 py-3 dark:border-tide-400/20 dark:bg-tide-500/10">
+              <div className="mb-4 border-l-2 border-tide-600 bg-tide-500/[0.06] px-3.5 py-3 dark:border-tide-400 dark:bg-tide-500/10">
                 <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-sans text-xs font-semibold uppercase tracking-[0.12em] text-tide-700 dark:text-tide-300">
                     Investigator collaborator
@@ -1248,8 +1425,7 @@ export function InvestigationReportEditor({
               <FileCheck className="h-4 w-4 text-tide-600" /> Conclusion / Results of Investigation
             </h3>
             <p className="mb-4 font-sans text-xs text-ink-400">
-              Choose the finding that fills the blank: in compliance, out of compliance, or pending
-              determination of compliance.
+              Blank template finding menu: Choose an item., not in compliance, or in compliance.
             </p>
             <div className="space-y-4">
               {Object.entries(grouped).map(([category, items]) => (
@@ -1292,10 +1468,11 @@ export function InvestigationReportEditor({
                                 const phrase = e.target.value as FindingPhrase
                                 updateConclusion(idx, {
                                   result: findingPhraseToResult(phrase),
-                                  deficiency_cited: phrase === 'out of compliance',
+                                  deficiency_cited: phrase === 'not in compliance',
                                 })
                               }}
                             >
+                              <option value="">{CHOOSE_ITEM}</option>
                               {FINDING_PHRASES.map((opt) => (
                                 <option key={opt} value={opt}>
                                   {opt}
@@ -1305,7 +1482,7 @@ export function InvestigationReportEditor({
                             with {instrument} {a.wac_code}
                             {title ? `, ${title}` : ''}.
                           </p>
-                          {finding === 'out of compliance' && idx >= 0 && (
+                          {finding === 'not in compliance' && idx >= 0 && (
                             <div className="mt-3">
                               <label className="label">Deficiency details</label>
                               <input
@@ -1330,16 +1507,61 @@ export function InvestigationReportEditor({
             </div>
           </section>
 
-          {/* Actions */}
+          {/* Actions — blank template dual content controls */}
           <section>
             <h3 className="mb-3 flex items-center gap-2 font-display text-lg">
               <Pencil className="h-4 w-4 text-tide-600" /> Actions
             </h3>
-            <textarea
-              className="input min-h-[100px] font-serif leading-relaxed"
-              value={report.actions}
-              onChange={(e) => setReport((p) => ({ ...p, actions: e.target.value }))}
-            />
+            <p className="mb-3 font-sans text-xs text-ink-400">
+              Two blank-template menus: determination, then referral.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-1">
+              {(() => {
+                const { determination, referral } = parseActionsFields(report)
+                const setActions = (nextDet: string, nextRef: string) => {
+                  setReport((p) => ({
+                    ...p,
+                    action_determination: nextDet,
+                    action_referral: nextRef,
+                    actions: composeActionsText(nextDet, nextRef),
+                  }))
+                }
+                return (
+                  <>
+                    <div>
+                      <label className="label">Determination</label>
+                      <select
+                        className="input"
+                        value={determination}
+                        onChange={(e) => setActions(e.target.value, referral)}
+                      >
+                        <option value="">{CHOOSE_ITEM}</option>
+                        {ACTION_DETERMINATION_CHOICES.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Referral</label>
+                      <select
+                        className="input"
+                        value={referral}
+                        onChange={(e) => setActions(determination, e.target.value)}
+                      >
+                        <option value="">{CHOOSE_ITEM}</option>
+                        {ACTION_REFERRAL_CHOICES.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
           </section>
 
           {/* Supporting findings (de-emphasized) */}
@@ -1356,7 +1578,7 @@ export function InvestigationReportEditor({
                 {report.findings.map((f) => (
                   <div
                     key={f.hierarchy_path + f.status}
-                    className="rounded-xl bg-ink-50/80 p-3 font-mono text-xs leading-relaxed text-ink-700 dark:bg-ink-900/50 dark:text-ink-200"
+                    className="border-l-2 border-ink-300 bg-ink-50/80 p-3 font-mono text-xs leading-relaxed text-ink-700 dark:border-ink-600 dark:bg-ink-900/50 dark:text-ink-200"
                   >
                     {f.formatted_output}
                   </div>
@@ -1380,7 +1602,7 @@ export function InvestigationReportEditor({
           />
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-ink-200/80 p-4 text-sm text-ink-500 dark:border-ink-700">
+        <div className="border border-dashed border-ink-300 p-4 text-sm text-ink-500 dark:border-ink-600">
           Open or save a case to unlock evidence links, process builder, export checks, and review
           workflow.
         </div>

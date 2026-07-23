@@ -18,7 +18,9 @@ from app.services.ir_blank import (
     PROCESS_HEADER,
     SUMMARY_HEADER,
     TITLE,
+    compose_actions_text,
     format_conclusion_line,
+    parse_actions_fields,
 )
 from app.services.wac_scope import normalize_allegation_line
 
@@ -128,16 +130,26 @@ def build_report_plain_text(report: InvestigationReport) -> str:
         lines.append(line)
         lines.append("")
 
-    lines.extend(
-        [
-            ACTIONS_LABEL,
-            (report.actions or "[To be determined after investigation]").strip(),
-        ]
+    det, ref = parse_actions_fields(
+        report.actions or "",
+        determination=getattr(report, "action_determination", "") or "",
+        referral=getattr(report, "action_referral", "") or "",
     )
+    actions_body = compose_actions_text(det, ref)
+
+    lines.extend([ACTIONS_LABEL, actions_body])
     return "\n".join(lines).strip() + "\n"
 
 
 def sync_report_text(report: InvestigationReport) -> InvestigationReport:
     """Regenerate report_text from structured fields (keeps Copy/DOCX/save aligned)."""
+    det, ref = parse_actions_fields(
+        report.actions or "",
+        determination=getattr(report, "action_determination", "") or "",
+        referral=getattr(report, "action_referral", "") or "",
+    )
+    report.action_determination = det
+    report.action_referral = ref
+    report.actions = compose_actions_text(det, ref)
     report.report_text = build_report_plain_text(report)
     return report

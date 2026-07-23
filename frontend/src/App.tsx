@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Search,
   FileText,
   BookOpen,
   Menu,
   X,
-  FileCheck2,
   Moon,
   Sun,
   UserRound,
@@ -48,6 +46,7 @@ import { InvestigationReportEditor } from './components/InvestigationReportEdito
 import { PrivacyGate } from './components/PrivacyGate'
 import { RelatedStatutesPanel } from './components/RelatedStatutesPanel'
 import { ResizeHandle } from './components/ResizeHandle'
+import { getLocalDemoById, isLocalDemoHost, LOCAL_DEMO_SCENARIOS } from './fixtures/localQuickDraft'
 import { ReviewStep } from './components/ReviewStep'
 import { StatuteSearchPanel } from './components/StatuteSearchPanel'
 import { WACSelectionPanel } from './components/WACSelectionPanel'
@@ -121,6 +120,7 @@ export default function App() {
   const [privacyBusy, setPrivacyBusy] = useState(false)
   const [pendingAfterRedact, setPendingAfterRedact] = useState<'draft' | null>(null)
   const [privacyInfo, setPrivacyInfo] = useState('')
+  const [localDemoId, setLocalDemoId] = useState(LOCAL_DEMO_SCENARIOS[0]?.id || '')
 
   const loadWacs = useCallback(async () => {
     setWacs(await api.listWacs({ level: 'code' }))
@@ -225,15 +225,26 @@ export default function App() {
     setShowCasesDrawer(false)
   }
 
-  const ensureCaseSaved = async (reportPayload: InvestigationReport, complaintText = text) => {
+  const ensureCaseSaved = async (
+    reportPayload: InvestigationReport,
+    complaintText = text,
+    opts?: {
+      approved_wac_ids?: string[]
+      case_id_label?: string
+      investigation_date?: string
+      facility_address?: string
+      credential_number?: string
+    },
+  ) => {
+    const label = opts?.case_id_label ?? caseId
     const payload = {
-      case_id_label: caseId,
-      title: caseId || `Case ${new Date().toISOString().slice(0, 10)}`,
+      case_id_label: label,
+      title: label || `Case ${new Date().toISOString().slice(0, 10)}`,
       complaint_text: complaintText,
-      investigation_date: investigationDate,
-      facility_address: facilityAddress,
-      credential_number: credentialNumber,
-      approved_wac_ids: selectedCodes,
+      investigation_date: opts?.investigation_date ?? investigationDate,
+      facility_address: opts?.facility_address ?? facilityAddress,
+      credential_number: opts?.credential_number ?? credentialNumber,
+      approved_wac_ids: opts?.approved_wac_ids ?? selectedCodes,
     }
     if (activeCaseId) {
       await api.updateCase(activeCaseId, payload)
@@ -377,23 +388,33 @@ export default function App() {
     if (!selectedCodes.length) setRelatedHits([])
   }, [selectedCodes.length])
 
-  const generateReportWithText = async (complaintText: string) => {
-    if (!selectedCodes.length) {
+  const generateReportWithText = async (
+    complaintText: string,
+    overrides?: {
+      selected_wacs?: string[]
+      case_id?: string
+      investigation_date?: string
+      facility_address?: string
+      credential_number?: string
+    },
+  ) => {
+    const codes = overrides?.selected_wacs ?? selectedCodes
+    if (!codes.length) {
       setError('Select the officially approved WACs for this case before drafting the report.')
       return
     }
     setBusy(true)
-      setProgress('Drafting report from approved WACs (local PDF match)…')
+    setProgress('Drafting report from approved WACs (local PDF match)…')
     setError('')
     try {
       const res = await api.investigate({
         text: complaintText,
-        selected_wacs: selectedCodes,
+        selected_wacs: codes,
         include_informational: true,
-        case_id: caseId || undefined,
-        investigation_date: investigationDate || undefined,
-        facility_address: facilityAddress || undefined,
-        credential_number: credentialNumber || undefined,
+        case_id: overrides?.case_id ?? (caseId || undefined),
+        investigation_date: overrides?.investigation_date ?? (investigationDate || undefined),
+        facility_address: overrides?.facility_address ?? (facilityAddress || undefined),
+        credential_number: overrides?.credential_number ?? (credentialNumber || undefined),
       })
       setReport(applyReport(res))
       setStep('review')
@@ -401,7 +422,13 @@ export default function App() {
       setProgress('Saving working draft to case…')
       // Case persistence is secondary — do not block Compare on create/save round-trips
       try {
-        await ensureCaseSaved(res, complaintText)
+        await ensureCaseSaved(res, complaintText, {
+          approved_wac_ids: codes,
+          case_id_label: overrides?.case_id ?? caseId,
+          investigation_date: overrides?.investigation_date ?? investigationDate,
+          facility_address: overrides?.facility_address ?? facilityAddress,
+          credential_number: overrides?.credential_number ?? credentialNumber,
+        })
       } catch (saveErr) {
         setError(saveErr instanceof Error ? saveErr.message : 'Draft built, but case save failed')
       }
@@ -411,6 +438,57 @@ export default function App() {
       setBusy(false)
       setProgress('')
     }
+  }
+
+  const applyLocalQuickDraft = (demoId = localDemoId) => {
+    if (!canAccessAdmin(user?.role, user?.is_admin)) {
+      setError('Local demo is limited to administrator accounts.')
+      return
+    }
+    const d = getLocalDemoById(demoId)
+    if (!d) {
+      setError('Select a local demo scenario first.')
+      return
+    }
+    setLocalDemoId(d.id)
+    setActiveCaseId(null)
+    setCaseDetail(null)
+    setReport(null)
+    setText(d.complaint)
+    setCaseId(d.case_id)
+    setInvestigationDate(d.investigation_date)
+    setFacilityAddress(d.facility_address)
+    setCredentialNumber(d.credential_number)
+    setSelectedCodes([...d.selected_wacs])
+    setPrivacyHits([])
+    setPrivacyScan(null)
+    setPrivacyInfo('')
+    setError('')
+    setStep('workspace')
+    setTab('analysis')
+    setShowCasesDrawer(false)
+  }
+
+  const loadLocalDemoAndDraft = (demoId = localDemoId) => {
+    if (!canAccessAdmin(user?.role, user?.is_admin)) {
+      setError('Local demo is limited to administrator accounts.')
+      return
+    }
+    const d = getLocalDemoById(demoId)
+    if (!d) {
+      setError('Select a local demo scenario first.')
+      return
+    }
+    applyLocalQuickDraft(d.id)
+    window.setTimeout(() => {
+      void generateReportWithText(d.complaint, {
+        selected_wacs: [...d.selected_wacs],
+        case_id: d.case_id,
+        investigation_date: d.investigation_date,
+        facility_address: d.facility_address,
+        credential_number: d.credential_number,
+      })
+    }, 0)
   }
 
   const generateReport = async () => {
@@ -503,8 +581,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-ink-200/80 bg-card/90 backdrop-blur-md dark:border-ink-700">
-        <div className="mx-auto flex h-[4.25rem] max-w-none items-center justify-between gap-3 px-4 lg:px-5">
+      <header className="sticky top-0 z-40 border-b border-ink-200 bg-card dark:border-ink-700">
+        <div className="mx-auto flex h-14 max-w-none items-center justify-between gap-3 px-4 lg:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -514,18 +592,13 @@ export default function App() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-tide-600 text-white shadow-soft">
-                <FileCheck2 className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="truncate text-lg font-bold tracking-tight text-ink-900 dark:text-ink-50">
-                  WACMAKR
-                </h1>
-                <p className="hidden truncate text-xs text-ink-500 sm:block">
-                  Case reports from approved WACs {health ? `· ${health}` : ''}
-                </p>
-              </div>
+            <div className="min-w-0">
+              <h1 className="brand-mark truncate">WACMAKR</h1>
+              <div className="brand-rule" aria-hidden />
+              <p className="mt-1 hidden truncate text-[11px] text-ink-500 sm:block">
+                Investigation reports · approved WACs only
+                {health ? ` · ${health}` : ''}
+              </p>
             </div>
           </div>
           <div className="relative flex shrink-0 items-center gap-2">
@@ -563,7 +636,7 @@ export default function App() {
                 <Shield className="h-4 w-4" />
                 <span className="ml-1.5 hidden md:inline">Admin</span>
                 {inboxTotal > 0 && (
-                  <span className="ml-1.5 rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">
+                  <span className="ml-1.5 rounded-sm bg-rose-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
                     {inboxTotal}
                   </span>
                 )}
@@ -583,10 +656,10 @@ export default function App() {
                 {accountMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setAccountMenuOpen(false)} />
-                    <div className="absolute right-0 z-50 mt-1 w-56 rounded-xl border border-ink-200/80 bg-card p-1 shadow-panel dark:border-ink-700">
+                    <div className="absolute right-0 z-50 mt-1 w-56 rounded-md border border-ink-200 bg-card p-1 dark:border-ink-700">
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-ink-100/80 dark:hover:bg-ink-800/50 sm:hidden"
+                        className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800/50 sm:hidden"
                         onClick={() => {
                           setAccountMenuOpen(false)
                           setFeedbackOpen(true)
@@ -596,7 +669,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-ink-100/80 dark:hover:bg-ink-800/50 sm:hidden"
+                        className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800/50 sm:hidden"
                         onClick={() => {
                           setAccountMenuOpen(false)
                           setBugOpen(true)
@@ -606,7 +679,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-ink-100/80 dark:hover:bg-ink-800/50"
+                        className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800/50"
                         onClick={() => {
                           setAccountMenuOpen(false)
                           setAccountOpen(true)
@@ -614,13 +687,13 @@ export default function App() {
                       >
                         <Settings className="h-4 w-4" /> Account settings
                       </button>
-                      <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-ink-400">
+                      <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-ink-400">
                         {roleLabel(user.role, user.is_admin)}
                       </div>
                       {userCanAdmin && (
                         <button
                           type="button"
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-ink-100/80 dark:hover:bg-ink-800/50"
+                          className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800/50"
                           onClick={() => {
                             setAccountMenuOpen(false)
                             setAdminSubTab('users')
@@ -629,7 +702,7 @@ export default function App() {
                         >
                           <Shield className="h-4 w-4" /> Admin panel
                           {inboxTotal > 0 && (
-                            <span className="ml-auto rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">
+                            <span className="ml-auto rounded-sm bg-rose-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
                               {inboxTotal}
                             </span>
                           )}
@@ -637,7 +710,7 @@ export default function App() {
                       )}
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-ink-100/80 dark:hover:bg-ink-800/50"
+                        className="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800/50"
                         onClick={() => {
                           setAccountMenuOpen(false)
                           signOut()
@@ -654,14 +727,14 @@ export default function App() {
         </div>
       </header>
 
-      <div className="flex h-[calc(100vh-4.25rem)]">
+      <div className="flex h-[calc(100vh-3.5rem)]">
         {showMobileMenu && (
           <div className="fixed inset-0 z-50 md:hidden">
-            <div className="fixed inset-0 bg-ink-950/35 backdrop-blur-[2px]" onClick={() => setShowMobileMenu(false)} />
-            <div className="fixed left-0 top-0 flex h-full w-[22rem] max-w-[90vw] flex-col border-r bg-card shadow-panel">
+            <div className="fixed inset-0 bg-ink-950/40" onClick={() => setShowMobileMenu(false)} />
+            <div className="fixed left-0 top-0 flex h-full w-[22rem] max-w-[90vw] flex-col border-r bg-card">
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <div>
-                  <h2 className="font-semibold">Approved WACs</h2>
+                  <h2 className="font-display text-base">Approved WACs</h2>
                   <p className="text-xs text-muted-foreground">Required for every case report</p>
                 </div>
                 <button type="button" className="btn-ghost btn-sm" onClick={() => setShowMobileMenu(false)}>
@@ -674,15 +747,14 @@ export default function App() {
         )}
 
         <aside
-          className="sidebar-rail relative hidden h-full shrink-0 border-r border-ink-200/80 dark:border-ink-700 md:flex md:flex-col"
+          className="sidebar-rail relative hidden h-full shrink-0 border-r border-ink-200 dark:border-ink-700 md:flex md:flex-col"
           style={{ width: wacRail.width }}
         >
-          <div className="border-b border-ink-200/80 px-3 py-3 dark:border-ink-700">
-            <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-              <Search className="h-4 w-4 text-tide-600" />
+          <div className="border-b border-ink-200 px-3 py-3 dark:border-ink-700">
+            <h2 className="font-display text-[15px] tracking-tight text-ink-900 dark:text-ink-50">
               Approved WACs
             </h2>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
               Required. Only selected codes enter the report.
             </p>
           </div>
@@ -695,11 +767,11 @@ export default function App() {
           />
         </aside>
 
-        <main className="flex min-w-0 flex-1 flex-col">
-          <div className="border-b border-ink-200/80 px-4 py-2.5 dark:border-ink-700">
+        <main className="flex min-w-0 flex-1 flex-col bg-transparent">
+          <div className="border-b border-ink-200 px-4 dark:border-ink-700">
             <div
               className={clsx(
-                'grid w-full gap-1 rounded-xl bg-ink-100/80 p-1 dark:bg-ink-800/60',
+                'grid w-full',
                 userCanAdmin ? 'grid-cols-3' : 'grid-cols-2',
               )}
             >
@@ -719,7 +791,7 @@ export default function App() {
                   <Icon className="h-4 w-4" />
                   <span className="hidden sm:inline">{label}</span>
                   {id === 'admin' && inboxTotal > 0 && (
-                    <span className="ml-1 rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">
+                    <span className="ml-1 rounded-sm bg-rose-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
                       {inboxTotal}
                     </span>
                   )}
@@ -729,21 +801,21 @@ export default function App() {
           </div>
 
           {user && userCanEdit && !userCanExport && (
-            <div className="mx-4 mt-3 rounded-xl border border-ink-200/80 bg-ink-50/80 px-3 py-2 text-sm text-ink-600 dark:border-ink-700 dark:bg-ink-900/40 dark:text-ink-300">
+            <div className="mx-4 mt-3 border-l-2 border-ink-400 bg-ink-50/90 px-3 py-2 text-sm text-ink-600 dark:bg-ink-900/40 dark:text-ink-300">
               Viewer role — you can create and edit cases and investigation reports in-system. Export, download, and copy are disabled; drafts stay in the case record.
             </div>
           )}
           {error && (
             <div
               role="alert"
-              className="mx-4 mt-3 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              className="mx-4 mt-3 border-l-2 border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
             >
               {error}
             </div>
           )}
           {privacyInfo && (
             <div
-              className="mx-4 mt-3 rounded-xl border border-tide-500/30 bg-tide-500/10 px-3 py-2 text-sm text-tide-800 dark:text-tide-200"
+              className="mx-4 mt-3 border-l-2 border-tide-600 bg-tide-500/10 px-3 py-2 text-sm text-tide-800 dark:text-tide-200"
               aria-live="polite"
             >
               {privacyInfo}
@@ -758,7 +830,7 @@ export default function App() {
           <div className="min-h-0 flex-1 overflow-hidden">
             {tab === 'analysis' && (
               <div className="flex h-full flex-col overflow-hidden">
-                <div className="border-b border-ink-200/70 bg-card/50 px-3 py-1.5 dark:border-ink-700 lg:px-4 lg:py-2">
+                <div className="border-b border-ink-200 bg-card/80 px-3 py-2 dark:border-ink-700 lg:px-4">
                   <WorkflowStepper
                     step={step}
                     onStepChange={setStep}
@@ -778,7 +850,7 @@ export default function App() {
                   }
                 >
                   {step === 'workspace' && (
-                    <div className="mx-auto flex min-h-full max-w-5xl flex-col gap-4">
+                    <div className="mx-auto flex min-h-full max-w-5xl flex-col gap-5">
                       <ComplaintStep
                         text={text}
                         onTextChange={(v) => {
@@ -804,9 +876,19 @@ export default function App() {
                         onBlurScan={() => {
                           void scanPrivacy(text)
                         }}
+                        showLocalDemo={isLocalDemoHost() && userCanAdmin}
+                        localDemoOptions={LOCAL_DEMO_SCENARIOS.map((d) => ({
+                          id: d.id,
+                          label: d.label,
+                          focus: d.focus,
+                        }))}
+                        localDemoId={localDemoId}
+                        onLocalDemoIdChange={setLocalDemoId}
+                        onLoadLocalDemo={() => applyLocalQuickDraft()}
+                        onLoadLocalDemoAndDraft={() => loadLocalDemoAndDraft()}
                       />
-                      <details className="panel group">
-                        <summary className="cursor-pointer list-none px-4 py-3 font-sans text-sm font-medium text-ink-600 marker:content-none dark:text-ink-300 [&::-webkit-details-marker]:hidden">
+                      <details className="group border-t border-ink-200 pt-3 dark:border-ink-700">
+                        <summary className="cursor-pointer list-none font-sans text-sm font-medium text-ink-600 marker:content-none dark:text-ink-300 [&::-webkit-details-marker]:hidden">
                           <span className="flex items-center justify-between gap-2">
                             <span>
                               Optional research — find stronger WAC/RCW fits
@@ -819,7 +901,7 @@ export default function App() {
                             <span className="hidden text-xs text-ink-400 group-open:inline">Hide</span>
                           </span>
                         </summary>
-                        <div className="border-t border-ink-200/70 px-2 pb-3 dark:border-ink-700">
+                        <div className="mt-3">
                           <StatuteSearchPanel
                             hits={statuteHits}
                             busy={searchBusy}
@@ -892,7 +974,7 @@ export default function App() {
 
             {tab === 'admin' && user && userCanAdmin && (
               <div className="h-full overflow-y-auto p-4 lg:p-5">
-                <div className="mb-4 flex flex-wrap gap-1 rounded-xl bg-ink-100/80 p-1 dark:bg-ink-800/60">
+                <div className="mb-4 flex flex-wrap gap-0 border-b border-ink-200 dark:border-ink-700">
                   {(
                     [
                       ['users', 'Users', Users],
@@ -911,7 +993,7 @@ export default function App() {
                       <Icon className="h-4 w-4" />
                       {label}
                       {id === 'inbox' && inboxTotal > 0 && (
-                        <span className="ml-1 rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">
+                        <span className="ml-1 rounded-sm bg-rose-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
                           {inboxTotal}
                         </span>
                       )}
@@ -929,7 +1011,7 @@ export default function App() {
         </main>
 
         <aside
-          className="relative hidden h-full shrink-0 border-l border-ink-200/80 bg-card/40 dark:border-ink-700 lg:flex lg:flex-col"
+          className="relative hidden h-full shrink-0 border-l border-ink-200 bg-card dark:border-ink-700 lg:flex lg:flex-col"
           style={{ width: casesRail.width }}
         >
           <ResizeHandle
@@ -945,7 +1027,7 @@ export default function App() {
         <div className="fixed bottom-4 right-4 lg:hidden">
           <button
             type="button"
-            className="btn-default h-12 w-12 rounded-full shadow-lg"
+            className="btn-default h-12 w-12 rounded-md"
             onClick={() => setShowCasesDrawer(!showCasesDrawer)}
             aria-label="Open cases"
           >
@@ -955,10 +1037,10 @@ export default function App() {
 
         {showCasesDrawer && (
           <div className="fixed inset-0 z-50 lg:hidden">
-            <div className="fixed inset-0 bg-black/20" onClick={() => setShowCasesDrawer(false)} />
-            <div className="fixed right-0 top-0 flex h-full w-80 flex-col border-l bg-background shadow-lg">
+            <div className="fixed inset-0 bg-ink-950/40" onClick={() => setShowCasesDrawer(false)} />
+            <div className="fixed right-0 top-0 flex h-full w-80 flex-col border-l bg-card">
               <div className="flex items-center justify-between border-b p-3">
-                <h2 className="font-semibold">Cases</h2>
+                <h2 className="font-display text-base">Cases</h2>
                 <button type="button" className="btn-ghost btn-sm" onClick={() => setShowCasesDrawer(false)}>
                   <X className="h-4 w-4" />
                 </button>

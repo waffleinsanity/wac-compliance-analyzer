@@ -110,24 +110,22 @@ export function packProcessFields(fields: ProcessFields): string[] {
   ]
 }
 
-/** DOH conclusion finding phrases that fill the blank between "facility" and "with WAC". */
-export const FINDING_PHRASES = [
-  'pending determination of compliance',
-  'in compliance',
-  'out of compliance',
-] as const
+/** DOH blank conclusion finding phrases (content control). Empty = Choose an item. */
+export const FINDING_PHRASES = ['not in compliance', 'in compliance'] as const
 
-export type FindingPhrase = (typeof FINDING_PHRASES)[number]
+export type FindingPhrase = (typeof FINDING_PHRASES)[number] | ''
 
 export function resultToFindingPhrase(result: string): FindingPhrase {
   const r = (result || '').trim().toLowerCase()
-  if (r === 'substantiated' || r === 'out of compliance') return 'out of compliance'
+  if (r === 'substantiated' || r === 'out of compliance' || r === 'not in compliance') {
+    return 'not in compliance'
+  }
   if (r === 'unsubstantiated' || r === 'in compliance') return 'in compliance'
-  return 'pending determination of compliance'
+  return ''
 }
 
 export function findingPhraseToResult(phrase: FindingPhrase): string {
-  if (phrase === 'out of compliance') return 'Substantiated'
+  if (phrase === 'not in compliance') return 'Substantiated'
   if (phrase === 'in compliance') return 'Unsubstantiated'
   return 'Pending Investigation'
 }

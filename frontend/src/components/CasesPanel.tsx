@@ -360,10 +360,10 @@ export function CasesPanel({
             <li key={c.id} className="group">
               <div
                 className={clsx(
-                  'rounded-xl border px-3 py-2.5 transition',
+                  'border-l-2 px-3 py-2.5 transition',
                   selected
-                    ? 'border-tide-500/40 bg-tide-500/10 shadow-soft'
-                    : 'border-ink-200/70 bg-card/60 hover:border-ink-300 hover:bg-ink-50/80 dark:border-ink-700 dark:hover:border-ink-600 dark:hover:bg-ink-800/40',
+                    ? 'border-tide-600 bg-tide-500/8'
+                    : 'border-transparent hover:bg-ink-50 dark:hover:bg-ink-800/40',
                 )}
               >
                 <div className="flex items-start gap-2">

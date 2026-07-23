@@ -16,14 +16,25 @@ type Props = {
   className?: string
   /** Optional callout when this hit looks stronger than current approvals. */
   betterFit?: boolean
+  /**
+   * `badge` — bordered chip (research / dense lists).
+   * `quiet` — sentence-case secondary text (Compare allegation chrome).
+   */
+  tone?: 'badge' | 'quiet'
 }
 
 const STYLES: Record<ApplicationStrength, string> = {
-  strong:
-    'border-emerald-500/35 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100',
-  moderate: 'border-sky-500/35 bg-sky-500/10 text-sky-900 dark:text-sky-100',
-  weak: 'border-amber-500/35 bg-amber-500/10 text-amber-950 dark:text-amber-100',
-  none: 'border-ink-300/60 bg-ink-100/70 text-ink-600 dark:border-ink-600 dark:bg-ink-800/50 dark:text-ink-300',
+  strong: 'text-emerald-800 dark:text-emerald-300',
+  moderate: 'text-sky-800 dark:text-sky-300',
+  weak: 'text-amber-900 dark:text-amber-300',
+  none: 'text-ink-500 dark:text-ink-400',
+}
+
+const QUIET: Record<ApplicationStrength, string> = {
+  strong: 'text-emerald-800 dark:text-emerald-300',
+  moderate: 'text-sky-800 dark:text-sky-300',
+  weak: 'text-amber-800 dark:text-amber-300',
+  none: 'text-ink-500 dark:text-ink-400',
 }
 
 export function ApplicationStrengthBadge({
@@ -35,24 +46,42 @@ export function ApplicationStrengthBadge({
   short = false,
   className,
   betterFit = false,
+  tone = 'badge',
 }: Props) {
   const value =
     strength ||
     applicationStrengthFromMatch({ score, reason, lowConfidence, source })
 
+  const label = applicationStrengthLabel(value, { short })
+  const title =
+    'How well this code appears to apply to the complaint (research signal — not authorization)'
+
+  if (tone === 'quiet') {
+    return (
+      <span className={clsx('inline-flex flex-wrap items-baseline gap-x-2 gap-y-0.5', className)}>
+        <span className={clsx('font-sans text-xs', QUIET[value])} title={title}>
+          {label}
+        </span>
+        {betterFit && (
+          <span className="font-sans text-xs text-tide-700 dark:text-tide-300">Stronger fit?</span>
+        )}
+      </span>
+    )
+  }
+
   return (
-    <span className={clsx('inline-flex flex-wrap items-center gap-1', className)}>
+    <span className={clsx('inline-flex flex-wrap items-center gap-1.5', className)}>
       <span
         className={clsx(
-          'rounded-md border px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide',
+          'font-sans text-[11px] font-medium',
           STYLES[value],
         )}
-        title="How well this code appears to apply to the complaint (research signal — not authorization)"
+        title={title}
       >
-        {applicationStrengthLabel(value, { short })}
+        {label}
       </span>
       {betterFit && (
-        <span className="rounded-md border border-tide-500/40 bg-tide-500/10 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-tide-900 dark:text-tide-100">
+        <span className="font-sans text-[11px] font-medium text-tide-700 dark:text-tide-300">
           Stronger fit?
         </span>
       )}
