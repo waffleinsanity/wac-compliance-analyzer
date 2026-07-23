@@ -39,6 +39,11 @@ import {
   type FindingPhrase,
   type ProcessFields,
 } from '../processTemplate'
+import {
+  FEDERAL_CERTIFICATION_PRIORITY_CHOICES,
+  INVESTIGATION_TYPE_CHOICES,
+  STATE_LICENSING_PRIORITY_CHOICES,
+} from '../irTemplateChoices'
 import { IrTemplatePicker } from './IrTemplatePicker'
 
 function allegationAnchorId(wacCode: string) {
@@ -130,10 +135,13 @@ function buildPlainText(report: InvestigationReport): string {
     '',
   ]
 
-  for (const a of report.allegations) {
-    const text = a.allegation_text.trim()
-    lines.push(text.toLowerCase().startsWith('allegation:') ? text : `Allegation: ${text}`, '')
-  }
+  report.allegations.forEach((a, i) => {
+    const text = normalizeAllegationLine(a.allegation_text)
+    const body = text.toLowerCase().startsWith('allegation:')
+      ? text.replace(/^allegation:\s*/i, '')
+      : text
+    lines.push(`${i + 1}. Allegation: ${body}`, '')
+  })
 
   lines.push(
     '',
@@ -152,19 +160,19 @@ function buildPlainText(report: InvestigationReport): string {
     '',
   )
   const byCode = Object.fromEntries(report.conclusions.map((c) => [c.wac_code, c]))
-  for (const a of report.allegations) {
+  report.allegations.forEach((a, i) => {
     const c = byCode[a.wac_code]
     const result = c?.result || 'Pending Investigation'
     const finding = resultToFindingPhrase(result)
     const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-    let line = `Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
+    let line = `${i + 1}. Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
     if (a.wac_title) line += `, ${a.wac_title}`
     line += '.'
     if (c?.deficiency_details && finding === 'out of compliance') {
       line += ` ${c.deficiency_details}`
     }
     lines.push(line, '')
-  }
+  })
   lines.push('Actions:', report.actions)
   return lines.join('\n')
 }
@@ -212,7 +220,7 @@ function IrProcessLine({ step }: { step: string }) {
   if (kind === 'subhead') {
     return <p className="ir-process-subhead">{step}</p>
   }
-  return <p className="ir-body whitespace-pre-wrap">{step}</p>
+  return <p className="ir-body ir-process-body whitespace-pre-wrap">{step}</p>
 }
 
 /** On-screen IR that mirrors Download DOCX layout (blank shell + live field values). */
@@ -243,10 +251,16 @@ function DocumentPreview({ report }: { report: InvestigationReport }) {
       <div className="ir-doc-scroll">
         <div className="ir-doc-page" role="document" aria-label="Investigation Report preview">
           <h1 className="ir-doc-title">Investigative Report</h1>
+          <p className="ir-body mb-4 text-center italic text-ink-800">
+            {report.subtitle || 'Choose an item.'}
+          </p>
           <div className="mb-4 space-y-0">
             {facilityLines.map(([label, value]) => (
               <p key={label} className="ir-body">
-                <span className="font-bold">{label}</span> {value}
+                <span className="ir-facility-label">{label}</span>{' '}
+                <span className="ir-facility-value">
+                  {value || (label.includes('Priority') ? 'Choose an item.' : '')}
+                </span>
               </p>
             ))}
           </div>
@@ -255,22 +269,26 @@ function DocumentPreview({ report }: { report: InvestigationReport }) {
               title="Intake Details:"
               hint="(List of concerns reported in the original complaint.)"
             />
-            <p className="ir-body whitespace-pre-wrap">{report.intake_details || '—'}</p>
+            <p className="ir-body ir-indent whitespace-pre-wrap">{report.intake_details || '—'}</p>
           </div>
           <div className="mb-4 space-y-2">
             <IrSectionHeading
               title="Allegation(s):"
               hint="(The allegation(s) listed below is what the department has jurisdiction and authorization to investigate. An allegation is considered an assertion of improper practice or condition that could result in a violation of facility law or rule.)"
             />
-            {report.allegations.map((a) => {
-              const text = normalizeAllegationLine(a.allegation_text)
-              const line = text.toLowerCase().startsWith('allegation:') ? text : `Allegation: ${text}`
-              return (
-                <p key={a.wac_code} className="ir-body whitespace-pre-wrap">
-                  {line}
-                </p>
-              )
-            })}
+            <ol className="ir-allegation-list">
+              {report.allegations.map((a) => {
+                const text = normalizeAllegationLine(a.allegation_text)
+                const body = text.toLowerCase().startsWith('allegation:')
+                  ? text.replace(/^allegation:\s*/i, '')
+                  : text
+                return (
+                  <li key={a.wac_code} className="whitespace-pre-wrap">
+                    Allegation: {body}
+                  </li>
+                )
+              })}
+            </ol>
           </div>
           <div className="mb-4 space-y-1">
             <div className="mb-2">
@@ -288,31 +306,33 @@ function DocumentPreview({ report }: { report: InvestigationReport }) {
               title="Summary of Findings"
               hint="(Narrative overview of the results of investigation.)"
             />
-            <p className="ir-body whitespace-pre-wrap">{report.summary_of_findings || '—'}</p>
+            <p className="ir-body ir-indent whitespace-pre-wrap">{report.summary_of_findings || '—'}</p>
           </div>
           <div className="mb-4 space-y-2">
             <p className="ir-section-title">Conclusion/ Results of Investigation</p>
-            {report.allegations.map((a) => {
-              const c = byCode[a.wac_code]
-              const result = c?.result || 'Pending Investigation'
-              const finding = resultToFindingPhrase(result)
-              const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-              let line = `Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
-              if (a.wac_title) line += `, ${a.wac_title}`
-              line += '.'
-              if (c?.deficiency_details && finding === 'out of compliance') {
-                line += ` ${c.deficiency_details}`
-              }
-              return (
-                <p key={`conc-preview-${a.wac_code}`} className="ir-body whitespace-pre-wrap">
-                  {line}
-                </p>
-              )
-            })}
+            <ol className="ir-allegation-list">
+              {report.allegations.map((a) => {
+                const c = byCode[a.wac_code]
+                const result = c?.result || 'Pending Investigation'
+                const finding = resultToFindingPhrase(result)
+                const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
+                let line = `Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
+                if (a.wac_title) line += `, ${a.wac_title}`
+                line += '.'
+                if (c?.deficiency_details && finding === 'out of compliance') {
+                  line += ` ${c.deficiency_details}`
+                }
+                return (
+                  <li key={`conc-preview-${a.wac_code}`} className="whitespace-pre-wrap">
+                    {line}
+                  </li>
+                )
+              })}
+            </ol>
           </div>
           <div className="space-y-2">
             <p className="ir-section-title">Actions:</p>
-            <p className="ir-body whitespace-pre-wrap">{report.actions || '—'}</p>
+            <p className="ir-body ir-indent whitespace-pre-wrap">{report.actions || '—'}</p>
           </div>
         </div>
       </div>
@@ -616,9 +636,9 @@ export function InvestigationReportEditor({
   ].filter(Boolean) as string[]
 
   return (
-    <div className="animate-rise space-y-2 lg:space-y-3">
-      {/* Stick to top of the report scroll pane (already below app header + stepper). */}
-      <div className="sticky top-0 z-20 -mx-1 border-b border-ink-200/70 bg-background/95 px-3 py-2 backdrop-blur-md dark:border-ink-700 sm:px-4">
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Flush under Intake / Compare / Report — outside the padded scroll pane */}
+      <div className="shrink-0 border-b border-ink-200/70 bg-card/50 px-3 py-2 dark:border-ink-700 sm:px-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
@@ -772,6 +792,7 @@ export function InvestigationReportEditor({
         </div>
       </div>
 
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 sm:p-4 lg:space-y-3 lg:p-5">
       <details className="rounded-lg border border-ink-200/70 px-3 py-2 dark:border-ink-700">
         <summary className="cursor-pointer font-sans text-xs font-medium text-ink-600 dark:text-ink-300">
           IR template · {caseDetail?.ir_template?.name || 'Built-in blank'}
@@ -869,6 +890,21 @@ export function InvestigationReportEditor({
               <Building2 className="h-4 w-4 text-tide-600" /> Facility Information
             </h3>
             <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="label">Investigation type</label>
+                <select
+                  className="input"
+                  value={report.subtitle || ''}
+                  onChange={(e) => setReport((p) => ({ ...p, subtitle: e.target.value }))}
+                >
+                  <option value="">Choose an item.</option>
+                  {INVESTIGATION_TYPE_CHOICES.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
               {(
                 [
                   ['facility_address', 'Facility Address'],
@@ -878,7 +914,6 @@ export function InvestigationReportEditor({
                   ['medicare_number', 'Medicare Number'],
                   ['shell_number', 'Shell Number'],
                   ['investigation_dates', 'Date(s) of Investigation'],
-                  ['state_licensing_priority', 'State Licensing Priority'],
                 ] as const
               ).map(([key, label]) => (
                 <div key={key}>
@@ -890,13 +925,35 @@ export function InvestigationReportEditor({
                   />
                 </div>
               ))}
-              <div className="sm:col-span-2">
-                <label className="label">Federal Certification Priority</label>
-                <input
+              <div>
+                <label className="label">State Licensing Priority</label>
+                <select
                   className="input"
-                  value={report.facility_info.federal_certification_priority}
+                  value={report.facility_info.state_licensing_priority || ''}
+                  onChange={(e) => updateFacility('state_licensing_priority', e.target.value)}
+                >
+                  <option value="">Choose an item.</option>
+                  {STATE_LICENSING_PRIORITY_CHOICES.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">Federal Certification Priority</label>
+                <select
+                  className="input"
+                  value={report.facility_info.federal_certification_priority || ''}
                   onChange={(e) => updateFacility('federal_certification_priority', e.target.value)}
-                />
+                >
+                  <option value="">Choose an item.</option>
+                  {FEDERAL_CERTIFICATION_PRIORITY_CHOICES.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </section>
@@ -971,13 +1028,22 @@ export function InvestigationReportEditor({
                     </div>
                   )}
                   <div className="space-y-3">
-                    {items.map((a) => (
+                    {items.map((a) => {
+                      const allegNum =
+                        report.allegations.findIndex(
+                          (item) =>
+                            item.wac_code === a.wac_code && item.case_category === a.case_category,
+                        ) + 1
+                      return (
                       <div
                         key={`${category}-${a.wac_code}`}
                         id={allegationAnchorId(a.wac_code)}
                         className="scroll-mt-28 rounded-xl border border-cedar-500/20 bg-cedar-500/[0.04] px-4 py-3 transition"
                       >
                         <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                          <span className="font-serif text-sm font-semibold text-ink-800 dark:text-ink-100">
+                            {allegNum}. Allegation:
+                          </span>
                           <span className="rounded-md bg-ink-900 px-2 py-0.5 font-mono text-[11px] font-semibold text-ink-50 dark:bg-ink-100 dark:text-ink-900">
                             {a.wac_code}
                           </span>
@@ -1010,7 +1076,8 @@ export function InvestigationReportEditor({
                           </div>
                         )}
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               ))}
@@ -1206,8 +1273,12 @@ export function InvestigationReportEditor({
                           className="rounded-lg border border-ink-200/80 bg-card/40 px-3 py-3 dark:border-ink-700"
                         >
                           <p className="font-serif text-sm leading-relaxed text-ink-900 dark:text-ink-50">
-                            <span className="font-semibold">Allegation:</span> The investigator found
-                            the facility{' '}
+                            <span className="font-semibold">
+                              {report.allegations.findIndex((item) => item.wac_code === a.wac_code) +
+                                1}
+                              . Allegation:
+                            </span>{' '}
+                            The investigator found the facility{' '}
                             <select
                               className={clsx(
                                 'mx-0.5 inline-block max-w-full rounded border px-1.5 py-0.5 font-serif text-sm font-semibold',
@@ -1314,6 +1385,7 @@ export function InvestigationReportEditor({
           workflow.
         </div>
       )}
+      </div>
       </div>
     </div>
   )

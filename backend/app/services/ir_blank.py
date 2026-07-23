@@ -30,6 +30,26 @@ SUMMARY_HEADER = "Summary of Findings (Narrative overview of the results of inve
 CONCLUSION_HEADER = "Conclusion/ Results of Investigation"
 ACTIONS_LABEL = "Actions:"
 
+# Content-control dropdown lists from blank DOCX (display values)
+INVESTIGATION_TYPE_CHOICES = [
+    "On-site State Investigation",
+    "On-site Federal Investigation",
+    "On-site State and Federal Investigation",
+    "Off-site State Investigation",
+]
+STATE_LICENSING_PRIORITY_CHOICES = ["A", "B", "C", "N/A"]
+FEDERAL_CERTIFICATION_PRIORITY_CHOICES = [
+    "N/A",
+    "Immediate Jeopardy (IJ)",
+    "Non-IJ High",
+    "Non-IJ Medium",
+    "Non-IJ Low",
+    "Adminstrative Review/Offsite Investigation",
+    "Referral - Immediate",
+    "Referral - Other",
+    "No Action Necessary",
+]
+
 # Blank process skeleton (section labels + starter lines investigators fill in)
 BLANK_PROCESS_SKELETON = [
     "Pre-investigation Activity:",

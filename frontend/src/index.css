@@ -196,7 +196,8 @@
     @apply min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6;
   }
   .ir-doc-page {
-    @apply mx-auto w-full max-w-[8.5in] rounded-sm bg-white px-[0.85in] py-[0.75in] text-black shadow-[0_1px_2px_rgba(0,0,0,0.08),0_12px_40px_rgba(0,0,0,0.12)];
+    @apply mx-auto w-full max-w-[8.5in] rounded-sm px-[0.85in] py-[0.75in] text-black shadow-[0_1px_2px_rgba(0,0,0,0.08),0_12px_40px_rgba(0,0,0,0.12)];
+    background: #f3efe6;
     font-family: 'Times New Roman', Times, 'Source Serif 4', Georgia, serif;
     min-height: 11in;
   }
@@ -235,11 +236,39 @@
     line-height: 1.45;
     color: #000;
   }
+  /* Peer IR indent under section headings (~0.5in) */
+  .ir-doc-page .ir-indent {
+    padding-left: 0.5in;
+  }
+  .ir-doc-page .ir-facility-label {
+    font-weight: 700;
+  }
+  .ir-doc-page .ir-facility-value {
+    font-weight: 400;
+  }
+  .ir-doc-page .ir-allegation-list {
+    margin: 0;
+    padding-left: 0.5in;
+    list-style: decimal;
+  }
+  .ir-doc-page .ir-allegation-list > li {
+    margin: 0 0 0.55rem;
+    padding-left: 0.15in;
+    font-size: 12pt;
+    line-height: 1.45;
+    color: #000;
+  }
+  .ir-doc-page .ir-allegation-list > li::marker {
+    font-weight: 400;
+  }
   .ir-doc-page .ir-process-line {
     margin: 0;
     font-size: 12pt;
     line-height: 1.45;
     color: #000;
+  }
+  .ir-doc-page .ir-process-body {
+    padding-left: 0.5in;
   }
   /* Pre-investigation / Investigation Activity — bold + underline (colon not underlined) */
   .ir-doc-page .ir-process-activity {

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import pytest
 from docx import Document
 
 from app.schemas import (
@@ -84,10 +85,10 @@ def test_plain_text_matches_blank_shell():
     assert "Facility Address: Washington State" in text
     assert "Laboratory Director:" in text
     assert "Intake Details: (List of concerns" in text
-    assert "Allegation: Potential violation of WAC 246-341-0410" in text
+    assert "1. Allegation: Potential violation of WAC 246-341-0410" in text
     assert "Pre-investigation Activity:" in text
     assert "Investigation Activity:" in text
-    assert "Allegation: The investigator found the facility pending determination of compliance" in text
+    assert "1. Allegation: The investigator found the facility pending determination of compliance" in text
     assert "Regulatory Framework" not in text
     assert "246-341-0410: Pending Investigation" not in text
 
@@ -109,9 +110,12 @@ def test_docx_export_uses_blank_styles_not_heading2_or_bullets():
     assert "Working draft" not in joined
     assert "Regulatory Framework" not in joined
     assert any(st == "Header" and t.startswith("Facility Address:") for st, t in texts)
-    assert any(t.startswith("Allegation: Potential violation") for _, t in texts)
+    assert any(t.startswith("1. Allegation: Potential violation") for _, t in texts)
     assert any("Pre-investigation Activity" in t for _, t in texts)
     assert any("found the facility pending determination of compliance" in t for _, t in texts)
+    alleg = next(p for p in doc.paragraphs if (p.text or "").strip().startswith("1. Allegation:"))
+    assert alleg.paragraph_format.left_indent is not None
+    assert alleg.paragraph_format.left_indent.inches == pytest.approx(0.5, abs=0.01)
 
 
 def test_docx_export_doh_typography_hierarchy():

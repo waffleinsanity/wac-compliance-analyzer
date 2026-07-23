@@ -9,7 +9,7 @@ from typing import Any
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_UNDERLINE
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Inches, Pt
 
 from app.schemas import InvestigationReport
 from app.services.ir_blank import (
@@ -36,6 +36,8 @@ STYLE_BODY = "No Spacing"
 
 SIZE_SECTION = 16.0
 SIZE_BODY = 12.0
+# Peer IRs indent allegation / intake body ~0.5in under section headings
+BODY_INDENT = Inches(0.5)
 
 _UNDERLINE_LABELS = {
     "pre-investigation activity",
@@ -100,16 +102,28 @@ def _add(
     underline: bool = False,
     size_pt: float = SIZE_BODY,
     center: bool = False,
+    indent: bool = False,
 ) -> None:
     p = _new_para(doc, style)
     run = p.add_run(text or "")
     _set_run_font(run, size_pt=size_pt, bold=bold, italic=italic, underline=underline)
     if center:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if indent:
+        p.paragraph_format.left_indent = BODY_INDENT
 
 
 def _add_blank(doc: Document, style: str = STYLE_BODY) -> None:
     _add(doc, "", style)
+
+
+def _add_facility_line(doc: Document, label: str, value: str) -> None:
+    """Bold label + regular value (blank Header style)."""
+    p = _new_para(doc, STYLE_HEADER)
+    r1 = p.add_run(f"{label} ")
+    _set_run_font(r1, size_pt=SIZE_BODY, bold=True)
+    r2 = p.add_run(value or "")
+    _set_run_font(r2, size_pt=SIZE_BODY, bold=False)
 
 
 def _parse_heading(label: str) -> tuple[str, str | None]:
@@ -159,7 +173,7 @@ def _add_process_line(doc: Document, line: str) -> None:
     if key in _BOLD_SUBHEADS:
         _add(doc, text, STYLE_BODY, bold=True, size_pt=SIZE_BODY)
         return
-    _add(doc, text, STYLE_BODY, size_pt=SIZE_BODY)
+    _add(doc, text, STYLE_BODY, size_pt=SIZE_BODY, indent=True)
 
 
 def build_investigation_docx(
@@ -188,19 +202,30 @@ def build_investigation_docx(
     _add_blank(doc, STYLE_BODY)
 
     for label, value in facility_header_lines(report):
-        line = f"{label} {value}".rstrip() if value else f"{label} "
-        _add(doc, line, STYLE_HEADER, size_pt=SIZE_BODY)
+        _add_facility_line(doc, label, value)
 
     _add_blank(doc, STYLE_BODY)
     _add_section_heading(doc, INTAKE_LABEL)
     _add_blank(doc, STYLE_BODY)
-    _add(doc, (report.intake_details or "").strip(), STYLE_BODY, size_pt=SIZE_BODY)
+    _add(
+        doc,
+        (report.intake_details or "").strip(),
+        STYLE_BODY,
+        size_pt=SIZE_BODY,
+        indent=True,
+    )
     _add_blank(doc, STYLE_BODY)
 
     _add_section_heading(doc, ALLEGATION_HEADER)
     _add_blank(doc, STYLE_BODY)
-    for a in report.allegations:
-        _add(doc, allegation_export_line(a), STYLE_BODY, size_pt=SIZE_BODY)
+    for i, a in enumerate(report.allegations, start=1):
+        _add(
+            doc,
+            allegation_export_line(a, index=i),
+            STYLE_BODY,
+            size_pt=SIZE_BODY,
+            indent=True,
+        )
         _add_blank(doc, STYLE_BODY)
 
     _add_section_heading(doc, PROCESS_HEADER)
@@ -211,13 +236,19 @@ def build_investigation_docx(
     _add_blank(doc, STYLE_BODY)
     _add_section_heading(doc, SUMMARY_HEADER)
     _add_blank(doc, STYLE_BODY)
-    _add(doc, (report.summary_of_findings or "").strip(), STYLE_BODY, size_pt=SIZE_BODY)
+    _add(
+        doc,
+        (report.summary_of_findings or "").strip(),
+        STYLE_BODY,
+        size_pt=SIZE_BODY,
+        indent=True,
+    )
     _add_blank(doc, STYLE_BODY)
 
     _add(doc, CONCLUSION_HEADER.strip(), STYLE_BODY, bold=True, size_pt=SIZE_SECTION)
     _add_blank(doc, STYLE_BODY)
     for line in conclusion_export_lines(report):
-        _add(doc, line, STYLE_BODY, size_pt=SIZE_BODY)
+        _add(doc, line, STYLE_BODY, size_pt=SIZE_BODY, indent=True)
         _add_blank(doc, STYLE_BODY)
 
     _add(doc, ACTIONS_LABEL.strip(), STYLE_BODY, bold=True, size_pt=SIZE_SECTION)
@@ -226,6 +257,7 @@ def build_investigation_docx(
         (report.actions or "[To be determined after investigation]").strip(),
         STYLE_BODY,
         size_pt=SIZE_BODY,
+        indent=True,
     )
 
     buf = io.BytesIO()

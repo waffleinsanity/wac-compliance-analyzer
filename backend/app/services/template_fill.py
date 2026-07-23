@@ -272,11 +272,11 @@ def _comparison_by_code(report: InvestigationReport) -> dict[str, Any]:
 
 
 def allegation_lines_with_compare(report: InvestigationReport) -> list[str]:
-    """Allegation export lines plus short Compare research notes."""
+    """Numbered allegation export lines plus short Compare research notes."""
     by = _comparison_by_code(report)
     lines: list[str] = []
-    for a in report.allegations:
-        lines.append(allegation_export_line(a))
+    for i, a in enumerate(report.allegations, start=1):
+        lines.append(allegation_export_line(a, index=i))
         comp = by.get(a.wac_code) or by.get(f"WAC {a.wac_code}")
         if not comp:
             continue
