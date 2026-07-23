@@ -26,7 +26,7 @@ from app.schemas import (
     RegulatoryFrameworkEntry,
     WACComparison,
 )
-from app.services.investigator_llm import CodeInvestigation, run_investigator
+from app.services.investigator_llm import CodeInvestigation, InvestigatorResult, run_investigator
 from app.services.quote_verify import repair_allegation_text_from_store, verify_report_quotes
 from app.services.ir_blank import TITLE as IR_TITLE
 from app.services.ir_format import build_report_plain_text, sync_report_text
@@ -243,11 +243,42 @@ def _allegation_summary_paragraph(code: str, title: str, allegation_text: str) -
     )
 
 
+_COLLABORATOR_HEADER = "Investigator collaborator notes (template — not findings):"
+_COLLABORATOR_FOOTER = (
+    "[Human investigators complete evidentiary findings after interviews, "
+    "observations, and document review.]"
+)
+
+
+def format_collaborator_summary_block(
+    *,
+    areas_of_concern: list[str] | None = None,
+    investigation_methods: list[str] | None = None,
+) -> str:
+    """Marked template block for Summary of Findings (assistive, not determinations)."""
+    areas = [a.strip() for a in (areas_of_concern or []) if a and a.strip()]
+    methods = [m.strip() for m in (investigation_methods or []) if m and m.strip()]
+    if not areas and not methods:
+        return ""
+    lines = [_COLLABORATOR_HEADER, ""]
+    if areas:
+        lines.append("Areas of concern:")
+        lines.extend(f"- {a}" for a in areas)
+        lines.append("")
+    if methods:
+        lines.append("Suggested methods to begin or strengthen the investigation:")
+        lines.extend(f"- {m}" for m in methods)
+        lines.append("")
+    lines.append(_COLLABORATOR_FOOTER)
+    return "\n".join(lines).strip()
+
+
 def build_summary_of_findings(
     intake_text: str,
     allegations: list[InvestigationAllegation],
+    investigator: InvestigatorResult | None = None,
 ) -> str:
-    """Framework starter for Summary of Findings — scope bridge and allegation mapping only.
+    """Framework starter for Summary of Findings — scope bridge, allegation mapping, collaborator assist.
 
     Does not invent investigative outcomes; evidentiary findings remain human-owned.
     """
@@ -261,6 +292,13 @@ def build_summary_of_findings(
             )
         )
     sections.append(_SUMMARY_FINDINGS_SHELL)
+    if investigator is not None:
+        block = format_collaborator_summary_block(
+            areas_of_concern=investigator.areas_of_concern,
+            investigation_methods=investigator.investigation_methods,
+        )
+        if block:
+            sections.append(block)
     return "\n\n".join(sections)
 
 
@@ -469,7 +507,7 @@ def build_investigation_report(
         allegation_preamble=preamble,
         allegations=allegations,
         investigative_process=process,
-        summary_of_findings=build_summary_of_findings(intake, allegations),
+        summary_of_findings=build_summary_of_findings(intake, allegations, investigator),
         conclusions=conclusions,
         actions="[To be determined after investigation]",
         comparisons=comparisons,
@@ -484,11 +522,14 @@ def build_investigation_report(
         investigator_notes=investigator.investigator_notes,
         clarifying_questions=investigator.clarifying_questions,
         next_steps=investigator.next_steps,
+        areas_of_concern=list(investigator.areas_of_concern or []),
+        investigation_methods=list(investigator.investigation_methods or []),
         known_facts=investigator.known_facts,
         unclear_items=investigator.unclear,
         inferences=investigator.inferences,
         recommended_subsections=investigator.recommended_subsections,
         llm_used=investigator.llm_used,
+        llm_assist_used=bool(getattr(investigator, "llm_assist_used", False)),
         llm_model=investigator.llm_model,
         llm_error=investigator.llm_error,
     )

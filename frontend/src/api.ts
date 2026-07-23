@@ -198,11 +198,14 @@ export type InvestigationReport = {
   investigator_notes?: string
   clarifying_questions?: string[]
   next_steps?: string[]
+  areas_of_concern?: string[]
+  investigation_methods?: string[]
   known_facts?: string[]
   unclear_items?: string[]
   inferences?: string[]
   recommended_subsections?: string[]
   llm_used?: boolean
+  llm_assist_used?: boolean
   llm_model?: string | null
   llm_error?: string | null
   quote_integrity?: QuoteIntegrity

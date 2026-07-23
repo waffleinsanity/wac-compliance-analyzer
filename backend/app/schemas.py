@@ -453,11 +453,14 @@ class InvestigationReport(BaseModel):
     investigator_notes: str = ""
     clarifying_questions: list[str] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list)
+    areas_of_concern: list[str] = Field(default_factory=list)
+    investigation_methods: list[str] = Field(default_factory=list)
     known_facts: list[str] = Field(default_factory=list)
     unclear_items: list[str] = Field(default_factory=list)
     inferences: list[str] = Field(default_factory=list)
     recommended_subsections: list[str] = Field(default_factory=list)
     llm_used: bool = False
+    llm_assist_used: bool = False
     llm_model: str | None = None
     llm_error: str | None = None
     quote_integrity: QuoteIntegrityOut = Field(default_factory=QuoteIntegrityOut)

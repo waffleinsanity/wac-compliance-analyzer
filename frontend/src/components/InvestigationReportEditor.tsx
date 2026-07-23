@@ -617,8 +617,8 @@ export function InvestigationReportEditor({
 
   return (
     <div className="animate-rise space-y-2 lg:space-y-3">
-      {/* Sit below app header (h-[4.25rem]) so chrome does not stack over the document */}
-      <div className="sticky top-[4.25rem] z-20 -mx-1 border-b border-ink-200/70 bg-background/95 px-3 py-2 backdrop-blur-md dark:border-ink-700 sm:px-4">
+      {/* Stick to top of the report scroll pane (already below app header + stepper). */}
+      <div className="sticky top-0 z-20 -mx-1 border-b border-ink-200/70 bg-background/95 px-3 py-2 backdrop-blur-md dark:border-ink-700 sm:px-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
@@ -1108,8 +1108,66 @@ export function InvestigationReportEditor({
             </h3>
             <p className="mb-3 font-sans text-xs text-ink-400">
               Framework starter for authorized WAC/RCW selections — complete the findings narrative
-              after investigation activities (interviews, observations, document review).
+              after investigation activities. Collaborator notes assist your work; they are not
+              compliance findings. Keep patient identifiers out of free-text pastes.
             </p>
+
+            {(report.areas_of_concern?.length || report.investigation_methods?.length || report.clarifying_questions?.length) ? (
+              <div className="mb-4 rounded-xl border border-tide-500/25 bg-tide-500/[0.06] px-3.5 py-3 dark:border-tide-400/20 dark:bg-tide-500/10">
+                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="font-sans text-xs font-semibold uppercase tracking-[0.12em] text-tide-700 dark:text-tide-300">
+                    Investigator collaborator
+                  </p>
+                  <p className="font-sans text-[11px] text-ink-500">
+                    {report.llm_assist_used
+                      ? `Assistive draft${report.llm_model ? ` · ${report.llm_model}` : ''}`
+                      : 'Local assistive draft'}
+                    {' · '}saved with this case
+                  </p>
+                </div>
+                <p className="mb-3 font-sans text-xs text-ink-600 dark:text-ink-300">
+                  Suggestions to begin or strengthen the investigation. Edit the Summary below as you
+                  gather evidence; final determinations stay with the human investigator.
+                </p>
+                {!!report.areas_of_concern?.length && (
+                  <div className="mb-3">
+                    <p className="mb-1 font-sans text-xs font-semibold text-ink-800 dark:text-ink-100">
+                      Areas of concern
+                    </p>
+                    <ul className="list-disc space-y-1 pl-5 font-serif text-sm leading-relaxed text-ink-800 dark:text-ink-100">
+                      {report.areas_of_concern.map((item, i) => (
+                        <li key={`concern-${i}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {!!report.investigation_methods?.length && (
+                  <div className="mb-3">
+                    <p className="mb-1 font-sans text-xs font-semibold text-ink-800 dark:text-ink-100">
+                      Suggested methods
+                    </p>
+                    <ul className="list-disc space-y-1 pl-5 font-serif text-sm leading-relaxed text-ink-800 dark:text-ink-100">
+                      {report.investigation_methods.map((item, i) => (
+                        <li key={`method-${i}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {!!report.clarifying_questions?.length && (
+                  <div>
+                    <p className="mb-1 font-sans text-xs font-semibold text-ink-800 dark:text-ink-100">
+                      Clarifying questions
+                    </p>
+                    <ul className="list-disc space-y-1 pl-5 font-serif text-sm leading-relaxed text-ink-800 dark:text-ink-100">
+                      {report.clarifying_questions.map((item, i) => (
+                        <li key={`q-${i}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <textarea
               className="input min-h-[200px] font-serif leading-relaxed"
               value={report.summary_of_findings}
