@@ -72,6 +72,8 @@ type Props = {
   onCaseRefresh?: () => Promise<void>
   onReportChange?: (report: InvestigationReport) => void
   onRebuild?: () => Promise<void>
+  /** Ensure a case exists and current draft is saved; returns case db id. */
+  onEnsureCase?: (report: InvestigationReport) => Promise<number>
   canEdit?: boolean
   /** Download/copy/export of the finished IR product (editors/admins). */
   canExport?: boolean
@@ -118,18 +120,16 @@ function conclusionPhrase(result: string) {
 }
 
 function buildPlainText(report: InvestigationReport): string {
-  // Prefer server-built blank IR text (data/templates/5. Investigation report.docx)
-  if (report.report_text?.trim()) return report.report_text
-
+  // Always rebuild from structured fields so Copy/.txt match DOCX (never stale report_text).
   const fi = report.facility_info
   const lines: string[] = [
     'Investigative Report',
     `Facility Address: ${fi.facility_address || ''}`,
-    `Laboratory Director: ${fi.laboratory_director || ''}`,
-    `CLIA Number: ${fi.clia_number || ''}`,
+    `Laboratory Director: ${fi.laboratory_director || 'N/A'}`,
+    `CLIA Number: ${fi.clia_number || 'N/A'}`,
     `Credential Number: ${fi.credential_number || ''}`,
-    `Medicare Number: ${fi.medicare_number || ''}`,
-    `Shell Number: ${fi.shell_number || ''}`,
+    `Medicare Number: ${fi.medicare_number || 'N/A'}`,
+    `Shell Number: ${fi.shell_number || 'N/A'}`,
     `Date(s) of Investigation: ${fi.investigation_dates || report.investigation_date || ''}`,
     `State Licensing Priority: ${fi.state_licensing_priority || ''}`,
     `Federal Certification Priority: ${fi.federal_certification_priority || ''}`,
@@ -138,7 +138,7 @@ function buildPlainText(report: InvestigationReport): string {
     '',
     report.intake_details,
     '',
-    `Allegation(s): (${report.allegation_preamble})`,
+    'Allegation(s): (The allegation(s) listed below is what the department has jurisdiction and authorization to investigate. An allegation is considered an assertion of improper practice or condition that could result in a violation of facility law or rule.)',
     '',
   ]
 
@@ -190,6 +190,109 @@ function groupAllegations(allegations: InvestigationAllegation[]) {
   }, {})
 }
 
+/** On-screen IR that mirrors Download DOCX layout (blank shell + live field values). */
+function DocumentPreview({ report }: { report: InvestigationReport }) {
+  const fi = report.facility_info
+  const byCode = Object.fromEntries(report.conclusions.map((c) => [c.wac_code, c]))
+  const facilityLines: [string, string][] = [
+    ['Facility Address:', fi.facility_address || ''],
+    ['Laboratory Director:', fi.laboratory_director || 'N/A'],
+    ['CLIA Number:', fi.clia_number || 'N/A'],
+    ['Credential Number:', fi.credential_number || ''],
+    ['Medicare Number:', fi.medicare_number || 'N/A'],
+    ['Shell Number:', fi.shell_number || 'N/A'],
+    ['Date(s) of Investigation:', fi.investigation_dates || report.investigation_date || ''],
+    ['State Licensing Priority:', fi.state_licensing_priority || ''],
+    ['Federal Certification Priority:', fi.federal_certification_priority || ''],
+  ]
+
+  return (
+    <div className="ir-doc-desk">
+      <div className="ir-doc-toolbar">
+        <FileText className="h-3.5 w-3.5 shrink-0 text-tide-700 dark:text-tide-300" aria-hidden />
+        <p className="min-w-0 text-[11px] leading-snug text-ink-600 dark:text-ink-300">
+          Document preview — same layout as Download DOCX. Switch to Edit fields to change content.
+        </p>
+      </div>
+      <div className="ir-doc-scroll">
+        <div className="ir-doc-page" role="document" aria-label="Investigation Report preview">
+          <h1 className="mb-5 text-center text-[18pt] font-bold tracking-tight text-black">
+            Investigative Report
+          </h1>
+          <div className="mb-4 space-y-0 text-[11pt] leading-[1.35] text-black">
+            {facilityLines.map(([label, value]) => (
+              <p key={label}>
+                <span className="font-bold">{label}</span> {value}
+              </p>
+            ))}
+          </div>
+          <div className="mb-4 space-y-2 text-[11pt] leading-[1.45] text-black">
+            <p className="font-bold">
+              Intake Details: (List of concerns reported in the original complaint.)
+            </p>
+            <p className="whitespace-pre-wrap">{report.intake_details || '—'}</p>
+          </div>
+          <div className="mb-4 space-y-2 text-[11pt] leading-[1.45] text-black">
+            <p className="font-bold">
+              Allegation(s): (The allegation(s) listed below is what the department has jurisdiction
+              and authorization to investigate. An allegation is considered an assertion of improper
+              practice or condition that could result in a violation of facility law or rule.)
+            </p>
+            {report.allegations.map((a) => {
+              const text = normalizeAllegationLine(a.allegation_text)
+              const line = text.toLowerCase().startsWith('allegation:') ? text : `Allegation: ${text}`
+              return (
+                <p key={a.wac_code} className="whitespace-pre-wrap">
+                  {line}
+                </p>
+              )
+            })}
+          </div>
+          <div className="mb-4 space-y-1 text-[11pt] leading-[1.45] text-black">
+            <p className="mb-2 font-bold">
+              Investigative Process Included: (This is what the investigator did in terms of methods
+              employed to conduct inquiry.)
+            </p>
+            {(report.investigative_process || []).map((step, i) => (
+              <p key={`${i}-${step.slice(0, 24)}`}>{step}</p>
+            ))}
+          </div>
+          <div className="mb-4 space-y-2 text-[11pt] leading-[1.45] text-black">
+            <p className="font-bold">
+              Summary of Findings (Narrative overview of the results of investigation.)
+            </p>
+            <p className="whitespace-pre-wrap">{report.summary_of_findings || '—'}</p>
+          </div>
+          <div className="mb-4 space-y-2 text-[11pt] leading-[1.45] text-black">
+            <p className="font-bold">Conclusion/ Results of Investigation</p>
+            {report.allegations.map((a) => {
+              const c = byCode[a.wac_code]
+              const result = c?.result || 'Pending Investigation'
+              const finding = conclusionPhrase(result)
+              const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
+              let line = `Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
+              if (a.wac_title) line += `, ${a.wac_title}`
+              line += '.'
+              if (c?.deficiency_cited && c.deficiency_details && finding === 'out of compliance') {
+                line += ` ${c.deficiency_details}`
+              }
+              return (
+                <p key={`conc-preview-${a.wac_code}`} className="whitespace-pre-wrap">
+                  {line}
+                </p>
+              )
+            })}
+          </div>
+          <div className="space-y-2 text-[11pt] leading-[1.45] text-black">
+            <p className="font-bold">Actions:</p>
+            <p className="whitespace-pre-wrap">{report.actions || '—'}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function InvestigationReportEditor({
   report: initial,
   onBack,
@@ -199,10 +302,12 @@ export function InvestigationReportEditor({
   onCaseRefresh,
   onReportChange,
   onRebuild,
+  onEnsureCase,
   canEdit = true,
   canExport = true,
 }: Props) {
   const [report, setReport] = useState(() => normalizeReportAllegations({ ...initial }))
+  const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview')
   const [copied, setCopied] = useState(false)
   const [showFindings, setShowFindings] = useState(false)
   const [exportError, setExportError] = useState('')
@@ -247,9 +352,10 @@ export function InvestigationReportEditor({
     [report.quote_integrity?.failures],
   )
 
-  const exportBlocked =
-    defensibility?.can_export === false || report.quote_integrity?.ok === false
-  const exportWarn = !exportBlocked && defensibility?.overall === 'warn'
+  const exportWarn =
+    defensibility?.overall === 'warn' ||
+    defensibility?.overall === 'block' ||
+    report.quote_integrity?.ok === false
 
   const selectedCodes = useMemo(() => {
     if (selectedWacs?.length) return selectedWacs
@@ -291,15 +397,8 @@ export function InvestigationReportEditor({
   const caseDraftEditable =
     caseDetail?.status === 'draft' || caseDetail?.status === 'reopened'
 
-  const ensureExportAllowed = async (): Promise<boolean> => {
-    if (!canExport) {
-      setExportError(
-        'Export, download, and copy require Editor or Administrator role. Your draft remains saved in the case record.',
-      )
-      return false
-    }
-    setValidating(true)
-    setExportError('')
+  const refreshQuoteAssist = async (): Promise<void> => {
+    if (!canExport) return
     try {
       const res = await api.validateReport({
         selected_wacs: selectedCodes,
@@ -307,7 +406,6 @@ export function InvestigationReportEditor({
         regulatory_framework: report.regulatory_framework || [],
         evidentiary_examples: report.evidentiary_examples || [],
       })
-      setReport((prev) => ({ ...prev, quote_integrity: res.quote_integrity }))
       const failedCodes = new Set(
         res.quote_integrity.failures
           .filter((f) => f.field.startsWith('allegation:'))
@@ -321,49 +419,80 @@ export function InvestigationReportEditor({
           quote_ok: !failedCodes.has(a.wac_code),
         })),
       }))
-      if (!res.can_export) {
-        const detail = res.quote_integrity.failures
-          .slice(0, 4)
-          .map(
-            (f) =>
-              `${quoteFailureLabel(f.reason)}${f.cite ? ` (${f.cite})` : ''}: ${f.quote_preview}`,
-          )
-          .join(' · ')
-        setExportError(
-          `Export blocked — statute wording does not match the approved codes. ${detail}`,
-        )
-        return false
+    } catch {
+      /* assistive only — never blocks download */
+    }
+  }
+
+  const resolveCaseId = async (): Promise<number | null> => {
+    if (caseId) {
+      if (caseDraftEditable) {
+        await api.saveCaseDraft(caseId, report, 'Pre-export save')
       }
-      return true
-    } catch (e) {
-      setExportError(e instanceof Error ? e.message : 'Could not validate report quotes')
-      return false
+      return caseId
+    }
+    if (!onEnsureCase) return null
+    return onEnsureCase(report)
+  }
+
+  const copyAll = async () => {
+    if (!canExport) {
+      setExportError(
+        'Export, download, and copy require Editor or Administrator role. Your draft remains saved in the case record.',
+      )
+      return
+    }
+    setValidating(true)
+    setExportError('')
+    try {
+      await refreshQuoteAssist()
+      await navigator.clipboard.writeText(buildPlainText(report))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1600)
     } finally {
       setValidating(false)
     }
   }
 
-  const copyAll = async () => {
-    const ok = await ensureExportAllowed()
-    if (!ok) return
-    await navigator.clipboard.writeText(buildPlainText(report))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1600)
-  }
-
   const exportTxt = async () => {
-    const ok = await ensureExportAllowed()
-    if (!ok) return
-    const blob = new Blob([buildPlainText(report)], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'Investigation_Report.txt'
-    a.click()
-    URL.revokeObjectURL(url)
+    if (!canExport) {
+      setExportError(
+        'Export, download, and copy require Editor or Administrator role. Your draft remains saved in the case record.',
+      )
+      return
+    }
+    setValidating(true)
+    setExportError('')
+    try {
+      await refreshQuoteAssist()
+      const blob = new Blob([buildPlainText(report)], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'Investigation_Report.txt'
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setValidating(false)
+    }
   }
 
   const saveDraft = async () => {
+    if (!caseId && onEnsureCase) {
+      setSaving(true)
+      setExportError('')
+      setInfo('')
+      try {
+        await onEnsureCase(report)
+        await onCaseRefresh?.()
+        setInfo('Draft saved to case (working draft for investigator review).')
+      } catch (e) {
+        setExportError(e instanceof Error ? e.message : 'Save failed')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
     if (!caseId) {
       setExportError('Create or open a case first to save a durable draft.')
       return
@@ -391,47 +520,56 @@ export function InvestigationReportEditor({
     URL.revokeObjectURL(url)
   }
 
-  const exportDocx = async (acknowledgeGaps: boolean) => {
-    if (!caseId) {
-      setExportError('Save this report to a case before exporting DOCX.')
+  const exportDocx = async () => {
+    if (!canExport) {
+      setExportError(
+        'Export, download, and copy require Editor or Administrator role. Your draft remains saved in the case record.',
+      )
       return
     }
     setValidating(true)
     setExportError('')
     try {
-      if (caseDraftEditable) {
-        await api.saveCaseDraft(caseId, report, 'Pre-export save')
+      await refreshQuoteAssist()
+      const id = await resolveCaseId()
+      if (!id) {
+        setExportError('Could not save a case for download. Try Save, then download again.')
+        return
       }
-      const blob = await api.exportCaseDocx(caseId, acknowledgeGaps)
-      downloadBlob(blob, `IR_case_${caseId}.docx`)
-      setInfo(acknowledgeGaps ? 'DOCX exported with investigator acknowledgment of gaps.' : 'DOCX exported.')
+      const blob = await api.exportCaseDocx(id, true)
+      downloadBlob(blob, `IR_case_${id}.docx`)
+      setInfo(
+        exportWarn
+          ? 'DOCX downloaded as a working draft. Review any flagged gaps before treating it as final.'
+          : 'DOCX downloaded.',
+      )
       await onCaseRefresh?.()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'DOCX export failed'
-      if (msg.includes('acknowledge_gaps')) {
-        setExportError(`${msg} Use “Export DOCX anyway” if you accept the gaps.`)
-      } else {
-        setExportError(msg)
-      }
+      setExportError(e instanceof Error ? e.message : 'DOCX export failed')
     } finally {
       setValidating(false)
     }
   }
 
-  const exportPack = async (acknowledgeGaps: boolean) => {
-    if (!caseId) {
-      setExportError('Save this report to a case before exporting a pack.')
+  const exportPack = async () => {
+    if (!canExport) {
+      setExportError(
+        'Export, download, and copy require Editor or Administrator role. Your draft remains saved in the case record.',
+      )
       return
     }
     setValidating(true)
     setExportError('')
     try {
-      if (caseDraftEditable) {
-        await api.saveCaseDraft(caseId, report, 'Pre-pack save')
+      await refreshQuoteAssist()
+      const id = await resolveCaseId()
+      if (!id) {
+        setExportError('Could not save a case for download. Try Save, then download again.')
+        return
       }
-      const blob = await api.exportCasePack(caseId, acknowledgeGaps)
-      downloadBlob(blob, `case_${caseId}_pack.zip`)
-      setInfo('Pack exported (IR + deficiency cite sheet).')
+      const blob = await api.exportCasePack(id, true)
+      downloadBlob(blob, `case_${id}_pack.zip`)
+      setInfo('Pack downloaded (IR + deficiency cite sheet).')
       await onCaseRefresh?.()
     } catch (e) {
       setExportError(e instanceof Error ? e.message : 'Pack export failed')
@@ -473,6 +611,40 @@ export function InvestigationReportEditor({
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
+            <div
+              className="flex rounded-lg border border-ink-200/80 p-0.5 text-[11px] dark:border-ink-700"
+              role="group"
+              aria-label="Report view mode"
+            >
+              <button
+                type="button"
+                className={clsx(
+                  'inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition',
+                  viewMode === 'preview'
+                    ? 'bg-tide-500/15 text-tide-800 dark:text-tide-200'
+                    : 'text-ink-500 hover:text-ink-800',
+                )}
+                onClick={() => setViewMode('preview')}
+                title="Preview the Investigation Report as it will appear in Download DOCX"
+              >
+                <FileText className="h-3 w-3" />
+                Document preview
+              </button>
+              <button
+                type="button"
+                className={clsx(
+                  'inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition',
+                  viewMode === 'edit'
+                    ? 'bg-tide-500/15 text-tide-800 dark:text-tide-200'
+                    : 'text-ink-500 hover:text-ink-800',
+                )}
+                onClick={() => setViewMode('edit')}
+                title="Edit structured fields"
+              >
+                <Pencil className="h-3 w-3" />
+                Edit fields
+              </button>
+            </div>
             <button
               type="button"
               className="btn-ghost !px-2 !py-1 text-xs lg:!px-2.5 lg:!py-1.5"
@@ -486,7 +658,7 @@ export function InvestigationReportEditor({
               <button
                 type="button"
                 className="btn-secondary !px-2.5 !py-1 text-xs lg:!px-3 lg:!py-1.5"
-                disabled={saving || !caseId}
+                disabled={saving || (!caseId && !onEnsureCase)}
                 onClick={() => void saveDraft()}
               >
                 {saving ? 'Saving…' : 'Save'}
@@ -496,18 +668,16 @@ export function InvestigationReportEditor({
               <button
                 type="button"
                 className="btn-primary !px-2.5 !py-1 text-xs lg:!px-3 lg:!py-1.5"
-                disabled={validating || !caseId || exportBlocked}
+                disabled={validating}
                 title={
-                  exportBlocked
-                    ? 'Export blocked — fix statute wording first'
-                    : exportWarn
-                      ? 'Defensibility gaps remain — use Export DOCX anyway to acknowledge'
-                      : undefined
+                  exportWarn
+                    ? 'Download working draft now — review flagged gaps before treating as final'
+                    : 'Download Investigation Report DOCX (edits and evidence optional)'
                 }
-                onClick={() => void exportDocx(false)}
+                onClick={() => void exportDocx()}
               >
                 <Download className="h-3.5 w-3.5" />
-                DOCX
+                {validating ? 'Preparing…' : 'Download DOCX'}
               </button>
             ) : (
               <span
@@ -549,7 +719,7 @@ export function InvestigationReportEditor({
                       onClick={() => void copyAll()}
                     >
                       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {copied ? 'Copied' : validating ? 'Checking…' : 'Copy all'}
+                      {copied ? 'Copied' : validating ? 'Preparing…' : 'Copy all'}
                     </button>
                     <button
                       type="button"
@@ -562,39 +732,16 @@ export function InvestigationReportEditor({
                     <button
                       type="button"
                       className="btn-ghost w-full !justify-start !px-2.5 !py-1.5 text-xs"
-                      disabled={validating || !caseId || exportBlocked}
-                      onClick={() => void exportPack(true)}
-                      title={
-                        exportBlocked
-                          ? 'Export blocked — statute wording must match approved codes first'
-                          : undefined
-                      }
+                      disabled={validating}
+                      onClick={() => void exportPack()}
                     >
                       Export pack
                     </button>
-                    <button
-                      type="button"
-                      className="btn-ghost w-full !justify-start !px-2.5 !py-1.5 text-xs text-amber-800 dark:text-amber-300"
-                      disabled={validating || !caseId || exportBlocked}
-                      onClick={() => void exportDocx(true)}
-                      title={
-                        exportBlocked
-                          ? 'Export blocked — statute wording must match approved codes first'
-                          : 'Export even when export-check warnings remain'
-                      }
-                    >
-                      Export DOCX anyway
-                    </button>
                   </>
                 )}
-                {canExport && exportBlocked && (
-                  <p className="px-2.5 py-1.5 text-[11px] text-rose-700 dark:text-rose-300">
-                    Export blocked until statute wording matches.
-                  </p>
-                )}
-                {canExport && !exportBlocked && exportWarn && (
+                {canExport && exportWarn && (
                   <p className="px-2.5 py-1.5 text-[11px] text-amber-800 dark:text-amber-300">
-                    Gaps remain — use Export DOCX anyway after review.
+                    Download anytime — gaps are review notes, not blockers.
                   </p>
                 )}
                 {!canExport && (
@@ -606,18 +753,9 @@ export function InvestigationReportEditor({
             </details>
           </div>
         </div>
-        {(exportBlocked || exportWarn) && canExport && (
-          <p
-            className={clsx(
-              'mt-1.5 text-[11px] lg:mt-2',
-              exportBlocked
-                ? 'text-rose-700 dark:text-rose-300'
-                : 'text-amber-800 dark:text-amber-300',
-            )}
-          >
-            {exportBlocked
-              ? 'Export blocked until statute wording matches the approved codes.'
-              : 'Defensibility gaps remain — use More → Export DOCX anyway after review.'}
+        {exportWarn && canExport && (
+          <p className="mt-1.5 text-[11px] text-amber-800 dark:text-amber-300 lg:mt-2">
+            Review notes remain — you can still download a working draft without adding evidence.
           </p>
         )}
       </div>
@@ -644,7 +782,7 @@ export function InvestigationReportEditor({
         >
           {report.quote_integrity.ok
             ? 'Statute wording matches the approved code text.'
-            : `Statute wording issues (${report.quote_integrity.failures.length}). Copy/export is blocked until wording matches the approved codes.`}
+            : `Statute wording issues (${report.quote_integrity.failures.length}). Download remains available — fix wording before treating the IR as final.`}
           {!report.quote_integrity.ok && topQuoteFailures.length > 0 && (
             <ul className="mt-2 space-y-1.5 border-t border-amber-300/50 pt-2 dark:border-amber-700/60">
               {topQuoteFailures.map((f, i) => {
@@ -680,7 +818,11 @@ export function InvestigationReportEditor({
       )}
 
       <div className="mx-auto grid max-w-6xl gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-      <article className="doc-surface overflow-hidden">
+      <article className={clsx('overflow-hidden', viewMode === 'preview' ? 'doc-surface !bg-transparent !shadow-none' : 'doc-surface')}>
+        {viewMode === 'preview' ? (
+          <DocumentPreview report={report} />
+        ) : (
+        <>
         <div className="border-b border-ink-200/80 bg-gradient-to-b from-[#f3efe6] to-transparent px-6 py-8 text-center dark:border-ink-700 dark:from-ink-900/80">
           <h1 className="font-display text-2xl font-semibold tracking-[0.04em] text-ink-900 dark:text-ink-50 sm:text-3xl">
             Investigative Report
@@ -688,7 +830,7 @@ export function InvestigationReportEditor({
           <div className="mx-auto mt-3 h-px w-24 animate-draw bg-tide-500/50" />
           <p className="mt-3 font-sans text-xs text-ink-400">
             {report.selected_count} authorized codes · DOH facility IR structure ·{" "}
-            {Math.round(report.duration_ms)} ms
+            {Math.round(report.duration_ms)} ms · switch to Document preview to see export layout
           </p>
         </div>
 
@@ -1038,6 +1180,8 @@ export function InvestigationReportEditor({
             )}
           </section>
         </div>
+        </>
+        )}
       </article>
 
       {caseDetail && onCaseRefresh ? (

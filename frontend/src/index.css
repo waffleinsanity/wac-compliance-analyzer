@@ -177,6 +177,30 @@
     line-height: 1.65;
   }
 
+  /* Letter-style IR preview (matches Download DOCX shell; always light “paper”) */
+  .ir-doc-desk {
+    @apply flex min-h-[28rem] flex-col overflow-hidden rounded-xl border border-ink-200/80 dark:border-ink-700;
+    background:
+      linear-gradient(180deg, rgba(18, 23, 30, 0.04), rgba(18, 23, 30, 0.08)),
+      #e8edf2;
+  }
+  .dark .ir-doc-desk {
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.4)),
+      #0f141a;
+  }
+  .ir-doc-toolbar {
+    @apply flex items-center gap-2 border-b border-ink-200/70 bg-card/90 px-3 py-2 backdrop-blur dark:border-ink-700;
+  }
+  .ir-doc-scroll {
+    @apply min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6;
+  }
+  .ir-doc-page {
+    @apply mx-auto w-full max-w-[8.5in] rounded-sm bg-white px-[0.85in] py-[0.75in] text-black shadow-[0_1px_2px_rgba(0,0,0,0.08),0_12px_40px_rgba(0,0,0,0.12)];
+    font-family: 'Times New Roman', Times, 'Source Serif 4', Georgia, serif;
+    min-height: 11in;
+  }
+
   .status-chip {
     @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;
   }

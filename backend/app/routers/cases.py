@@ -584,20 +584,14 @@ def export_docx(
     assert_case_not_trashed(case, action="exporting")
     report = _report_for_export(case)
     selected = parse_json_list(case.approved_wac_ids) or [a.wac_code for a in report.allegations]
-    integrity = verify_report_quotes(
+    verify_report_quotes(
         allegations=report.allegations,
         regulatory_framework=report.regulatory_framework or [],
         evidentiary_examples=report.evidentiary_examples or [],
         selected_codes=selected or None,
     )
-    checks = check_defensibility(report, quote_integrity=integrity.to_dict())
-    if not checks["can_export"]:
-        raise HTTPException(status_code=400, detail="Export blocked: quote integrity failed")
-    if checks["overall"] == "warn" and not acknowledge_gaps:
-        raise HTTPException(
-            status_code=400,
-            detail="Defensibility gaps remain. Re-export with acknowledge_gaps=true after investigator review.",
-        )
+    # Working drafts are always downloadable; gaps are assistive only.
+    _ = acknowledge_gaps
     content = build_investigation_docx(report, draft_label=_draft_label(case))
     _harvest_ir_style(db, case, report, user, trigger="export_docx")
     filename = f"IR_{case.case_id_label or case.id}.docx"
@@ -622,20 +616,14 @@ def export_pack(
     assert_case_not_trashed(case, action="exporting")
     report = _report_for_export(case)
     selected = parse_json_list(case.approved_wac_ids) or [a.wac_code for a in report.allegations]
-    integrity = verify_report_quotes(
+    verify_report_quotes(
         allegations=report.allegations,
         regulatory_framework=report.regulatory_framework or [],
         evidentiary_examples=report.evidentiary_examples or [],
         selected_codes=selected or None,
     )
-    checks = check_defensibility(report, quote_integrity=integrity.to_dict())
-    if not checks["can_export"]:
-        raise HTTPException(status_code=400, detail="Export blocked: quote integrity failed")
-    if checks["overall"] == "warn" and not acknowledge_gaps:
-        raise HTTPException(
-            status_code=400,
-            detail="Defensibility gaps remain. Re-export with acknowledge_gaps=true after investigator review.",
-        )
+    # Working drafts are always downloadable; gaps are assistive only.
+    _ = acknowledge_gaps
 
     ir = build_investigation_docx(report, draft_label=_draft_label(case))
     cites = build_deficiency_cite_sheet(report)

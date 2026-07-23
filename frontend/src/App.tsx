@@ -853,6 +853,10 @@ export default function App() {
                       onCaseRefresh={refreshCaseDetail}
                       onReportChange={setReport}
                       onRebuild={rebuildCaseDraft}
+                      onEnsureCase={async (reportPayload) => {
+                        const detail = await ensureCaseSaved(reportPayload)
+                        return detail.id
+                      }}
                       onBack={() => setStep('review')}
                       canEdit={userCanEdit}
                       canExport={userCanExport}

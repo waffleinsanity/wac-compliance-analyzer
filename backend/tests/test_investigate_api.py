@@ -101,7 +101,7 @@ def test_investigate_confidentiality_includes_rcw(client):
     assert data["quote_integrity"]["ok"] is True
 
 
-def test_validate_blocks_broken_quotes(client):
+def test_validate_warns_but_allows_export_with_broken_quotes(client):
     case = json.loads((CASES / "assault_safety.json").read_text(encoding="utf-8"))
     res = client.post(
         "/api/investigate",
@@ -124,5 +124,5 @@ def test_validate_blocks_broken_quotes(client):
     )
     assert val.status_code == 200
     body = val.json()
-    assert body["can_export"] is False
+    assert body["can_export"] is True
     assert body["quote_integrity"]["ok"] is False

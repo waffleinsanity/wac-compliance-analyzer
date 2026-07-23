@@ -74,9 +74,13 @@ export function AppUpdateBanner() {
 
   const applyUpdate = useCallback(() => {
     setUpdating(true)
+    // Keep dismiss cleared for this version so a failed load can re-prompt,
+    // but never touch auth tokens — session lives in localStorage across reload.
     clearDismissed()
-    const { pathname, search, hash } = window.location
-    window.location.assign(`${pathname}${search}${hash}`)
+    const url = new URL(window.location.href)
+    url.searchParams.set('_v', String(Date.now()))
+    // Full navigation so the browser fetches the new index/assets; auth JWT stays put.
+    window.location.replace(url.toString())
   }, [])
 
   const dismiss = useCallback(() => {
@@ -140,18 +144,18 @@ export function AppUpdateBanner() {
   if (!updateVersion) return null
 
   return (
-    <div className="fixed inset-x-0 top-0 z-[60] border-b border-tide-500/30 bg-tide-500/95 px-4 py-2.5 text-white shadow-lg backdrop-blur">
+    <div className="fixed inset-x-0 top-0 z-[60] border-b border-tide-700 bg-tide-700 px-4 py-2.5 text-white shadow-lg dark:border-tide-300 dark:bg-tide-300 dark:text-ink-950">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 text-sm">
           <p className="font-semibold">A new WACMAKR build is available</p>
-          <p className="text-xs text-white/85">
+          <p className="text-xs text-white/90 dark:text-ink-900/85">
             Update now to load the latest UI. You stay signed in.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-tide-900"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-ink-900 dark:bg-ink-950 dark:text-tide-200"
             disabled={updating}
             onClick={applyUpdate}
           >
@@ -160,7 +164,7 @@ export function AppUpdateBanner() {
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-white/90 hover:bg-white/10"
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-white/90 hover:bg-white/10 dark:text-ink-900 dark:hover:bg-ink-950/10"
             disabled={updating}
             onClick={dismiss}
             aria-label="Later"

@@ -183,7 +183,8 @@ async def validate_investigation_report(
         selected_codes=selected or None,
     )
     out = QuoteIntegrityOut(**integrity.to_dict())
-    return ValidateReportResponse(quote_integrity=out, can_export=out.ok)
+    # Working drafts remain downloadable even when wording needs review.
+    return ValidateReportResponse(quote_integrity=out, can_export=True)
 
 
 @router.post("/ingest")

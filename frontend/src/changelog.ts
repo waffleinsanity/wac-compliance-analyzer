@@ -31,6 +31,33 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.07.22.2',
+    buildTag: '2026.07.22.2',
+    date: '2026-07-22',
+    title: 'Exact DOH Investigation Report format',
+    summary:
+      'DOCX export and Form preview follow the blank Investigation Report shell — Header facility lines, Allegation: lines, Pre-investigation Activity, and DOH conclusion phrasing — without Heading 2 chrome or Regulatory Framework dumps.',
+    highlights: [
+      'Export clones blank template styles (Header / No Spacing); process is plain paragraphs, not bullets.',
+      'Pre-investigation Activity block is part of the canonical Investigative Process shell.',
+      'Report panel Document preview shows the letter-style IR on screen (same layout as Download DOCX).',
+    ],
+    areas: ['investigation', 'platform'],
+  },
+  {
+    id: '2026.07.22.1',
+    buildTag: '2026.07.22.1',
+    date: '2026-07-22',
+    title: 'Update banner contrast and session keep-alive',
+    summary:
+      'New-build banner is readable in dark mode, and Update now no longer wipes the session on a brief API blip.',
+    highlights: [
+      'Dark-mode update banner uses high-contrast teal and ink text.',
+      'Session refresh only clears the token on 401/403; network/deploy errors retry and keep you signed in.',
+    ],
+    areas: ['platform', 'auth'],
+  },
+  {
     id: '2026.07.21.3',
     buildTag: '2026.07.21.3',
     date: '2026-07-21',

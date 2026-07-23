@@ -404,6 +404,20 @@ export type CaseAnalytics = {
 
 const TOKEN_KEY = 'wac_token'
 
+/** Thrown for non-2xx API responses so callers can branch on HTTP status. */
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+export function isUnauthorizedError(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 401 || err.status === 403)
+}
+
 function formatApiErrorDetail(detail: unknown, fallback: string): string {
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) {
@@ -463,7 +477,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       /* ignore */
     }
-    throw new Error(formatApiErrorDetail(detail, res.statusText))
+    throw new ApiError(formatApiErrorDetail(detail, res.statusText), res.status)
   }
   if (res.status === 204) return undefined as T
   return res.json()

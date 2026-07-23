@@ -12,7 +12,7 @@ def check_defensibility(
     *,
     quote_integrity: QuoteIntegrityOut | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Deterministic assistive checks. Only quote integrity blocks export."""
+    """Deterministic assistive checks. Never blocks working-draft download."""
     if isinstance(report, InvestigationReport):
         data = report.model_dump()
     else:
@@ -82,23 +82,25 @@ def check_defensibility(
     if not qi_ok:
         add(
             "quote_integrity",
-            "block",
-            f"Quote integrity failed ({len(failures)} issue(s)). Export blocked until quotes match the statute store.",
+            "warn",
+            f"Quote integrity warnings ({len(failures)} issue(s)). Working draft may still be downloaded; "
+            "fix statute wording before treating the IR as final.",
         )
 
     has_block = any(c["severity"] == "block" for c in checks)
     has_warn = any(c["severity"] == "warn" for c in checks)
     overall: Severity = "block" if has_block else "warn" if has_warn else "pass"
 
+    # Working drafts are always downloadable. Checks remain assistive (warn/block messaging).
     return {
         "overall": overall,
-        "can_export": not has_block,
+        "can_export": True,
         "checks": checks,
         "summary": (
-            "Ready to circulate as a working draft (no gaps flagged)."
+            "Ready to download as a working draft."
             if overall == "pass"
-            else "Export blocked until quote integrity is fixed."
-            if has_block
-            else "Gaps remain — investigator may export anyway after review."
+            else "Download available — review flagged gaps before treating this IR as final."
+            if has_warn or has_block
+            else "Ready to download as a working draft."
         ),
     }

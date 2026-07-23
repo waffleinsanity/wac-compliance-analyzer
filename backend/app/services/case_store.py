@@ -109,8 +109,13 @@ def save_snapshot(
     user: User,
     note: str = "",
 ) -> CaseReportSnapshot:
-    payload = report if isinstance(report, dict) else report.model_dump()
-    text = payload.get("report_text") or ""
+    from app.services.ir_format import sync_report_text
+
+    if isinstance(report, dict):
+        report = InvestigationReport.model_validate(report)
+    sync_report_text(report)
+    payload = report.model_dump()
+    text = report.report_text or ""
     snap = CaseReportSnapshot(
         case_id=case.id,
         version=next_snapshot_version(db, case.id),

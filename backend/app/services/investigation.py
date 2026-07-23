@@ -28,15 +28,11 @@ from app.schemas import (
 )
 from app.services.investigator_llm import CodeInvestigation, run_investigator
 from app.services.quote_verify import repair_allegation_text_from_store, verify_report_quotes
-from app.services.ir_blank import ACTIONS_LABEL, TITLE as IR_TITLE, format_conclusion_line
+from app.services.ir_blank import TITLE as IR_TITLE
+from app.services.ir_format import build_report_plain_text, sync_report_text
 from app.services.template_corpus import (
-    DOH_ALLEGATION_BLOCK_HEADER,
     DOH_ALLEGATION_PREAMBLE,
-    DOH_CONCLUSION_HEADER,
     DOH_DEFAULT_PROCESS,
-    DOH_INTAKE_LABEL,
-    DOH_PROCESS_LABEL,
-    DOH_SUMMARY_LABEL,
     _detect_themes,
     format_intake_narrative,
     load_template_corpus,
@@ -269,77 +265,8 @@ def build_summary_of_findings(
 
 
 def build_report_text(report: InvestigationReport) -> str:
-    """Emit report text matching the blank Investigation Report form (no letterhead).
-
-    Authority / Regulatory Framework / Evidentiary Framework remain structured
-    fields for the editor UI; they are not injected into the DOH IR body.
-    """
-    fi = report.facility_info
-    lines = [
-        IR_TITLE,
-        f"Facility Address: {fi.facility_address or ''}",
-        f"Laboratory Director: {getattr(fi, 'laboratory_director', None) or ''}",
-        f"CLIA Number: {getattr(fi, 'clia_number', None) or ''}",
-        f"Credential Number: {fi.credential_number or ''}",
-        f"Medicare Number: {fi.medicare_number or ''}",
-        f"Shell Number: {fi.shell_number or ''}",
-        f"Date(s) of Investigation: {fi.investigation_dates or report.investigation_date or ''}",
-        f"State Licensing Priority: {fi.state_licensing_priority or ''}",
-        f"Federal Certification Priority: {fi.federal_certification_priority or ''}",
-        "",
-        DOH_INTAKE_LABEL,
-        "",
-        report.intake_details,
-        "",
-        DOH_ALLEGATION_BLOCK_HEADER,
-        "",
-    ]
-
-    for a in report.allegations:
-        text = normalize_allegation_line(a.allegation_text)
-        if text.lower().startswith("allegation:"):
-            lines.append(text)
-        else:
-            lines.append(f"Allegation: {text}")
-        lines.append("")
-
-    lines.extend(["", DOH_PROCESS_LABEL, ""])
-    for step in report.investigative_process:
-        lines.append(step)
-
-    lines.extend(
-        [
-            "",
-            DOH_SUMMARY_LABEL,
-            "",
-            report.summary_of_findings,
-            "",
-            DOH_CONCLUSION_HEADER,
-            "",
-        ]
-    )
-
-    conclusions_by_code = {c.wac_code: c for c in report.conclusions}
-    title_by_code = {a.wac_code: a.wac_title for a in report.allegations}
-    for a in report.allegations:
-        c = conclusions_by_code.get(a.wac_code)
-        lines.append(
-            format_conclusion_line(
-                wac_code=a.wac_code,
-                wac_title=title_by_code.get(a.wac_code, a.wac_title or ""),
-                result=c.result if c else "Pending Investigation",
-                deficiency_details=(c.deficiency_details if c and c.deficiency_cited else "") or "",
-            )
-        )
-        lines.append("")
-
-    lines.extend(
-        [
-            ACTIONS_LABEL,
-            report.actions or "[To be determined after investigation]",
-        ]
-    )
-    return "\n".join(lines).strip() + "\n"
+    """Emit report text matching the blank Investigation Report form (no letterhead)."""
+    return build_report_plain_text(report)
 
 
 def build_investigation_report(
@@ -565,7 +492,7 @@ def build_investigation_report(
         llm_model=investigator.llm_model,
         llm_error=investigator.llm_error,
     )
-    report.report_text = build_report_text(report)
+    sync_report_text(report)
 
     selected_codes = [n.code for n in code_nodes]
     integrity = verify_report_quotes(
