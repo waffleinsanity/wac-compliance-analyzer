@@ -144,18 +144,18 @@ export function AppUpdateBanner() {
   if (!updateVersion) return null
 
   return (
-    <div className="fixed inset-x-0 top-0 z-[60] border-b border-tide-700 bg-tide-700 px-4 py-2.5 text-white shadow-lg dark:border-tide-300 dark:bg-tide-300 dark:text-ink-950">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 text-sm">
-          <p className="font-semibold">A new WACMAKR build is available</p>
-          <p className="text-xs text-white/90 dark:text-ink-900/85">
+    <div className="app-update-banner" role="status" aria-live="polite">
+      <div className="app-update-banner__inner">
+        <div className="app-update-banner__copy">
+          <p className="app-update-banner__title">A new WACMAKR build is available</p>
+          <p className="app-update-banner__sub">
             Update now to load the latest UI. You stay signed in.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="app-update-banner__actions">
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-ink-900 dark:bg-ink-950 dark:text-tide-200"
+            className="app-update-banner__update"
             disabled={updating}
             onClick={applyUpdate}
           >
@@ -164,10 +164,10 @@ export function AppUpdateBanner() {
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-white/90 hover:bg-white/10 dark:text-ink-900 dark:hover:bg-ink-950/10"
+            className="app-update-banner__later"
             disabled={updating}
             onClick={dismiss}
-            aria-label="Later"
+            aria-label="Dismiss update banner"
           >
             <X className="h-3.5 w-3.5" />
             Later
