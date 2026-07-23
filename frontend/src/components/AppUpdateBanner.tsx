@@ -158,8 +158,13 @@ export function AppUpdateBanner() {
             className="app-update-banner__update"
             disabled={updating}
             onClick={applyUpdate}
+            style={{ backgroundColor: '#ffffff', color: '#0a0a0a', borderColor: '#ffffff' }}
           >
-            {updating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {updating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: '#0a0a0a' }} />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" style={{ color: '#0a0a0a' }} />
+            )}
             Update now
           </button>
           <button
@@ -168,8 +173,9 @@ export function AppUpdateBanner() {
             disabled={updating}
             onClick={dismiss}
             aria-label="Dismiss update banner"
+            style={{ color: '#ffffff', backgroundColor: 'transparent' }}
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-3.5 w-3.5" style={{ color: '#ffffff' }} />
             Later
           </button>
         </div>
