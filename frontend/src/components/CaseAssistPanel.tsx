@@ -63,13 +63,21 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
     }
   }
 
-  const upload = async (file: File) => {
+  const upload = async (files: FileList | File[]) => {
+    const list = Array.from(files)
+    if (!list.length) return
     await run(async () => {
-      await api.uploadEvidence(caseDetail.id, file, {
-        title: file.name,
-        linked_wac_ids: caseDetail.approved_wac_ids.slice(0, 3),
-      })
-      setInfo('Evidence attached (assist only — not auto-analyzed).')
+      for (const file of list) {
+        await api.uploadEvidence(caseDetail.id, file, {
+          title: file.name,
+          linked_wac_ids: caseDetail.approved_wac_ids.slice(0, 3),
+        })
+      }
+      setInfo(
+        list.length === 1
+          ? 'Evidence attached (assist only — not auto-analyzed).'
+          : `${list.length} evidence files attached (assist only — not auto-analyzed).`,
+      )
     })
   }
 
@@ -175,14 +183,15 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-400">Evidence</div>
             <PrivacyScreenBanner variant="evidence" compact className="mb-3" />
             <label className="btn-secondary inline-flex !h-8 cursor-pointer text-xs">
-              <FileUp className="h-3.5 w-3.5" /> Attach file
+              <FileUp className="h-3.5 w-3.5" /> Attach files
               <input
                 type="file"
                 className="hidden"
+                multiple
                 accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp"
                 onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (f) void upload(f)
+                  const files = e.target.files
+                  if (files?.length) void upload(files)
                   e.target.value = ''
                 }}
               />
