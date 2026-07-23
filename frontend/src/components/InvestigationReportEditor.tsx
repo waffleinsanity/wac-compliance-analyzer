@@ -40,7 +40,6 @@ import {
   type ProcessFields,
 } from '../processTemplate'
 import { IrTemplatePicker } from './IrTemplatePicker'
-import { PrivacyScreenBanner } from './PrivacyScreenBanner'
 
 function allegationAnchorId(wacCode: string) {
   return `allegation-${wacCode.replace(/[^\w.-]+/g, '_')}`
@@ -617,18 +616,18 @@ export function InvestigationReportEditor({
   ].filter(Boolean) as string[]
 
   return (
-    <div className="animate-rise space-y-3 lg:space-y-4">
-      <PrivacyScreenBanner variant="evidence" compact className="max-lg:hidden" />
-      <div className="sticky top-0 z-20 -mx-1 border-b border-ink-200/70 bg-background/95 px-3 py-2.5 backdrop-blur-md dark:border-ink-700 sm:px-4">
-        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+    <div className="animate-rise space-y-2 lg:space-y-3">
+      {/* Sit below app header (h-[4.25rem]) so chrome does not stack over the document */}
+      <div className="sticky top-[4.25rem] z-20 -mx-1 border-b border-ink-200/70 bg-background/95 px-3 py-2 backdrop-blur-md dark:border-ink-700 sm:px-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-              <h2 className="font-display text-xl tracking-tight text-ink-900 dark:text-ink-50 lg:text-2xl">
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+              <h2 className="font-display text-lg tracking-tight text-ink-900 dark:text-ink-50 sm:text-xl">
                 Investigative Report
               </h2>
               {statusMeta.length > 0 && (
                 <p
-                  className="font-sans text-xs text-ink-500 dark:text-ink-400"
+                  className="font-sans text-[11px] text-ink-500 dark:text-ink-400"
                   title={defensibility?.summary || undefined}
                 >
                   {statusMeta.join(' · ')}
@@ -637,7 +636,7 @@ export function InvestigationReportEditor({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <div
               className="inline-flex rounded-md bg-ink-100/80 p-0.5 text-xs dark:bg-ink-800/70"
               role="group"
@@ -672,16 +671,6 @@ export function InvestigationReportEditor({
                 Edit
               </button>
             </div>
-
-            <div className="hidden h-5 w-px bg-ink-200 dark:bg-ink-700 sm:block" aria-hidden />
-
-            <IrTemplatePicker
-              caseId={caseId ?? null}
-              caseDetail={caseDetail}
-              onCaseRefresh={onCaseRefresh}
-              compact
-              disabled={!canEdit}
-            />
 
             <button
               type="button"
@@ -782,6 +771,21 @@ export function InvestigationReportEditor({
           </div>
         </div>
       </div>
+
+      <details className="rounded-lg border border-ink-200/70 px-3 py-2 dark:border-ink-700">
+        <summary className="cursor-pointer font-sans text-xs font-medium text-ink-600 dark:text-ink-300">
+          IR template · {caseDetail?.ir_template?.name || 'Built-in blank'}
+        </summary>
+        <div className="mt-2">
+          <IrTemplatePicker
+            caseId={caseId ?? null}
+            caseDetail={caseDetail}
+            onCaseRefresh={onCaseRefresh}
+            compact
+            disabled={!canEdit}
+          />
+        </div>
+      </details>
 
       {exportError && (
         <div className="rounded-lg border border-rose-300/80 bg-rose-50 px-3 py-2.5 text-sm text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100">

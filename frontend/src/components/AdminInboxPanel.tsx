@@ -5,6 +5,52 @@ import { getToken } from '../api'
 
 type InboxTab = 'bugs' | 'feedback'
 
+const BUG_STATUS_LABEL: Record<string, string> = {
+  open: 'Open',
+  in_progress: 'In progress',
+  resolved: 'Resolved',
+  closed: 'Closed',
+}
+
+function bugStatusClass(status: string) {
+  switch (status) {
+    case 'resolved':
+      return 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200'
+    case 'in_progress':
+      return 'bg-amber-100 text-amber-950 dark:bg-amber-950/50 dark:text-amber-100'
+    case 'closed':
+      return 'bg-ink-200/80 text-ink-700 dark:bg-ink-800 dark:text-ink-200'
+    default:
+      return 'bg-tide-500/15 text-tide-900 dark:text-tide-200'
+  }
+}
+
+function buildAgentBrief(bug: BugReport): string {
+  return [
+    'Support bug report — investigate and fix in this repo, then mark resolved in Admin → Inbox.',
+    '',
+    `Bug #${bug.id}: ${bug.title}`,
+    `Status: ${bug.status}`,
+    `Page: ${bug.page_url || '(none)'}`,
+    `Reporter: ${bug.user?.email || bug.user?.username || 'unknown'}`,
+    '',
+    '## Description',
+    bug.description,
+    '',
+    bug.has_screenshot ? '## Screenshot\nAvailable via GET /api/support/bugs/' + bug.id + '/screenshot (admin auth).' : '',
+    bug.diagnostics_json && bug.diagnostics_json !== '{}'
+      ? `## Diagnostics\n\`\`\`json\n${bug.diagnostics_json.slice(0, 4000)}\n\`\`\``
+      : '',
+    '',
+    '## Done when',
+    '- Root cause fixed in code',
+    '- Brief admin note of what changed',
+    `- PATCH /api/support/bugs/${bug.id} with status "resolved"`,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
 export function AdminInboxPanel() {
   const [tab, setTab] = useState<InboxTab>('bugs')
   const [bugs, setBugs] = useState<BugReport[]>([])
@@ -15,20 +61,30 @@ export function AdminInboxPanel() {
   const [selectedFeedback, setSelectedFeedback] = useState<UserFeedback | null>(null)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
   const [busy, setBusy] = useState(false)
+  const [copiedBrief, setCopiedBrief] = useState(false)
+
+  const loadBugs = useCallback(async (filter: string) => {
+    setBugs(await api.listBugReports(filter === 'all' ? undefined : filter))
+  }, [])
+
+  const loadFeedback = useCallback(async (filter: string) => {
+    setFeedback(await api.listFeedback(filter === 'all' ? undefined : filter))
+  }, [])
 
   const load = useCallback(async () => {
     setError('')
     try {
       if (tab === 'bugs') {
-        setBugs(await api.listBugReports(statusFilter === 'all' ? undefined : statusFilter))
+        await loadBugs(statusFilter)
       } else {
-        setFeedback(await api.listFeedback(feedbackFilter === 'all' ? undefined : feedbackFilter))
+        await loadFeedback(feedbackFilter)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load inbox')
     }
-  }, [tab, statusFilter, feedbackFilter])
+  }, [tab, statusFilter, feedbackFilter, loadBugs, loadFeedback])
 
   useEffect(() => {
     void load()
@@ -36,16 +92,26 @@ export function AdminInboxPanel() {
 
   useEffect(() => {
     setNote(selectedBug?.admin_note || selectedFeedback?.admin_note || '')
-  }, [selectedBug, selectedFeedback])
+    setInfo('')
+    setCopiedBrief(false)
+  }, [selectedBug?.id, selectedFeedback?.id])
 
   const updateBug = async (status: string) => {
     if (!selectedBug) return
     setBusy(true)
     setError('')
+    setInfo('')
     try {
       const updated = await api.updateBugReport(selectedBug.id, { status, admin_note: note })
       setSelectedBug(updated)
-      await load()
+      // Keep the item visible: switch filter to the new status (unless browsing All)
+      if (statusFilter !== 'all' && statusFilter !== status) {
+        setStatusFilter(status)
+        await loadBugs(status)
+      } else {
+        await loadBugs(statusFilter)
+      }
+      setInfo(`Saved — status is now ${BUG_STATUS_LABEL[status] || status}.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed')
     } finally {
@@ -57,14 +123,33 @@ export function AdminInboxPanel() {
     if (!selectedFeedback) return
     setBusy(true)
     setError('')
+    setInfo('')
     try {
       const updated = await api.updateFeedback(selectedFeedback.id, { status, admin_note: note })
       setSelectedFeedback(updated)
-      await load()
+      if (feedbackFilter !== 'all' && feedbackFilter !== status) {
+        setFeedbackFilter(status)
+        await loadFeedback(status)
+      } else {
+        await loadFeedback(feedbackFilter)
+      }
+      setInfo(`Saved — feedback marked ${status}.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const copyAgentBrief = async () => {
+    if (!selectedBug) return
+    try {
+      await navigator.clipboard.writeText(buildAgentBrief(selectedBug))
+      setCopiedBrief(true)
+      setInfo('Agent brief copied — paste into Cursor with the support-bug-report skill.')
+      window.setTimeout(() => setCopiedBrief(false), 2500)
+    } catch {
+      setError('Could not copy agent brief to clipboard')
     }
   }
 
@@ -92,6 +177,7 @@ export function AdminInboxPanel() {
               setTab(id)
               setSelectedBug(null)
               setSelectedFeedback(null)
+              setInfo('')
             }}
           >
             {label}
@@ -99,7 +185,16 @@ export function AdminInboxPanel() {
         ))}
       </div>
 
-      {error && <p className="text-sm text-rose-600">{error}</p>}
+      {error && (
+        <p className="rounded-lg border border-rose-300/70 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100">
+          {error}
+        </p>
+      )}
+      {info && !error && (
+        <p className="rounded-lg border border-emerald-300/70 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100">
+          {info}
+        </p>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <div className="panel overflow-hidden">
@@ -149,7 +244,8 @@ export function AdminInboxPanel() {
                   >
                     <div className="font-semibold">{b.title}</div>
                     <div className="mt-0.5 text-xs text-ink-500">
-                      {b.user?.username || 'user'} · {b.status} · {b.created_at?.slice(0, 16) || ''}
+                      {b.user?.username || 'user'} · {BUG_STATUS_LABEL[b.status] || b.status} ·{' '}
+                      {b.created_at?.slice(0, 16) || ''}
                     </div>
                   </button>
                 </li>
@@ -191,12 +287,22 @@ export function AdminInboxPanel() {
 
           {selectedBug && (
             <>
-              <div>
-                <h3 className="font-semibold">{selectedBug.title}</h3>
-                <p className="mt-1 whitespace-pre-wrap text-sm">{selectedBug.description}</p>
-                <p className="mt-2 text-xs text-ink-500">
-                  {selectedBug.page_url} · {selectedBug.user?.email || selectedBug.user?.username}
-                </p>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-semibold">{selectedBug.title}</h3>
+                  <p className="mt-1 whitespace-pre-wrap text-sm">{selectedBug.description}</p>
+                  <p className="mt-2 text-xs text-ink-500">
+                    {selectedBug.page_url} · {selectedBug.user?.email || selectedBug.user?.username}
+                  </p>
+                </div>
+                <span
+                  className={clsx(
+                    'shrink-0 rounded-md px-2 py-1 font-sans text-[11px] font-semibold uppercase tracking-wide',
+                    bugStatusClass(selectedBug.status),
+                  )}
+                >
+                  {BUG_STATUS_LABEL[selectedBug.status] || selectedBug.status}
+                </span>
               </div>
               {selectedBug.has_screenshot && (
                 <button
@@ -208,7 +314,10 @@ export function AdminInboxPanel() {
                       const res = await fetch(`/api/support/bugs/${selectedBug.id}/screenshot`, {
                         headers: token ? { Authorization: `Bearer ${token}` } : {},
                       })
-                      if (!res.ok) return
+                      if (!res.ok) {
+                        setError('Could not load screenshot')
+                        return
+                      }
                       const blob = await res.blob()
                       window.open(URL.createObjectURL(blob), '_blank')
                     })()
@@ -227,20 +336,60 @@ export function AdminInboxPanel() {
               )}
               <div>
                 <label className="label">Admin note</label>
-                <textarea className="input min-h-[80px]" value={note} onChange={(e) => setNote(e.target.value)} />
+                <textarea
+                  className="input min-h-[80px]"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="What we found / shipped"
+                />
               </div>
               <div className="flex flex-wrap gap-2">
-                <button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => void updateBug('in_progress')}>
+                <button
+                  type="button"
+                  className={clsx(
+                    'btn-sm',
+                    selectedBug.status === 'in_progress' ? 'btn-primary' : 'btn-secondary',
+                  )}
+                  disabled={busy || selectedBug.status === 'in_progress'}
+                  onClick={() => void updateBug('in_progress')}
+                >
                   In progress
                 </button>
-                <button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => void updateBug('resolved')}>
-                  Resolve
+                <button
+                  type="button"
+                  className={clsx(
+                    'btn-sm',
+                    selectedBug.status === 'resolved' ? 'btn-primary' : 'btn-secondary',
+                  )}
+                  disabled={busy || selectedBug.status === 'resolved'}
+                  onClick={() => void updateBug('resolved')}
+                >
+                  {busy ? 'Saving…' : selectedBug.status === 'resolved' ? 'Resolved' : 'Resolve'}
                 </button>
-                <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => void updateBug('closed')}>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  disabled={busy || selectedBug.status === 'closed'}
+                  onClick={() => void updateBug('closed')}
+                >
                   Close
                 </button>
-                <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => void updateBug('open')}>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  disabled={busy || selectedBug.status === 'open'}
+                  onClick={() => void updateBug('open')}
+                >
                   Reopen
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline btn-sm"
+                  disabled={busy}
+                  onClick={() => void copyAgentBrief()}
+                  title="Copy a brief for the Cursor support-bug-report skill"
+                >
+                  {copiedBrief ? 'Copied' : 'Copy agent brief'}
                 </button>
               </div>
             </>
