@@ -363,6 +363,21 @@ export type CaseSnapshot = {
   created_at?: string | null
 }
 
+export type IrTemplate = {
+  id: number
+  name: string
+  original_filename: string
+  content_type?: string
+  source: 'library' | 'case' | string
+  case_id?: number | null
+  is_default: boolean
+  section_keys: string[]
+  core_count: number
+  warnings: string[]
+  created_at?: string | null
+  updated_at?: string | null
+}
+
 export type CaseDetail = {
   id: number
   case_id_label: string
@@ -375,6 +390,8 @@ export type CaseDetail = {
   approved_wac_ids: string[]
   report?: InvestigationReport | null
   owner_user_id: number
+  ir_template_id?: number | null
+  ir_template?: IrTemplate | null
   privacy_acknowledged_at?: string | null
   privacy_redaction_note?: string
   status_changed_at?: string | null
@@ -816,4 +833,32 @@ export const api = {
     request<{ ok: boolean }>(`/api/cases/${caseId}/process-entries/${entryId}`, { method: 'DELETE' }),
   applyProcessToReport: (id: number) =>
     request<CaseDetail>(`/api/cases/${id}/process-entries/apply`, { method: 'POST' }),
+
+  listIrTemplates: () => request<IrTemplate[]>('/api/ir-templates'),
+  uploadIrTemplate: async (file: File, name = '') => {
+    const form = new FormData()
+    form.append('file', file)
+    if (name) form.append('name', name)
+    return request<IrTemplate>('/api/ir-templates', { method: 'POST', body: form })
+  },
+  patchIrTemplate: (id: number, payload: { name?: string; is_default?: boolean }) =>
+    request<IrTemplate>(`/api/ir-templates/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteIrTemplate: (id: number) =>
+    request<{ ok: boolean }>(`/api/ir-templates/${id}`, { method: 'DELETE' }),
+  promoteIrTemplate: (id: number) =>
+    request<IrTemplate>(`/api/ir-templates/${id}/promote`, { method: 'POST' }),
+  bindCaseIrTemplate: (caseId: number, ir_template_id: number | null) =>
+    request<CaseDetail>(`/api/cases/${caseId}/ir-template`, {
+      method: 'PUT',
+      body: JSON.stringify({ ir_template_id }),
+    }),
+  uploadCaseIrTemplate: async (caseId: number, file: File, name = '') => {
+    const form = new FormData()
+    form.append('file', file)
+    if (name) form.append('name', name)
+    return request<CaseDetail>(`/api/cases/${caseId}/ir-template`, { method: 'POST', body: form })
+  },
 }

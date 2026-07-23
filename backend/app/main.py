@@ -11,7 +11,7 @@ from app.auth import assert_production_secret_safe, bootstrap_admin
 from app.config import settings
 from app.database import SessionLocal, init_db
 from app.rag.store import wac_store
-from app.routers import admin_users, analysis, auth, cases, privacy, support, wacs
+from app.routers import admin_users, analysis, auth, cases, ir_templates, privacy, support, wacs
 from app.services.usage_stats import backfill_from_cases
 
 _BOT_UA = (
@@ -88,6 +88,7 @@ app.include_router(admin_users.router)
 app.include_router(support.router)
 app.include_router(privacy.router)
 app.include_router(cases.router)
+app.include_router(ir_templates.router)
 app.include_router(wacs.router)
 app.include_router(analysis.router)
 

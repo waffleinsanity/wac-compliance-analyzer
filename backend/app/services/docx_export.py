@@ -1,12 +1,13 @@
-"""DOCX export for Investigation Reports — fill from the official blank template styles."""
+"""DOCX export for Investigation Reports — blank template styles + DOH run formatting."""
 
 from __future__ import annotations
 
 import io
+import re
 from typing import Any
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_UNDERLINE
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
@@ -33,6 +34,19 @@ STYLE_TITLE = "No Spacing"
 STYLE_HEADER = "Header"
 STYLE_BODY = "No Spacing"
 
+SIZE_SECTION = 16.0
+SIZE_BODY = 12.0
+
+_UNDERLINE_LABELS = {
+    "pre-investigation activity",
+    "investigation activity",
+}
+_BOLD_SUBHEADS = {
+    "observations",
+    "interviews",
+    "document review",
+}
+
 
 def _clear_body(doc: Document) -> None:
     body = doc.element.body
@@ -42,11 +56,22 @@ def _clear_body(doc: Document) -> None:
         body.remove(child)
 
 
-def _set_run_font(run, *, size_pt: float = 11, bold: bool | None = None) -> None:
+def _set_run_font(
+    run,
+    *,
+    size_pt: float = SIZE_BODY,
+    bold: bool | None = None,
+    italic: bool | None = None,
+    underline: bool = False,
+) -> None:
     run.font.name = "Times New Roman"
     run.font.size = Pt(size_pt)
     if bold is not None:
         run.bold = bold
+    if italic is not None:
+        run.italic = italic
+    if underline:
+        run.underline = WD_UNDERLINE.SINGLE
     rPr = run._element.get_or_add_rPr()
     rFonts = rPr.get_or_add_rFonts()
     rFonts.set(qn("w:ascii"), "Times New Roman")
@@ -54,7 +79,7 @@ def _set_run_font(run, *, size_pt: float = 11, bold: bool | None = None) -> None
     rFonts.set(qn("w:eastAsia"), "Times New Roman")
 
 
-def _add(doc: Document, text: str, style: str, *, bold: bool = False, center: bool = False) -> None:
+def _new_para(doc: Document, style: str):
     try:
         p = doc.add_paragraph(style=style)
     except KeyError:
@@ -62,8 +87,23 @@ def _add(doc: Document, text: str, style: str, *, bold: bool = False, center: bo
     if p.runs:
         for run in p.runs:
             run.text = ""
+    return p
+
+
+def _add(
+    doc: Document,
+    text: str,
+    style: str,
+    *,
+    bold: bool = False,
+    italic: bool = False,
+    underline: bool = False,
+    size_pt: float = SIZE_BODY,
+    center: bool = False,
+) -> None:
+    p = _new_para(doc, style)
     run = p.add_run(text or "")
-    _set_run_font(run, bold=bold)
+    _set_run_font(run, size_pt=size_pt, bold=bold, italic=italic, underline=underline)
     if center:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
@@ -72,16 +112,62 @@ def _add_blank(doc: Document, style: str = STYLE_BODY) -> None:
     _add(doc, "", style)
 
 
+def _parse_heading(label: str) -> tuple[str, str | None]:
+    """Split 'Title: (hint…)' or 'Title (hint…)' into title + parenthetical hint."""
+    text = (label or "").strip()
+    m = re.match(r"^(.+?:)\s*(\(.*\))\s*$", text, flags=re.DOTALL)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    m = re.match(r"^(.+?)\s+(\(.*\))\s*$", text, flags=re.DOTALL)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return text, None
+
+
+def _add_section_heading(doc: Document, label: str) -> None:
+    """16pt bold title + 12pt italic hint — matches blank Intake / Process / Summary."""
+    title, hint = _parse_heading(label)
+    p = _new_para(doc, STYLE_BODY)
+    title_text = f"{title} " if hint else title
+    r = p.add_run(title_text)
+    _set_run_font(r, size_pt=SIZE_SECTION, bold=True)
+    if hint:
+        r2 = p.add_run(hint)
+        _set_run_font(r2, size_pt=SIZE_BODY, italic=True)
+
+
+def _norm_label(line: str) -> str:
+    return re.sub(r"\s+", " ", (line or "").strip().rstrip(":").lower())
+
+
+def _add_process_line(doc: Document, line: str) -> None:
+    text = (line or "").rstrip()
+    key = _norm_label(text)
+    if key in _UNDERLINE_LABELS:
+        # Blank: bold+underline on words; colon bold only (not underlined)
+        p = _new_para(doc, STYLE_BODY)
+        body = text.strip()
+        if body.endswith(":"):
+            r1 = p.add_run(body[:-1])
+            _set_run_font(r1, size_pt=SIZE_BODY, bold=True, underline=True)
+            r2 = p.add_run(":")
+            _set_run_font(r2, size_pt=SIZE_BODY, bold=True)
+        else:
+            r = p.add_run(body)
+            _set_run_font(r, size_pt=SIZE_BODY, bold=True, underline=True)
+        return
+    if key in _BOLD_SUBHEADS:
+        _add(doc, text, STYLE_BODY, bold=True, size_pt=SIZE_BODY)
+        return
+    _add(doc, text, STYLE_BODY, size_pt=SIZE_BODY)
+
+
 def build_investigation_docx(
     report: InvestigationReport | dict[str, Any],
     *,
     draft_label: str = "Working draft — for investigator review",
 ) -> bytes:
-    """Build IR DOCX using blank template styles (Header / No Spacing).
-
-    draft_label is accepted for API compatibility but is not written into the
-    document body — peers and the blank have no draft watermark.
-    """
+    """Build IR DOCX using blank template styles and DOH run formatting."""
     del draft_label
     if isinstance(report, dict):
         report = InvestigationReport.model_validate(report)
@@ -94,45 +180,53 @@ def build_investigation_docx(
     doc = Document(str(path))
     _clear_body(doc)
 
-    _add(doc, TITLE, STYLE_TITLE, bold=True, center=True)
+    # Title: 16pt bold underline, centered
+    p = _new_para(doc, STYLE_TITLE)
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(TITLE)
+    _set_run_font(r, size_pt=SIZE_SECTION, bold=True, underline=True)
     _add_blank(doc, STYLE_BODY)
 
     for label, value in facility_header_lines(report):
-        # Blank uses a trailing space after some labels; keep "Label: value"
         line = f"{label} {value}".rstrip() if value else f"{label} "
-        _add(doc, line, STYLE_HEADER)
+        _add(doc, line, STYLE_HEADER, size_pt=SIZE_BODY)
 
     _add_blank(doc, STYLE_BODY)
-    _add(doc, INTAKE_LABEL, STYLE_BODY)
+    _add_section_heading(doc, INTAKE_LABEL)
     _add_blank(doc, STYLE_BODY)
-    _add(doc, (report.intake_details or "").strip(), STYLE_BODY)
+    _add(doc, (report.intake_details or "").strip(), STYLE_BODY, size_pt=SIZE_BODY)
     _add_blank(doc, STYLE_BODY)
 
-    _add(doc, ALLEGATION_HEADER, STYLE_BODY)
+    _add_section_heading(doc, ALLEGATION_HEADER)
     _add_blank(doc, STYLE_BODY)
     for a in report.allegations:
-        _add(doc, allegation_export_line(a), STYLE_BODY)
+        _add(doc, allegation_export_line(a), STYLE_BODY, size_pt=SIZE_BODY)
         _add_blank(doc, STYLE_BODY)
 
-    _add(doc, PROCESS_HEADER, STYLE_BODY)
+    _add_section_heading(doc, PROCESS_HEADER)
     _add_blank(doc, STYLE_BODY)
     for step in report.investigative_process or []:
-        _add(doc, str(step), STYLE_BODY)
+        _add_process_line(doc, str(step))
 
     _add_blank(doc, STYLE_BODY)
-    _add(doc, SUMMARY_HEADER, STYLE_BODY)
+    _add_section_heading(doc, SUMMARY_HEADER)
     _add_blank(doc, STYLE_BODY)
-    _add(doc, (report.summary_of_findings or "").strip(), STYLE_BODY)
+    _add(doc, (report.summary_of_findings or "").strip(), STYLE_BODY, size_pt=SIZE_BODY)
     _add_blank(doc, STYLE_BODY)
 
-    _add(doc, CONCLUSION_HEADER, STYLE_BODY)
+    _add(doc, CONCLUSION_HEADER.strip(), STYLE_BODY, bold=True, size_pt=SIZE_SECTION)
     _add_blank(doc, STYLE_BODY)
     for line in conclusion_export_lines(report):
-        _add(doc, line, STYLE_BODY)
+        _add(doc, line, STYLE_BODY, size_pt=SIZE_BODY)
         _add_blank(doc, STYLE_BODY)
 
-    _add(doc, ACTIONS_LABEL, STYLE_BODY)
-    _add(doc, (report.actions or "[To be determined after investigation]").strip(), STYLE_BODY)
+    _add(doc, ACTIONS_LABEL.strip(), STYLE_BODY, bold=True, size_pt=SIZE_SECTION)
+    _add(
+        doc,
+        (report.actions or "[To be determined after investigation]").strip(),
+        STYLE_BODY,
+        size_pt=SIZE_BODY,
+    )
 
     buf = io.BytesIO()
     doc.save(buf)

@@ -114,6 +114,47 @@ def test_docx_export_uses_blank_styles_not_heading2_or_bullets():
     assert any("found the facility pending determination of compliance" in t for _, t in texts)
 
 
+def test_docx_export_doh_typography_hierarchy():
+    """Section titles 16pt bold + italic hints; activity labels bold+underline."""
+    raw = build_investigation_docx(_sample_report())
+    doc = Document(io.BytesIO(raw))
+
+    def find_para(substr: str):
+        for p in doc.paragraphs:
+            if substr in (p.text or ""):
+                return p
+        return None
+
+    title = find_para("Investigative Report")
+    assert title is not None and title.runs
+    assert title.runs[0].bold is True
+    assert title.runs[0].underline
+    assert title.runs[0].font.size.pt == 16
+
+    process = find_para("Investigative Process Included")
+    assert process is not None and len(process.runs) >= 2
+    assert process.runs[0].bold is True
+    assert process.runs[0].font.size.pt == 16
+    assert process.runs[1].italic is True
+    assert process.runs[1].font.size.pt == 12
+
+    pre = find_para("Pre-investigation Activity")
+    assert pre is not None and pre.runs
+    assert pre.runs[0].bold is True
+    assert pre.runs[0].underline
+    assert pre.runs[0].font.size.pt == 12
+
+    obs = next(p for p in doc.paragraphs if (p.text or "").strip() == "Observations")
+    assert obs.runs[0].bold is True
+    assert not obs.runs[0].underline
+
+    summary = find_para("Summary of Findings")
+    assert summary is not None and len(summary.runs) >= 2
+    assert summary.runs[0].bold is True
+    assert summary.runs[0].font.size.pt == 16
+    assert summary.runs[1].italic is True
+
+
 def test_peer_examples_still_use_header_or_no_spacing(tmp_path: Path):
     """Sanity: at least one peer example keeps Header facility lines."""
     examples = Path(__file__).resolve().parents[2] / "data" / "examples"

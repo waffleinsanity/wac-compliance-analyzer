@@ -39,6 +39,7 @@ import {
   type FindingPhrase,
   type ProcessFields,
 } from '../processTemplate'
+import { IrTemplatePicker } from './IrTemplatePicker'
 import { PrivacyScreenBanner } from './PrivacyScreenBanner'
 
 function allegationAnchorId(wacCode: string) {
@@ -178,6 +179,43 @@ function groupAllegations(allegations: InvestigationAllegation[]) {
   }, {})
 }
 
+/** Section title (16pt bold) + parenthetical hint (12pt italic) — matches blank DOCX. */
+function IrSectionHeading({ title, hint }: { title: string; hint: string }) {
+  return (
+    <p className="ir-section-heading">
+      <span className="ir-section-title">{title} </span>
+      <span className="ir-section-hint">{hint}</span>
+    </p>
+  )
+}
+
+function processLineKind(step: string): 'activity' | 'subhead' | 'body' {
+  const key = step.trim().replace(/:$/, '').toLowerCase()
+  if (key === 'pre-investigation activity' || key === 'investigation activity') return 'activity'
+  if (key === 'observations' || key === 'interviews' || key === 'document review') return 'subhead'
+  return 'body'
+}
+
+/** Process line with blank-template weight / underline / size. */
+function IrProcessLine({ step }: { step: string }) {
+  const kind = processLineKind(step)
+  if (kind === 'activity') {
+    const trimmed = step.trim()
+    const hasColon = trimmed.endsWith(':')
+    const label = hasColon ? trimmed.slice(0, -1) : trimmed
+    return (
+      <p className="ir-process-line">
+        <span className="ir-process-activity">{label}</span>
+        {hasColon ? <span className="ir-process-activity-colon">:</span> : null}
+      </p>
+    )
+  }
+  if (kind === 'subhead') {
+    return <p className="ir-process-subhead">{step}</p>
+  }
+  return <p className="ir-body whitespace-pre-wrap">{step}</p>
+}
+
 /** On-screen IR that mirrors Download DOCX layout (blank shell + live field values). */
 function DocumentPreview({ report }: { report: InvestigationReport }) {
   const fi = report.facility_info
@@ -199,81 +237,83 @@ function DocumentPreview({ report }: { report: InvestigationReport }) {
       <div className="ir-doc-toolbar">
         <FileText className="h-3.5 w-3.5 shrink-0 text-ink-500" aria-hidden />
         <p className="min-w-0 text-[11px] leading-snug text-ink-500 dark:text-ink-400">
-          Same layout as Download DOCX
+          Structured preview (built-in blank layout). Download uses the selected IR template when
+          attached.
         </p>
       </div>
       <div className="ir-doc-scroll">
         <div className="ir-doc-page" role="document" aria-label="Investigation Report preview">
-          <h1 className="mb-5 text-center text-[18pt] font-bold tracking-tight text-black">
-            Investigative Report
-          </h1>
-          <div className="mb-4 space-y-0 text-[11pt] leading-[1.35] text-black">
+          <h1 className="ir-doc-title">Investigative Report</h1>
+          <div className="mb-4 space-y-0">
             {facilityLines.map(([label, value]) => (
-              <p key={label}>
+              <p key={label} className="ir-body">
                 <span className="font-bold">{label}</span> {value}
               </p>
             ))}
           </div>
-          <div className="mb-4 space-y-2 text-[11pt] leading-[1.45] text-black">
-            <p className="font-bold">
-              Intake Details: (List of concerns reported in the original complaint.)
-            </p>
-            <p className="whitespace-pre-wrap">{report.intake_details || '—'}</p>
+          <div className="mb-4 space-y-2">
+            <IrSectionHeading
+              title="Intake Details:"
+              hint="(List of concerns reported in the original complaint.)"
+            />
+            <p className="ir-body whitespace-pre-wrap">{report.intake_details || '—'}</p>
           </div>
-          <div className="mb-4 space-y-2 text-[11pt] leading-[1.45] text-black">
-            <p className="font-bold">
-              Allegation(s): (The allegation(s) listed below is what the department has jurisdiction
-              and authorization to investigate. An allegation is considered an assertion of improper
-              practice or condition that could result in a violation of facility law or rule.)
-            </p>
+          <div className="mb-4 space-y-2">
+            <IrSectionHeading
+              title="Allegation(s):"
+              hint="(The allegation(s) listed below is what the department has jurisdiction and authorization to investigate. An allegation is considered an assertion of improper practice or condition that could result in a violation of facility law or rule.)"
+            />
             {report.allegations.map((a) => {
               const text = normalizeAllegationLine(a.allegation_text)
               const line = text.toLowerCase().startsWith('allegation:') ? text : `Allegation: ${text}`
               return (
-                <p key={a.wac_code} className="whitespace-pre-wrap">
+                <p key={a.wac_code} className="ir-body whitespace-pre-wrap">
                   {line}
                 </p>
               )
             })}
           </div>
-          <div className="mb-4 space-y-1 text-[11pt] leading-[1.45] text-black">
-            <p className="mb-2 font-bold">
-              Investigative Process Included: (This is what the investigator did in terms of methods
-              employed to conduct inquiry.)
-            </p>
+          <div className="mb-4 space-y-1">
+            <div className="mb-2">
+              <IrSectionHeading
+                title="Investigative Process Included:"
+                hint="(This is what the investigator did in terms of methods employed to conduct inquiry.)"
+              />
+            </div>
             {(report.investigative_process || []).map((step, i) => (
-              <p key={`${i}-${step.slice(0, 24)}`}>{step}</p>
+              <IrProcessLine key={`${i}-${step.slice(0, 24)}`} step={step} />
             ))}
           </div>
-          <div className="mb-4 space-y-2 text-[11pt] leading-[1.45] text-black">
-            <p className="font-bold">
-              Summary of Findings (Narrative overview of the results of investigation.)
-            </p>
-            <p className="whitespace-pre-wrap">{report.summary_of_findings || '—'}</p>
+          <div className="mb-4 space-y-2">
+            <IrSectionHeading
+              title="Summary of Findings"
+              hint="(Narrative overview of the results of investigation.)"
+            />
+            <p className="ir-body whitespace-pre-wrap">{report.summary_of_findings || '—'}</p>
           </div>
-          <div className="mb-4 space-y-2 text-[11pt] leading-[1.45] text-black">
-            <p className="font-bold">Conclusion/ Results of Investigation</p>
-        {report.allegations.map((a) => {
-          const c = byCode[a.wac_code]
-          const result = c?.result || 'Pending Investigation'
-          const finding = resultToFindingPhrase(result)
-          const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-          let line = `Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
-          if (a.wac_title) line += `, ${a.wac_title}`
-          line += '.'
-          if (c?.deficiency_details && finding === 'out of compliance') {
-            line += ` ${c.deficiency_details}`
-          }
-          return (
-            <p key={`conc-preview-${a.wac_code}`} className="whitespace-pre-wrap">
-              {line}
-            </p>
-          )
-        })}
+          <div className="mb-4 space-y-2">
+            <p className="ir-section-title">Conclusion/ Results of Investigation</p>
+            {report.allegations.map((a) => {
+              const c = byCode[a.wac_code]
+              const result = c?.result || 'Pending Investigation'
+              const finding = resultToFindingPhrase(result)
+              const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
+              let line = `Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
+              if (a.wac_title) line += `, ${a.wac_title}`
+              line += '.'
+              if (c?.deficiency_details && finding === 'out of compliance') {
+                line += ` ${c.deficiency_details}`
+              }
+              return (
+                <p key={`conc-preview-${a.wac_code}`} className="ir-body whitespace-pre-wrap">
+                  {line}
+                </p>
+              )
+            })}
           </div>
-          <div className="space-y-2 text-[11pt] leading-[1.45] text-black">
-            <p className="font-bold">Actions:</p>
-            <p className="whitespace-pre-wrap">{report.actions || '—'}</p>
+          <div className="space-y-2">
+            <p className="ir-section-title">Actions:</p>
+            <p className="ir-body whitespace-pre-wrap">{report.actions || '—'}</p>
           </div>
         </div>
       </div>
@@ -634,6 +674,14 @@ export function InvestigationReportEditor({
             </div>
 
             <div className="hidden h-5 w-px bg-ink-200 dark:bg-ink-700 sm:block" aria-hidden />
+
+            <IrTemplatePicker
+              caseId={caseId ?? null}
+              caseDetail={caseDetail}
+              onCaseRefresh={onCaseRefresh}
+              compact
+              disabled={!canEdit}
+            />
 
             <button
               type="button"
@@ -1000,8 +1048,8 @@ export function InvestigationReportEditor({
             </p>
             <div className="space-y-5">
               <div>
-                <p className="mb-1.5 font-serif text-sm font-semibold text-ink-900 dark:text-ink-50">
-                  {PROCESS_LABELS.preInvestigation}
+                <p className="mb-1.5 font-serif text-sm font-bold text-ink-900 dark:text-ink-50">
+                  <span className="underline">{PROCESS_LABELS.preInvestigation.replace(/:$/, '')}</span>:
                 </p>
                 <textarea
                   className="input min-h-[110px] font-serif text-sm leading-relaxed"
@@ -1010,12 +1058,12 @@ export function InvestigationReportEditor({
                 />
               </div>
               <div>
-                <p className="mb-3 font-serif text-sm font-semibold text-ink-900 dark:text-ink-50">
-                  {PROCESS_LABELS.investigationActivity}
+                <p className="mb-3 font-serif text-sm font-bold text-ink-900 dark:text-ink-50">
+                  <span className="underline">{PROCESS_LABELS.investigationActivity.replace(/:$/, '')}</span>:
                 </p>
                 <div className="space-y-4 border-l-2 border-ink-200/80 pl-3 dark:border-ink-700">
                   <div>
-                    <p className="mb-1.5 font-serif text-sm font-semibold text-ink-800 dark:text-ink-100">
+                    <p className="mb-1.5 font-serif text-sm font-bold text-ink-800 dark:text-ink-100">
                       {PROCESS_LABELS.observations}
                     </p>
                     <textarea
@@ -1025,7 +1073,7 @@ export function InvestigationReportEditor({
                     />
                   </div>
                   <div>
-                    <p className="mb-1.5 font-serif text-sm font-semibold text-ink-800 dark:text-ink-100">
+                    <p className="mb-1.5 font-serif text-sm font-bold text-ink-800 dark:text-ink-100">
                       {PROCESS_LABELS.interviews}
                     </p>
                     <textarea
@@ -1035,7 +1083,7 @@ export function InvestigationReportEditor({
                     />
                   </div>
                   <div>
-                    <p className="mb-1.5 font-serif text-sm font-semibold text-ink-800 dark:text-ink-100">
+                    <p className="mb-1.5 font-serif text-sm font-bold text-ink-800 dark:text-ink-100">
                       {PROCESS_LABELS.documentReview}
                     </p>
                     <textarea

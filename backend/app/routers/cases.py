@@ -20,6 +20,7 @@ from app.database import (
     CaseProcessEntry,
     CaseReportSnapshot,
     InvestigationCase,
+    IrTemplate,
     User,
     get_db,
     utcnow,
@@ -30,6 +31,7 @@ from app.schemas import (
     CaseCommentOut,
     CaseCreate,
     CaseDetailOut,
+    CaseIrTemplateBind,
     CaseSaveDraft,
     CaseSnapshotOut,
     CaseStatusUpdate,
@@ -38,6 +40,7 @@ from app.schemas import (
     DefensibilityOut,
     EvidenceOut,
     InvestigationReport,
+    IrTemplateOut,
     ProcessEntryCreate,
     ProcessEntryOut,
 )
@@ -64,8 +67,16 @@ from app.services.docx_export import build_deficiency_cite_sheet, build_investig
 from app.services.investigation import build_investigation_report
 from app.services.audit import log_action
 from app.services.ir_learning import harvest_completed_ir
+from app.services.ir_templates import (
+    bind_case_template,
+    create_case_template,
+    read_docx_upload,
+    resolve_case_template_path,
+    template_to_out,
+)
 from app.services.pii_gate import ensure_clean_or_redact
 from app.services.quote_verify import verify_report_quotes
+from app.services.template_fill import TemplateFillError, smart_fill
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 logger = logging.getLogger(__name__)
@@ -148,6 +159,25 @@ def _summary(case: InvestigationCase) -> CaseSummaryOut:
     )
 
 
+def _case_ir_template(db: Session, case: InvestigationCase) -> IrTemplateOut | None:
+    tid = getattr(case, "ir_template_id", None)
+    if not tid:
+        return None
+    row = db.query(IrTemplate).filter(IrTemplate.id == tid).first()
+    return template_to_out(row) if row else None
+
+
+def _export_ir_bytes(db: Session, case: InvestigationCase, report: InvestigationReport) -> bytes:
+    """Built-in blank or smart-fill against the case-bound custom template."""
+    template_path = resolve_case_template_path(db, case)
+    if template_path is None:
+        return build_investigation_docx(report, draft_label=_draft_label(case))
+    try:
+        return smart_fill(template_path, report)
+    except TemplateFillError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _detail(db: Session, case: InvestigationCase) -> CaseDetailOut:
     evidence_out: list[EvidenceOut] = []
     for ev in case.evidence:
@@ -172,6 +202,7 @@ def _detail(db: Session, case: InvestigationCase) -> CaseDetailOut:
         )
         for c in sorted(case.comments, key=lambda x: x.created_at or utcnow())
     ]
+    ir_tpl = _case_ir_template(db, case)
     return CaseDetailOut(
         id=case.id,
         case_id_label=case.case_id_label or "",
@@ -184,6 +215,8 @@ def _detail(db: Session, case: InvestigationCase) -> CaseDetailOut:
         approved_wac_ids=parse_json_list(case.approved_wac_ids),
         report=report_from_json(case.current_report_json),
         owner_user_id=case.owner_user_id,
+        ir_template_id=getattr(case, "ir_template_id", None),
+        ir_template=ir_tpl,
         privacy_acknowledged_at=getattr(case, "privacy_acknowledged_at", None),
         privacy_redaction_note=getattr(case, "privacy_redaction_note", None) or "",
         status_changed_at=case.status_changed_at,
@@ -320,6 +353,48 @@ def update_case(
     case.updated_at = utcnow()
     db.add(case)
     db.commit()
+    db.refresh(case)
+    return _detail(db, case)
+
+
+@router.put("/{case_id}/ir-template", response_model=CaseDetailOut)
+def bind_ir_template(
+    case_id: int,
+    payload: CaseIrTemplateBind,
+    user: User = Depends(get_editor_user),
+    db: Session = Depends(get_db),
+):
+    """Bind a library template to this case, or null for the built-in blank."""
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    assert_case_editable(case, user)
+    bind_case_template(db, case, user, payload.ir_template_id)
+    db.refresh(case)
+    return _detail(db, case)
+
+
+@router.post("/{case_id}/ir-template", response_model=CaseDetailOut)
+async def upload_case_ir_template(
+    case_id: int,
+    name: str = Form(""),
+    file: UploadFile = File(...),
+    user: User = Depends(get_editor_user),
+    db: Session = Depends(get_db),
+):
+    """Upload a case-scoped IR template and bind it for export smart-fill."""
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    assert_case_editable(case, user)
+    filename, data = await read_docx_upload(file)
+    create_case_template(
+        db,
+        user,
+        case,
+        filename=filename,
+        data=data,
+        name=name,
+        content_type=file.content_type or "",
+    )
     db.refresh(case)
     return _detail(db, case)
 
@@ -592,7 +667,7 @@ def export_docx(
     )
     # Working drafts are always downloadable; gaps are assistive only.
     _ = acknowledge_gaps
-    content = build_investigation_docx(report, draft_label=_draft_label(case))
+    content = _export_ir_bytes(db, case, report)
     _harvest_ir_style(db, case, report, user, trigger="export_docx")
     filename = f"IR_{case.case_id_label or case.id}.docx"
     return Response(
@@ -625,7 +700,7 @@ def export_pack(
     # Working drafts are always downloadable; gaps are assistive only.
     _ = acknowledge_gaps
 
-    ir = build_investigation_docx(report, draft_label=_draft_label(case))
+    ir = _export_ir_bytes(db, case, report)
     cites = build_deficiency_cite_sheet(report)
     _harvest_ir_style(db, case, report, user, trigger="export_pack")
     buf = BytesIO()

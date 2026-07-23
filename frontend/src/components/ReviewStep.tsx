@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 import clsx from 'clsx'
-import type { InvestigationReport, QuoteFailure, StatuteHit, WACComparison } from '../api'
+import type {
+  CaseDetail,
+  InvestigationReport,
+  QuoteFailure,
+  StatuteHit,
+  WACComparison,
+} from '../api'
 import { quoteFailureLabel } from '../investigatorLabels'
 import { normalizeAllegationLine } from '../allegationFormat'
 import { ApplicationStrengthBadge } from './ApplicationStrengthBadge'
+import { IrTemplatePicker } from './IrTemplatePicker'
 import { StatuteSearchPanel } from './StatuteSearchPanel'
 
 type Props = {
@@ -20,6 +27,9 @@ type Props = {
   onSearchStatutes?: () => void
   onAddCode?: (codeId: string) => void
   selectedIds?: string[]
+  caseId?: number | null
+  caseDetail?: CaseDetail | null
+  onCaseRefresh?: () => void | Promise<void>
 }
 
 function AccuracyBadge({ comparison }: { comparison: WACComparison }) {
@@ -90,6 +100,9 @@ export function ReviewStep({
   onSearchStatutes,
   onAddCode,
   selectedIds = [],
+  caseId = null,
+  caseDetail = null,
+  onCaseRefresh,
 }: Props) {
   const [activeIdx, setActiveIdx] = useState(0)
   const [showPdf, setShowPdf] = useState(false)
@@ -201,6 +214,13 @@ export function ReviewStep({
           </button>
         </div>
       </div>
+
+      <IrTemplatePicker
+        caseId={caseId}
+        caseDetail={caseDetail}
+        onCaseRefresh={onCaseRefresh}
+        disabled={busy}
+      />
 
       {quoteFailures.length > 0 && (
         <div className="rounded-xl border border-amber-300/80 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">

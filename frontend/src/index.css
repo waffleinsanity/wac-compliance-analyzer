@@ -200,6 +200,65 @@
     font-family: 'Times New Roman', Times, 'Source Serif 4', Georgia, serif;
     min-height: 11in;
   }
+  /* DOH blank hierarchy: 16pt section titles, 12pt body / subheads */
+  .ir-doc-page .ir-doc-title {
+    margin: 0 0 1.25rem;
+    text-align: center;
+    font-size: 16pt;
+    font-weight: 700;
+    line-height: 1.3;
+    text-decoration: underline;
+    color: #000;
+  }
+  .ir-doc-page .ir-section-heading {
+    margin: 0;
+    line-height: 1.35;
+    color: #000;
+  }
+  .ir-doc-page .ir-section-title {
+    font-size: 16pt;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #000;
+  }
+  .ir-doc-page .ir-section-hint {
+    font-size: 12pt;
+    font-weight: 400;
+    font-style: italic;
+    line-height: 1.35;
+    color: #000;
+  }
+  .ir-doc-page .ir-body {
+    margin: 0;
+    font-size: 12pt;
+    font-weight: 400;
+    line-height: 1.45;
+    color: #000;
+  }
+  .ir-doc-page .ir-process-line {
+    margin: 0;
+    font-size: 12pt;
+    line-height: 1.45;
+    color: #000;
+  }
+  /* Pre-investigation / Investigation Activity — bold + underline (colon not underlined) */
+  .ir-doc-page .ir-process-activity {
+    font-size: 12pt;
+    font-weight: 700;
+    text-decoration: underline;
+  }
+  .ir-doc-page .ir-process-activity-colon {
+    font-size: 12pt;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .ir-doc-page .ir-process-subhead {
+    margin: 0;
+    font-size: 12pt;
+    font-weight: 700;
+    line-height: 1.45;
+    color: #000;
+  }
 
   .status-chip {
     @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;

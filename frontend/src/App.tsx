@@ -842,6 +842,9 @@ export default function App() {
                       onSearchStatutes={() => void searchStatutes()}
                       onAddCode={addCodeToSelection}
                       selectedIds={selectedCodes}
+                      caseId={activeCaseId}
+                      caseDetail={caseDetail}
+                      onCaseRefresh={refreshCaseDetail}
                     />
                   )}
                   {step === 'report' && report && (

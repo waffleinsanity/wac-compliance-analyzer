@@ -199,6 +199,28 @@ def evidence_dir(case_id: int):
     return path
 
 
+def user_ir_templates_dir(user_id: int):
+    path = settings.data_dir / "users" / str(user_id) / "ir_templates"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def case_ir_template_dir(case_id: int):
+    path = settings.cases_dir / str(case_id)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def resolve_data_path(stored_path: str):
+    """Resolve a path stored relative to data_dir (or absolute legacy paths)."""
+    from pathlib import Path
+
+    p = Path(stored_path)
+    if p.is_absolute():
+        return p
+    return settings.data_dir / p
+
+
 def process_entries_to_bullets(entries: list[CaseProcessEntry]) -> list[str]:
     bullets: list[str] = []
     for e in sorted(entries, key=lambda x: (x.sort_order, x.id)):

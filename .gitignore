@@ -5,6 +5,8 @@ venv/
 env/
 node_modules/
 data/chroma/
+data/cases/
+data/users/
 data/wac_app.db
 data/*.db
 .DS_Store

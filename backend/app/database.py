@@ -140,6 +140,26 @@ class AnalysisRun(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
+class IrTemplate(Base):
+    """User-uploaded Investigation Report DOCX shell (library or case-scoped)."""
+
+    __tablename__ = "ir_templates"
+
+    id = Column(Integer, primary_key=True)
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False, default="")
+    original_filename = Column(String(255), default="")
+    stored_path = Column(String(512), nullable=False)
+    content_type = Column(String(128), default="")
+    section_map_json = Column(Text, default="{}")  # detected headings / warnings
+    source = Column(String(16), default="library", index=True)  # library|case
+    # Integer only (no FK) to avoid circular dependency with investigation_cases.ir_template_id
+    case_id = Column(Integer, nullable=True, index=True)
+    is_default = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class InvestigationCase(Base):
     """Persistent investigation drafting workspace (assistive — not auto-final)."""
 
@@ -156,6 +176,7 @@ class InvestigationCase(Base):
     credential_number = Column(String(128), default="")
     approved_wac_ids = Column(Text, default="[]")  # JSON list
     current_report_json = Column(Text, nullable=True)  # latest editable IR JSON
+    ir_template_id = Column(Integer, ForeignKey("ir_templates.id"), nullable=True, index=True)
     privacy_acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     privacy_redaction_note = Column(String(512), default="")
     status_changed_at = Column(DateTime(timezone=True), default=utcnow)
@@ -421,6 +442,10 @@ def _migrate_cases_table() -> None:
         (
             "trashed_at",
             "ALTER TABLE investigation_cases ADD COLUMN trashed_at DATETIME",
+        ),
+        (
+            "ir_template_id",
+            "ALTER TABLE investigation_cases ADD COLUMN ir_template_id INTEGER",
         ),
     ]
     with engine.begin() as conn:

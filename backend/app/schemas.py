@@ -573,6 +573,32 @@ class CaseSummaryOut(BaseModel):
     trashed_at: datetime | None = None
 
 
+class IrTemplateOut(BaseModel):
+    id: int
+    name: str
+    original_filename: str = ""
+    content_type: str = ""
+    source: str = "library"
+    case_id: int | None = None
+    is_default: bool = False
+    section_keys: list[str] = Field(default_factory=list)
+    core_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class IrTemplatePatch(BaseModel):
+    name: str | None = None
+    is_default: bool | None = None
+
+
+class CaseIrTemplateBind(BaseModel):
+    """Bind a library template to a case, or null for built-in blank."""
+
+    ir_template_id: int | None = None
+
+
 class CaseDetailOut(BaseModel):
     id: int
     case_id_label: str = ""
@@ -585,6 +611,8 @@ class CaseDetailOut(BaseModel):
     approved_wac_ids: list[str] = Field(default_factory=list)
     report: InvestigationReport | None = None
     owner_user_id: int
+    ir_template_id: int | None = None
+    ir_template: IrTemplateOut | None = None
     privacy_acknowledged_at: datetime | None = None
     privacy_redaction_note: str = ""
     status_changed_at: datetime | None = None
