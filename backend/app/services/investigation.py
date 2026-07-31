@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.rag.store import wac_store
 from app.schemas import (
+    AllegationDutyOption,
     FacilityInfo,
     InvestigationAllegation,
     InvestigationConclusion,
@@ -39,6 +40,8 @@ from app.services.template_corpus import (
 )
 from app.services.ir_learning import learned_preamble, preferred_connector_for
 from app.services.wac_scope import (
+    MAX_ALLEGATION_CLAUSES,
+    MAX_ALLEGATION_DRAFT_CLAUSES,
     cite_prefix,
     draft_allegation_from_source,
     normalize_allegation_line,
@@ -79,14 +82,10 @@ def draft_allegation(
     Investigator output is accepted only when already rebuilt from source (see investigator_llm).
     """
     del themes  # themes are not subsection authority; investigation activity is human-owned
-    if investigator_code and investigator_code.allegation_text:
-        text = investigator_code.allegation_text.strip()
-        if not text.endswith("."):
-            text += "."
-        return text
-
+    # Never accept LLM/local investigator text as duty authority — always rebuild from PDF.
+    _ = investigator_code
     draft = draft_allegation_from_source(
-        node.code, node.title or node.code, intake, max_subs=10
+        node.code, node.title or node.code, intake, max_subs=MAX_ALLEGATION_DRAFT_CLAUSES
     )
     return draft.text
 
@@ -402,17 +401,18 @@ def build_investigation_report(
     framework_raw: list[dict[str, Any]] = []
 
     for node in code_nodes:
-        # Rank broadly; allegation selection keeps strong + upper-moderate (not full code).
+        # Rank broadly; allegation selection keeps strong + upper-moderate for chips
+        # (up to MAX_ALLEGATION_CLAUSES) — draft LINE uses top MAX_ALLEGATION_DRAFT_CLAUSES.
         ranked = score_relevant_subsections(complaint_text, node.code, max_items=14)
         selected = select_for_allegation(
-            ranked, max_items=10, complaint=complaint_text
+            ranked, max_items=MAX_ALLEGATION_CLAUSES, complaint=complaint_text
         )
         connector = preferred_connector_for(db, node.code, complaint_themes)
         draft = draft_allegation_from_source(
             node.code,
             node.title or node.code,
             intake,
-            max_subs=10,
+            max_subs=MAX_ALLEGATION_DRAFT_CLAUSES,
             relevant=selected,
             preferred_connector=connector,
         )
@@ -422,7 +422,8 @@ def build_investigation_report(
         closest = selected
         prefix = cite_prefix(node.code)
         cite_labels = list(draft.cites) or [
-            f"{node.code}{s.label}" if s.label else node.code for s in closest[:10]
+            f"{node.code}{s.label}" if s.label else node.code
+            for s in closest[:MAX_ALLEGATION_CLAUSES]
         ]
         matched = [
             f"{prefix} {c}" if not c.upper().startswith(("WAC ", "RCW ")) else c for c in cite_labels
@@ -467,10 +468,15 @@ def build_investigation_report(
                         "level": s.level,
                         "score": s.score,
                     }
-                    for s in selected[:10]
+                    for s in selected[:MAX_ALLEGATION_CLAUSES]
                 ],
             }
         )
+
+        duty_opts = [AllegationDutyOption(**o) for o in (draft.duty_options or [])]
+        included_cites = [
+            o.cite for o in duty_opts if o.included_by_default
+        ] or (matched[:MAX_ALLEGATION_DRAFT_CLAUSES] if matched else [])
 
         comparisons.append(
             WACComparison(
@@ -490,6 +496,7 @@ def build_investigation_report(
                 match_reason=draft.match_reason,
                 match_score=draft.match_score,
                 low_confidence=draft.low_confidence,
+                duty_options=duty_opts,
             )
         )
         allegations.append(
@@ -500,10 +507,11 @@ def build_investigation_report(
                 allegation_text=allegation_text,
                 status=source_note,
                 confidence=draft.match_score,
-                matched_subsections=matched or cites,
+                matched_subsections=included_cites or matched or cites,
                 match_reason=draft.match_reason,
                 match_score=draft.match_score,
                 low_confidence=draft.low_confidence,
+                duty_options=duty_opts,
             )
         )
         conclusions.append(
@@ -583,14 +591,19 @@ def build_investigation_report(
         evidentiary_examples=report.evidentiary_examples,
         selected_codes=selected_codes,
     )
-    # Auto-draft comes from the PDF store — repair any false mismatches before surfacing UI flags.
+    # Auto-draft comes from the PDF store — repair any false mismatches / legacy shortcuts.
     failed_fields = {f.field for f in integrity.failures}
-    if failed_fields:
-        for a in report.allegations:
-            if f"allegation:{a.wac_code}" in failed_fields:
-                a.allegation_text = repair_allegation_text_from_store(
-                    a.allegation_text, a.wac_code
-                )
+    for a in report.allegations:
+        needs_repair = f"allegation:{a.wac_code}" in failed_fields or "see also" in (
+            a.allegation_text or ""
+        ).lower()
+        if needs_repair:
+            a.allegation_text = repair_allegation_text_from_store(
+                a.allegation_text, a.wac_code
+            )
+    if failed_fields or any(
+        "see also" in (a.allegation_text or "").lower() for a in report.allegations
+    ):
         for conc in report.conclusions:
             match = next((a for a in report.allegations if a.wac_code == conc.wac_code), None)
             if match:

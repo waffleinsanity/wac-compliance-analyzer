@@ -82,23 +82,27 @@ def check_defensibility(
     if not qi_ok:
         add(
             "quote_integrity",
-            "warn",
-            f"Quote integrity warnings ({len(failures)} issue(s)). Working draft may still be downloaded; "
-            "fix statute wording before treating the IR as final.",
+            "block",
+            f"Quote integrity failed ({len(failures)} issue(s)). Working draft may still be downloaded; "
+            "fix statute wording before finalize.",
         )
 
     has_block = any(c["severity"] == "block" for c in checks)
     has_warn = any(c["severity"] == "warn" for c in checks)
     overall: Severity = "block" if has_block else "warn" if has_warn else "pass"
 
-    # Working drafts are always downloadable. Checks remain assistive (warn/block messaging).
+    # Working drafts are always downloadable. Finalize is blocked separately when
+    # quote integrity fails (see cases.update_status).
     return {
         "overall": overall,
         "can_export": True,
+        "can_finalize": qi_ok,
         "checks": checks,
         "summary": (
             "Ready to download as a working draft."
             if overall == "pass"
+            else "Download available — resolve quote integrity before finalize."
+            if not qi_ok
             else "Download available — review flagged gaps before treating this IR as final."
             if has_warn or has_block
             else "Ready to download as a working draft."

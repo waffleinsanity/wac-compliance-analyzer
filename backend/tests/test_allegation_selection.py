@@ -44,21 +44,40 @@ def test_select_includes_strong_and_upper_moderate_only():
     assert "(2)" not in labels
     assert "(3)" not in labels
     assert all(
-        s.score >= ALLEGATION_INCLUDE_MIN or s.reason in {"explicit_cite", "structural_anchor"}
+        s.score >= ALLEGATION_INCLUDE_MIN
+        or s.reason in {"explicit_cite", "structural_anchor"}
         for s in selected
     )
 
 
-def test_structural_anchor_reason_always_included():
+def test_structural_anchor_reason_included_without_complaint():
     ranked = [
         _sub("(4)(b)", 0.62),
         _sub("(1)(a)", 0.05, reason="structural_anchor"),
     ]
-    # Force low score with structural reason
     ranked[1].score = 0.05
     ranked[1].reason = "structural_anchor"
-    selected = select_for_allegation(ranked, max_items=10)
+    # Empty complaint: overlap gate is permissive so anchors still select.
+    selected = select_for_allegation(ranked, max_items=10, complaint="")
     assert "(1)(a)" in [s.label for s in selected]
+
+
+def test_structural_anchor_requires_complaint_overlap():
+    ranked = [
+        _sub("(4)(b)", 0.62, text="Medication administration and storage of controlled medications."),
+        _sub(
+            "(1)(a)",
+            0.40,
+            reason="structural_anchor",
+            text="Be responsible for all administrative matters pertaining to the day-to-day program operations.",
+        ),
+    ]
+    complaint = (
+        "Missed evening medication doses and unlocked controlled medication storage."
+    )
+    selected = select_for_allegation(ranked, max_items=10, complaint=complaint)
+    assert "(1)(a)" not in [s.label for s in selected]
+    assert "(4)(b)" in [s.label for s in selected]
 
 
 def test_select_drops_weak_floor_without_overlap():
@@ -123,6 +142,22 @@ def test_0410_structural_anchors_include_1a(store_ready):
     assert "(1)(a)" in [s.label for s in selected]
     assert "(1)(b)" in [s.label for s in selected]
     assert "(1)(c)" in [s.label for s in selected]
+
+
+def test_0410_anchors_not_forced_on_meds_only_complaint(store_ready):
+    """Narrow medication facts must not force 0410(1)(a–c) umbrella cites alone."""
+    complaint = (
+        "The complaint alleged repeated medication errors, including missed evening doses "
+        "and administration of the wrong dose of a psychiatric medication. Staff failed to "
+        "document medication administration and left controlled medications unlocked."
+    )
+    ranked = score_relevant_subsections(complaint, "246-341-0410", max_items=14)
+    selected = select_for_allegation(ranked, max_items=10, complaint=complaint)
+    labels = [s.label for s in selected]
+    # Umbrella admin anchors should not appear without admin/governance complaint substance.
+    assert "(1)(a)" not in labels
+    assert "(1)(b)" not in labels
+    assert "(1)(c)" not in labels
 
 
 def test_medication_complaint_0515_excludes_gambling_and_generic_supervision(store_ready):

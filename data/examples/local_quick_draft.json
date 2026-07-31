@@ -1,7 +1,9 @@
 {
-  "id": "local_quick_draft",
-  "case_id": "2026-LOCAL-DEMO",
-  "investigation_date": "07/22/2026",
+  "id": "assault_safety",
+  "label": "1 · Patient-to-patient assault / safety",
+  "focus": "0410 admin + 0600 protect/sexual-harassment leaves; exact duties; Compare starts with top 2",
+  "case_id": "2026-DEMO-01",
+  "investigation_date": "07/31/2026",
   "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
   "credential_number": "BHA.FS.61140707",
   "selected_wacs": [
@@ -12,5 +14,5 @@
     "WAC 246-337-080"
   ],
   "complaint": "The Department of Health received a complaint alleging that a patient was sexually assaulted by another patient while residing at a behavioral health facility.\n\nStaff allegedly failed to protect patient safety and security, including inadequate supervision on the unit after staff were informed of escalating conflict between the two patients. The complaint further alleged that the administrator failed to ensure day-to-day operations protected residents, that staffing was insufficient to monitor the milieu, and that facility policies on patient-to-patient assault and sexual harassment prevention were not followed.\n\nThe complainant reported that after the incident, staff delayed separating the patients and did not promptly document or escalate the event according to agency procedure.",
-  "notes": "Local UI demo only — mirrors frontend/src/fixtures/localQuickDraft.ts. Not ingested by template_corpus."
+  "notes": "Local UI demo alias of LOCAL_DEMO_SCENARIOS[0] (assault_safety). Mirrors frontend/src/fixtures/localQuickDraft.ts. Not ingested by template_corpus."
 }

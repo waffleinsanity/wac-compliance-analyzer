@@ -104,6 +104,15 @@ export type QuoteIntegrity = {
   failures: QuoteFailure[]
 }
 
+export type AllegationDutyOption = {
+  cite: string
+  label: string
+  duty_phrase: string
+  score: number
+  band: 'strong' | 'moderate' | 'weak' | string
+  included_by_default: boolean
+}
+
 export type WACComparison = {
   wac_id: string
   code: string
@@ -121,6 +130,7 @@ export type WACComparison = {
   match_score?: number | null
   quote_ok?: boolean | null
   low_confidence?: boolean
+  duty_options?: AllegationDutyOption[]
 }
 
 export type InvestigationAllegation = {
@@ -135,6 +145,7 @@ export type InvestigationAllegation = {
   match_score?: number | null
   quote_ok?: boolean | null
   low_confidence?: boolean
+  duty_options?: AllegationDutyOption[]
 }
 
 export type RegulatoryFrameworkEntry = {
@@ -215,6 +226,9 @@ export type InvestigationReport = {
   llm_model?: string | null
   llm_error?: string | null
   quote_integrity?: QuoteIntegrity
+  /** Investigator confirmed Compare cites before Report */
+  compare_cites_confirmed?: boolean
+  confirmed_allegation_codes?: string[]
 }
 
 export type UserRole = 'admin' | 'editor' | 'viewer'
@@ -418,6 +432,7 @@ export type CaseDetail = {
 export type DefensibilityResult = {
   overall: 'pass' | 'warn' | 'block' | string
   can_export: boolean
+  can_finalize?: boolean
   summary: string
   checks: { code: string; severity: string; message: string }[]
 }
@@ -490,7 +505,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const msg = err instanceof Error ? err.message : String(err)
     if (/failed to fetch|networkerror|load failed/i.test(msg)) {
       throw new Error(
-        'Cannot reach the API (http://127.0.0.1:8000). Start the stack with Launch.bat, then refresh.',
+        'Cannot reach the API (http://127.0.0.1:8000). The local stack is down — use Run and Debug → WACMAKR: Run (or wait for auto-heal).',
       )
     }
     throw err instanceof Error ? err : new Error(msg)

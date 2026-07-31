@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   FileText,
   BookOpen,
@@ -20,15 +20,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useNavigate } from 'react-router-dom'
-import {
-  api,
-  type CaseDetail,
-  type InvestigationReport,
-  type PrivacyHit,
-  type PrivacyScanResult,
-  type StatuteHit,
-  type WACNode,
-} from './api'
+import { api } from './api'
 import { useAuth } from './auth'
 import { useTheme } from './theme'
 import { AccountSettings } from './components/AccountSettings'
@@ -46,22 +38,18 @@ import { InvestigationReportEditor } from './components/InvestigationReportEdito
 import { PrivacyGate } from './components/PrivacyGate'
 import { RelatedStatutesPanel } from './components/RelatedStatutesPanel'
 import { ResizeHandle } from './components/ResizeHandle'
-import { getLocalDemoById, isLocalDemoHost, LOCAL_DEMO_SCENARIOS } from './fixtures/localQuickDraft'
+import { isLocalDemoHost, LOCAL_DEMO_SCENARIOS } from './fixtures/localQuickDraft'
 import { ReviewStep } from './components/ReviewStep'
 import { StatuteSearchPanel } from './components/StatuteSearchPanel'
 import { WACSelectionPanel } from './components/WACSelectionPanel'
-import { WorkflowStepper, type WorkflowStep } from './components/WorkflowStepper'
+import { WorkflowStepper } from './components/WorkflowStepper'
 import { PrivacyScreenBanner } from './components/PrivacyScreenBanner'
 import { useResizableWidth } from './hooks/useResizableWidth'
+import { useInvestigationWorkspace } from './hooks/useInvestigationWorkspace'
 import { canAccessAdmin, canEdit, canExport, roleLabel } from './permissions'
-import { normalizeReportAllegations } from './allegationFormat'
 
 type MainTab = 'analysis' | 'directory' | 'admin'
 type AdminSubTab = 'users' | 'inbox' | 'audit' | 'access' | 'changelog'
-
-function applyReport(report: InvestigationReport | null): InvestigationReport | null {
-  return report ? normalizeReportAllegations(report) : null
-}
 
 export default function App() {
   const { user, logout } = useAuth()
@@ -73,15 +61,79 @@ export default function App() {
   const [bugOpen, setBugOpen] = useState(false)
   const [adminSubTab, setAdminSubTab] = useState<AdminSubTab>('users')
   const [inboxTotal, setInboxTotal] = useState(0)
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
+  const [showCasesDrawer, setShowCasesDrawer] = useState(false)
+  const [tab, setTab] = useState<MainTab>('analysis')
+
+  const ws = useInvestigationWorkspace({
+    userRole: user?.role,
+    isAdmin: user?.is_admin,
+  })
+  const {
+    step,
+    setStep,
+    unlocked,
+    wacs,
+    selectedCodes,
+    setSelectedCodes,
+    text,
+    setText,
+    caseId,
+    setCaseId,
+    investigationDate,
+    setInvestigationDate,
+    facilityAddress,
+    setFacilityAddress,
+    credentialNumber,
+    setCredentialNumber,
+    report,
+    setReport,
+    activeCaseId,
+    caseDetail,
+    casesRefreshKey,
+    busy,
+    searchBusy,
+    relatedBusy,
+    progress,
+    error,
+    setError,
+    health,
+    statuteHits,
+    relatedHits,
+    privacyHits,
+    privacyScan,
+    privacyModalOpen,
+    setPrivacyModalOpen,
+    privacyBusy,
+    privacyInfo,
+    localDemoId,
+    setLocalDemoId,
+    favoriteIds,
+    toggleFavorite,
+    refreshCaseDetail,
+    openCase,
+    startNewCase,
+    ensureCaseSaved,
+    addCodeToSelection,
+    continueAndRedact,
+    extractFile,
+    searchStatutes,
+    refreshRelated,
+    generateReport,
+    applyLocalQuickDraft,
+    loadLocalDemoAndDraft,
+    rebuildCaseDraft,
+    confirmCompareAndContinue,
+    clearReportToWorkspace,
+    scanPrivacy,
+    clearPrivacyHints,
+  } = ws
 
   const signOut = () => {
     logout()
     navigate('/login', { replace: true })
   }
-  const [showMobileMenu, setShowMobileMenu] = useState(false)
-  const [showCasesDrawer, setShowCasesDrawer] = useState(false)
-  const [tab, setTab] = useState<MainTab>('analysis')
-  const [step, setStep] = useState<WorkflowStep>('workspace')
+
   const wacRail = useResizableWidth({
     storageKey: 'wacmakr.sidebar.wacWidth',
     defaultWidth: 240,
@@ -94,49 +146,6 @@ export default function App() {
     minWidth: 220,
     maxWidth: 520,
   })
-
-  const [wacs, setWacs] = useState<WACNode[]>([])
-  const [selectedCodes, setSelectedCodes] = useState<string[]>([])
-  const [text, setText] = useState('')
-  const [caseId, setCaseId] = useState('')
-  const [investigationDate, setInvestigationDate] = useState('')
-  const [facilityAddress, setFacilityAddress] = useState('')
-  const [credentialNumber, setCredentialNumber] = useState('')
-  const [report, setReport] = useState<InvestigationReport | null>(null)
-  const [activeCaseId, setActiveCaseId] = useState<number | null>(null)
-  const [caseDetail, setCaseDetail] = useState<CaseDetail | null>(null)
-  const [casesRefreshKey, setCasesRefreshKey] = useState(0)
-  const [busy, setBusy] = useState(false)
-  const [searchBusy, setSearchBusy] = useState(false)
-  const [relatedBusy, setRelatedBusy] = useState(false)
-  const [progress, setProgress] = useState('')
-  const [error, setError] = useState('')
-  const [health, setHealth] = useState('')
-  const [statuteHits, setStatuteHits] = useState<StatuteHit[]>([])
-  const [relatedHits, setRelatedHits] = useState<StatuteHit[]>([])
-  const [privacyHits, setPrivacyHits] = useState<PrivacyHit[]>([])
-  const [privacyScan, setPrivacyScan] = useState<PrivacyScanResult | null>(null)
-  const [privacyModalOpen, setPrivacyModalOpen] = useState(false)
-  const [privacyBusy, setPrivacyBusy] = useState(false)
-  const [pendingAfterRedact, setPendingAfterRedact] = useState<'draft' | null>(null)
-  const [privacyInfo, setPrivacyInfo] = useState('')
-  const [localDemoId, setLocalDemoId] = useState(LOCAL_DEMO_SCENARIOS[0]?.id || '')
-
-  const loadWacs = useCallback(async () => {
-    setWacs(await api.listWacs({ level: 'code' }))
-  }, [])
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const h = await api.health()
-        setHealth(`${h.wac_codes} codes`)
-        await loadWacs()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to reach API')
-      }
-    })()
-  }, [loadWacs])
 
   useEffect(() => {
     if (!user || !canAccessAdmin(user.role, user.is_admin)) {
@@ -154,380 +163,6 @@ export default function App() {
     return () => window.clearInterval(id)
   }, [user, tab, adminSubTab])
 
-  const favorites = useMemo(() => wacs.filter((w) => w.is_favorite), [wacs])
-  const favoriteIds = useMemo(() => new Set(favorites.map((f) => f.id)), [favorites])
-
-  const unlocked: Record<WorkflowStep, boolean> = {
-    workspace: true,
-    review: !!report,
-    report: !!report,
-  }
-
-  const toggleFavorite = async (wacId: string) => {
-    await api.toggleFavorite(wacId)
-    await loadWacs()
-  }
-
-  const refreshCaseDetail = useCallback(async () => {
-    if (!activeCaseId) {
-      setCaseDetail(null)
-      return
-    }
-    const detail = await api.getCase(activeCaseId)
-    setCaseDetail(detail)
-    setCasesRefreshKey((k) => k + 1)
-  }, [activeCaseId])
-
-  const openCase = async (id: number) => {
-    setBusy(true)
-    setError('')
-    try {
-      const detail = await api.getCase(id)
-      setActiveCaseId(detail.id)
-      setCaseDetail(detail)
-      setCaseId(detail.case_id_label || '')
-      setText(detail.complaint_text || '')
-      setInvestigationDate(detail.investigation_date || '')
-      setFacilityAddress(detail.facility_address || '')
-      setCredentialNumber(detail.credential_number || '')
-      setSelectedCodes(detail.approved_wac_ids || [])
-      if (detail.report) {
-        setReport(applyReport(detail.report))
-        setStep('report')
-      } else {
-        setReport(null)
-        setStep('workspace')
-      }
-      setTab('analysis')
-      setShowCasesDrawer(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to open case')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const startNewCase = () => {
-    setActiveCaseId(null)
-    setCaseDetail(null)
-    setReport(null)
-    setText('')
-    setCaseId('')
-    setInvestigationDate('')
-    setFacilityAddress('')
-    setCredentialNumber('')
-    setSelectedCodes([])
-    setPrivacyHits([])
-    setPrivacyScan(null)
-    setPrivacyInfo('')
-    setStep('workspace')
-    setTab('analysis')
-    setShowCasesDrawer(false)
-  }
-
-  const ensureCaseSaved = async (
-    reportPayload: InvestigationReport,
-    complaintText = text,
-    opts?: {
-      approved_wac_ids?: string[]
-      case_id_label?: string
-      investigation_date?: string
-      facility_address?: string
-      credential_number?: string
-    },
-  ) => {
-    const label = opts?.case_id_label ?? caseId
-    const payload = {
-      case_id_label: label,
-      title: label || `Case ${new Date().toISOString().slice(0, 10)}`,
-      complaint_text: complaintText,
-      investigation_date: opts?.investigation_date ?? investigationDate,
-      facility_address: opts?.facility_address ?? facilityAddress,
-      credential_number: opts?.credential_number ?? credentialNumber,
-      approved_wac_ids: opts?.approved_wac_ids ?? selectedCodes,
-    }
-    if (activeCaseId) {
-      await api.updateCase(activeCaseId, payload)
-      const detail = await api.saveCaseDraft(activeCaseId, reportPayload, 'Auto-save after draft build')
-      setCaseDetail(detail)
-      setCasesRefreshKey((k) => k + 1)
-      return detail
-    }
-    const created = await api.createCase(payload)
-    setActiveCaseId(created.id)
-    const detail = await api.saveCaseDraft(created.id, reportPayload, 'Initial draft save')
-    setCaseDetail(detail)
-    setCasesRefreshKey((k) => k + 1)
-    return detail
-  }
-
-  const addCodeToSelection = (codeId: string) => {
-    setSelectedCodes((prev) => (prev.includes(codeId) ? prev : [...prev, codeId]))
-    setReport(null)
-    setStep('workspace')
-  }
-
-  const scanPrivacy = useCallback(async (value: string, opts?: { openModal?: boolean }) => {
-    if (!value.trim()) {
-      setPrivacyHits([])
-      setPrivacyScan(null)
-      return null
-    }
-    try {
-      const scan = await api.privacyScan(value)
-      setPrivacyHits(scan.hits)
-      setPrivacyScan(scan)
-      if (opts?.openModal && scan.has_hits) {
-        setPrivacyModalOpen(true)
-      }
-      return scan
-    } catch (e) {
-      // Fail closed: keep prior hits and surface the error — never pretend "no PII".
-      setError(e instanceof Error ? e.message : 'Privacy scan failed — check that the API is running')
-      return null
-    }
-  }, [])
-
-  const ensurePrivacyClear = async (): Promise<boolean> => {
-    const scan = await scanPrivacy(text)
-    if (!scan) {
-      return false
-    }
-    if (scan.has_hits) {
-      setPendingAfterRedact('draft')
-      setPrivacyModalOpen(true)
-      return false
-    }
-    return true
-  }
-
-  const continueAndRedact = async () => {
-    setPrivacyBusy(true)
-    setError('')
-    try {
-      const result = await api.privacyRedact(text)
-      setText(result.redacted_text)
-      setPrivacyHits([])
-      setPrivacyScan(null)
-      setPrivacyModalOpen(false)
-      setPrivacyInfo(
-        result.applied_count
-          ? `${result.applied_count} Category 3/4 item${result.applied_count === 1 ? '' : 's'} redacted.`
-          : 'Text cleared of Category 3/4 patterns.',
-      )
-      const action = pendingAfterRedact
-      setPendingAfterRedact(null)
-      if (action === 'draft') {
-        // Continue draft with redacted text on next tick so state is applied.
-        window.setTimeout(() => {
-          void generateReportWithText(result.redacted_text)
-        }, 0)
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Redaction failed')
-    } finally {
-      setPrivacyBusy(false)
-    }
-  }
-
-  const extractFile = async (file: File) => {
-    setBusy(true)
-    setProgress('Extracting document text...')
-    setError('')
-    try {
-      const res = await api.extract(file)
-      setText(res.text)
-      setReport(null)
-      setStep('workspace')
-      await scanPrivacy(res.text, { openModal: true })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Upload failed')
-    } finally {
-      setBusy(false)
-      setProgress('')
-    }
-  }
-
-  const searchStatutes = async () => {
-    if (!text.trim()) {
-      setError('Enter complaint text before searching statutes')
-      return
-    }
-    setSearchBusy(true)
-    setError('')
-    try {
-      // Exclude already-approved codes; use expanded local RAG (TF-IDF + Chroma blend)
-      const res = await api.searchStatutes(text, 30, selectedCodes)
-      setStatuteHits(res.hits)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Statute search failed')
-    } finally {
-      setSearchBusy(false)
-    }
-  }
-
-  const refreshRelated = useCallback(async () => {
-    if (!selectedCodes.length) {
-      setRelatedHits([])
-      return
-    }
-    setRelatedBusy(true)
-    try {
-      const res = await api.suggestRelated(selectedCodes, text, 15)
-      setRelatedHits(res.suggestions)
-    } catch {
-      setRelatedHits([])
-    } finally {
-      setRelatedBusy(false)
-    }
-  }, [selectedCodes, text])
-
-  useEffect(() => {
-    // Related suggestions are optional research only — clear when selection empties;
-    // do not auto-fetch (user must request them).
-    if (!selectedCodes.length) setRelatedHits([])
-  }, [selectedCodes.length])
-
-  const generateReportWithText = async (
-    complaintText: string,
-    overrides?: {
-      selected_wacs?: string[]
-      case_id?: string
-      investigation_date?: string
-      facility_address?: string
-      credential_number?: string
-    },
-  ) => {
-    const codes = overrides?.selected_wacs ?? selectedCodes
-    if (!codes.length) {
-      setError('Select the officially approved WACs for this case before drafting the report.')
-      return
-    }
-    setBusy(true)
-    setProgress('Drafting report from approved WACs (local PDF match)…')
-    setError('')
-    try {
-      const res = await api.investigate({
-        text: complaintText,
-        selected_wacs: codes,
-        include_informational: true,
-        case_id: overrides?.case_id ?? (caseId || undefined),
-        investigation_date: overrides?.investigation_date ?? (investigationDate || undefined),
-        facility_address: overrides?.facility_address ?? (facilityAddress || undefined),
-        credential_number: overrides?.credential_number ?? (credentialNumber || undefined),
-      })
-      setReport(applyReport(res))
-      setStep('review')
-      setBusy(false)
-      setProgress('Saving working draft to case…')
-      // Case persistence is secondary — do not block Compare on create/save round-trips
-      try {
-        await ensureCaseSaved(res, complaintText, {
-          approved_wac_ids: codes,
-          case_id_label: overrides?.case_id ?? caseId,
-          investigation_date: overrides?.investigation_date ?? investigationDate,
-          facility_address: overrides?.facility_address ?? facilityAddress,
-          credential_number: overrides?.credential_number ?? credentialNumber,
-        })
-      } catch (saveErr) {
-        setError(saveErr instanceof Error ? saveErr.message : 'Draft built, but case save failed')
-      }
-      setProgress('')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Analysis failed')
-      setBusy(false)
-      setProgress('')
-    }
-  }
-
-  const applyLocalQuickDraft = (demoId = localDemoId) => {
-    if (!canAccessAdmin(user?.role, user?.is_admin)) {
-      setError('Local demo is limited to administrator accounts.')
-      return
-    }
-    const d = getLocalDemoById(demoId)
-    if (!d) {
-      setError('Select a local demo scenario first.')
-      return
-    }
-    setLocalDemoId(d.id)
-    setActiveCaseId(null)
-    setCaseDetail(null)
-    setReport(null)
-    setText(d.complaint)
-    setCaseId(d.case_id)
-    setInvestigationDate(d.investigation_date)
-    setFacilityAddress(d.facility_address)
-    setCredentialNumber(d.credential_number)
-    setSelectedCodes([...d.selected_wacs])
-    setPrivacyHits([])
-    setPrivacyScan(null)
-    setPrivacyInfo('')
-    setError('')
-    setStep('workspace')
-    setTab('analysis')
-    setShowCasesDrawer(false)
-  }
-
-  const loadLocalDemoAndDraft = (demoId = localDemoId) => {
-    if (!canAccessAdmin(user?.role, user?.is_admin)) {
-      setError('Local demo is limited to administrator accounts.')
-      return
-    }
-    const d = getLocalDemoById(demoId)
-    if (!d) {
-      setError('Select a local demo scenario first.')
-      return
-    }
-    applyLocalQuickDraft(d.id)
-    window.setTimeout(() => {
-      void generateReportWithText(d.complaint, {
-        selected_wacs: [...d.selected_wacs],
-        case_id: d.case_id,
-        investigation_date: d.investigation_date,
-        facility_address: d.facility_address,
-        credential_number: d.credential_number,
-      })
-    }, 0)
-  }
-
-  const generateReport = async () => {
-    if (!selectedCodes.length) {
-      setError('Select the officially approved WACs for this case before drafting the report.')
-      return
-    }
-    const ok = await ensurePrivacyClear()
-    if (!ok) return
-    await generateReportWithText(text)
-  }
-
-  const rebuildCaseDraft = async () => {
-    if (!activeCaseId) return
-    setBusy(true)
-    setProgress('Rebuilding draft from approved WACs…')
-    setError('')
-    try {
-      await api.updateCase(activeCaseId, {
-        complaint_text: text,
-        approved_wac_ids: selectedCodes,
-        case_id_label: caseId,
-        investigation_date: investigationDate,
-        facility_address: facilityAddress,
-        credential_number: credentialNumber,
-      })
-      const detail = await api.rebuildCaseDraft(activeCaseId)
-      setCaseDetail(detail)
-      if (detail.report) setReport(applyReport(detail.report))
-      setCasesRefreshKey((k) => k + 1)
-      setStep('report')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Rebuild failed')
-    } finally {
-      setBusy(false)
-      setProgress('')
-    }
-  }
-
   const cycleTheme = () => {
     const order: Array<'light' | 'dark' | 'system'> = ['light', 'dark', 'system']
     setTheme(order[(order.indexOf(theme) + 1) % order.length])
@@ -541,8 +176,7 @@ export default function App() {
           selectedCodes={selectedCodes}
           onSelectionChange={(codes) => {
             setSelectedCodes(codes)
-            setReport(null)
-            setStep('workspace')
+            clearReportToWorkspace()
           }}
           onToggleFavorite={toggleFavorite}
           favoriteIds={favoriteIds}
@@ -567,8 +201,17 @@ export default function App() {
   const casesPanel = (
     <CasesPanel
       activeCaseId={activeCaseId}
-      onOpenCase={(id) => void openCase(id)}
-      onNewCase={startNewCase}
+      onOpenCase={(id) => {
+        void openCase(id).then(() => {
+          setTab('analysis')
+          setShowCasesDrawer(false)
+        })
+      }}
+      onNewCase={() => {
+        startNewCase()
+        setTab('analysis')
+        setShowCasesDrawer(false)
+      }}
       refreshKey={casesRefreshKey}
       canEdit={userCanEdit}
       onCaseRemoved={(id) => {
@@ -855,9 +498,8 @@ export default function App() {
                         text={text}
                         onTextChange={(v) => {
                           setText(v)
-                          setReport(null)
-                          setPrivacyHits([])
-                          setPrivacyInfo('')
+                          clearReportToWorkspace()
+                          clearPrivacyHints()
                         }}
                         caseId={caseId}
                         onCaseIdChange={setCaseId}
@@ -922,8 +564,9 @@ export default function App() {
                       comparisons={report.comparisons}
                       complaintText={text}
                       report={report}
+                      onReportChange={setReport}
                       onBack={() => setStep('workspace')}
-                      onContinue={() => setStep('report')}
+                      onContinue={(codes) => void confirmCompareAndContinue(codes)}
                       busy={busy}
                       statuteHits={statuteHits}
                       searchBusy={searchBusy}
@@ -964,7 +607,7 @@ export default function App() {
                   selectedCodes={selectedCodes}
                   onSelectionChange={(codes) => {
                     setSelectedCodes(codes)
-                    setReport(null)
+                    clearReportToWorkspace()
                   }}
                   onToggleFavorite={toggleFavorite}
                   canEdit={userCanEdit}
@@ -1057,7 +700,6 @@ export default function App() {
         busy={privacyBusy}
         onCancel={() => {
           setPrivacyModalOpen(false)
-          setPendingAfterRedact(null)
         }}
         onContinueRedact={() => void continueAndRedact()}
       />

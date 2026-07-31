@@ -18,7 +18,7 @@ const COPY: Record<Variant, { title: string; body: string }> = {
   evidence: {
     title: 'Privacy screen — Category 3/4 PII & PHI',
     body:
-      'Do not attach evidence containing information beyond public Category 1 (including confidential and HIPAA-related PII/PHI). Complaint text is scanned, audited, and can be redacted or censored before draft or save. Evidence file scanning is not applied in this version — prefer de-identified exhibits. This is an assistive check, not a legal determination.',
+      'Evidence text (.txt/.md/.pdf/.docx) is scanned for Category 3/4 PII/PHI. Text uploads are auto-redacted; PDF/DOCX with hits are blocked until de-identified. Images are not text-scanned — prefer de-identified exhibits. This is an assistive check, not a legal determination.',
   },
 }
 

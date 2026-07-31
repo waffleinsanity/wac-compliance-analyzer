@@ -158,7 +158,17 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
           </button>
         )}
         {caseDetail.status === 'in_review' && reviewer && (
-          <button type="button" className="btn-primary !h-8 text-xs" disabled={busy} onClick={() => void setStatus('final')}>
+          <button
+            type="button"
+            className="btn-primary !h-8 text-xs"
+            disabled={busy || defensibility?.can_finalize === false}
+            title={
+              defensibility?.can_finalize === false
+                ? 'Fix quote integrity issues before finalize'
+                : undefined
+            }
+            onClick={() => void setStatus('final')}
+          >
             Mark final
           </button>
         )}

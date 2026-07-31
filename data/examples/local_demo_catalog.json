@@ -1,17 +1,196 @@
 {
-  "notes": "Mirror of frontend/src/fixtures/localQuickDraft.ts — local admin demos only; not ingested by template_corpus.",
+  "notes": "Mirror of frontend/src/fixtures/localQuickDraft.ts — local admin demos for Intake→Compare→Report (exact WAC duties, top-2 starters + duty checkboxes). Not ingested by template_corpus.",
+  "updated": "2026-07-31",
   "scenarios": [
-    "assault_safety",
-    "confidentiality_phi",
-    "restraint_seclusion",
-    "medication_errors",
-    "assessment_isp",
-    "grievance_rights",
-    "infection_environment",
-    "qi_critical_incident",
-    "crisis_outreach",
-    "otp_dosing",
-    "youth_inpatient_rights",
-    "weak_overlap"
+    {
+      "id": "assault_safety",
+      "label": "1 · Patient-to-patient assault / safety",
+      "focus": "0410 admin + 0600 protect/sexual-harassment leaves; exact duties; Compare starts with top 2",
+      "case_id": "2026-DEMO-01",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140707",
+      "selected_wacs": [
+        "WAC 246-341-0410",
+        "WAC 246-341-0420",
+        "WAC 246-341-0600",
+        "WAC 246-337-065",
+        "WAC 246-337-080"
+      ],
+      "complaint": "The Department of Health received a complaint alleging that a patient was sexually assaulted by another patient while residing at a behavioral health facility.\n\nStaff allegedly failed to protect patient safety and security, including inadequate supervision on the unit after staff were informed of escalating conflict between the two patients. The complaint further alleged that the administrator failed to ensure day-to-day operations protected residents, that staffing was insufficient to monitor the milieu, and that facility policies on patient-to-patient assault and sexual harassment prevention were not followed.\n\nThe complainant reported that after the incident, staff delayed separating the patients and did not promptly document or escalate the event according to agency procedure."
+    },
+    {
+      "id": "confidentiality_phi",
+      "label": "2 · PHI disclosure without consent",
+      "focus": "0425 record system + 0600 confidentiality rights + RCW 71.05.020; exact duty phrasing",
+      "case_id": "2026-DEMO-02",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140707",
+      "selected_wacs": [
+        "WAC 246-341-0420",
+        "WAC 246-341-0425",
+        "WAC 246-341-0600",
+        "RCW 71.05.020"
+      ],
+      "complaint": "The Department of Health received a complaint alleging that agency staff disclosed protected health information about an adult patient to the patient's parent without the patient's consent.\n\nThe complaint states staff shared diagnosis, medication, and treatment appointment details during a phone call. The patient had not authorized family involvement. The complainant further alleged the agency lacked clear policies on when clinical information may be shared and that the individual service record system did not document the disclosure."
+    },
+    {
+      "id": "restraint_seclusion",
+      "label": "3 · Restraint / seclusion + governance",
+      "focus": "337-110 restraint + 045 governance leaves; top-2 starters with optional duty checkboxes",
+      "case_id": "2026-DEMO-03",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140821",
+      "selected_wacs": [
+        "WAC 246-337-110",
+        "WAC 246-337-075",
+        "WAC 246-337-045",
+        "WAC 246-341-0410"
+      ],
+      "complaint": "A complaint alleged that a resident was placed in seclusion for several hours after a verbal altercation, without timely physician authorization and without continuous monitoring documentation.\n\nStaff reportedly used physical holds before seclusion. The complainant alleged residents were not informed of rights related to restraint and seclusion, and that staff lacked training for de-escalation.\n\nGovernance failed at the RTF: no adopted policies were periodically reviewed or updated, the communication and conflict-resolution process for staff and residents was absent, and the personnel system did not track qualifications or supervision of clinical staff who provide direct resident care."
+    },
+    {
+      "id": "medication_errors",
+      "label": "4 · Medication management failures",
+      "focus": "337-105 meds + 080 care + 050 personnel; exact labeled duties in Compare",
+      "case_id": "2026-DEMO-04",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140707",
+      "selected_wacs": [
+        "WAC 246-337-105",
+        "WAC 246-337-080",
+        "WAC 246-337-050",
+        "WAC 246-341-0510"
+      ],
+      "complaint": "The complaint alleged repeated medication administration errors at a residential treatment facility, including missed evening doses, wrong-dose administration of a psychiatric medication, and failure to report medication errors, adverse effects, and side effects.\n\nStaff allegedly failed to document medication administration accurately, did not notify a prescriber after an adverse reaction, left controlled medications unlocked on one shift, and did not follow prescribing and administering drugs procedures. The complainant also alleged inadequate staffing and supervision of medication-trained personnel."
+    },
+    {
+      "id": "assessment_isp",
+      "label": "5 · Missing assessment / ISP",
+      "focus": "0640 clinical documentation + 0600 + 0410; exact WAC fragments after failed to",
+      "case_id": "2026-DEMO-05",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140707",
+      "selected_wacs": [
+        "WAC 246-341-0640",
+        "WAC 246-341-0600",
+        "WAC 246-341-0410",
+        "WAC 246-341-0420"
+      ],
+      "complaint": "A complaint alleged that an individual received outpatient behavioral health services for several weeks without a completed clinical assessment and without an individual service plan addressing treatment goals and needed services.\n\nProgress notes allegedly referenced treatment activities that were never tied to an approved individual service plan. The complainant stated the administrator failed to ensure clinical policies requiring timely assessment, service planning, and clinical documentation were followed, and that staffing was inadequate to provide treatment services."
+    },
+    {
+      "id": "grievance_rights",
+      "label": "6 · Rights / grievance process ignored",
+      "focus": "0600 rights + 0605 complaint process; Compare duty checkboxes for extra leaves",
+      "case_id": "2026-DEMO-06",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140707",
+      "selected_wacs": [
+        "WAC 246-341-0600",
+        "WAC 246-341-0605",
+        "WAC 246-341-0420",
+        "WAC 246-337-075"
+      ],
+      "complaint": "The complainant alleged that when a patient attempted to file a grievance about staff mistreatment, agency staff discouraged the complaint, failed to provide written information about individual rights, and did not follow the agency complaint process timelines.\n\nThe patient reportedly asked for a copy of rights materials and was told to wait. No grievance log entry was created. The complaint also alleged posted rights were outdated, staff were unfamiliar with the complaint procedure, and the agency did not protect confidentiality of treatment information when communicating about the grievance."
+    },
+    {
+      "id": "infection_environment",
+      "label": "7 · Infection control / environment",
+      "focus": "337-060 list-intro + leaf (develop written policies… for: Management of staff…); top-2 + checkboxes",
+      "case_id": "2026-DEMO-07",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140903",
+      "selected_wacs": [
+        "WAC 246-337-060",
+        "WAC 246-337-120",
+        "WAC 246-337-146",
+        "WAC 246-337-045"
+      ],
+      "complaint": "Infection control breakdown at the RTF: staff worked while sick with a communicable disease in an infectious stage, hand hygiene was not enforced, environmental management was neglected, and resident hygiene routines were missed on multiple shifts.\n\nA complaint alleged unsanitary conditions in a residential treatment facility, including unclean resident bathrooms, soiled linens left in hallways, and failure to isolate a resident with a contagious illness according to infection control procedures.\n\nStaff allegedly lacked personal protective equipment on one weekend shift. Governance was alleged to have failed to ensure infection control policies and environmental cleaning schedules were implemented and monitored. Written policies and procedures for cleaning and disinfection, resident hygiene, and management of staff with a communicable disease were not developed or followed."
+    },
+    {
+      "id": "qi_critical_incident",
+      "label": "8 · Quality improvement / critical incident",
+      "focus": "337-048 QI + 0410 quality plan + 045 governance; exact verb-led duties",
+      "case_id": "2026-DEMO-08",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140707",
+      "selected_wacs": [
+        "WAC 246-337-048",
+        "WAC 246-341-0410",
+        "WAC 246-337-045",
+        "WAC 246-341-0420"
+      ],
+      "complaint": "Following a serious resident injury during a behavioral escalation, a complaint alleged the facility did not collect or review quality improvement data on critical incidents, did not implement corrective actions, and did not update policies to prevent recurrence.\n\nThe complainant alleged the administrator failed to maintain an internal quality management plan addressing clinical supervision and training of staff, incident response, and monitoring of compliance after substantiated events. Governance also failed to adopt, periodically review, and update policies governing organization and functions of the RTF."
+    },
+    {
+      "id": "crisis_outreach",
+      "label": "9 · Crisis outreach response delay",
+      "focus": "0903 crisis MH services + 0410 admin; labeled exact duties in the draft line",
+      "case_id": "2026-DEMO-09",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140707",
+      "selected_wacs": [
+        "WAC 246-341-0903",
+        "WAC 246-341-0410",
+        "WAC 246-341-0600",
+        "WAC 246-341-0420"
+      ],
+      "complaint": "A complaint alleged that after a family requested crisis mental health services for an individual in acute distress, the agency delayed outreach for many hours and was not staffed 24 hours a day, seven days a week, with a multidisciplinary team capable of meeting the needs of the individual in crisis.\n\nCallers allegedly were given inconsistent information about response times. The complaint further alleged the agency failed to document outreach and stabilization follow-up, administrative oversight of crisis staffing was inadequate, and individual participant rights information was not provided during the crisis episode."
+    },
+    {
+      "id": "otp_dosing",
+      "label": "10 · Opioid treatment program dosing",
+      "focus": "OTP 1000 + 0410/0420 admin-records; exact duty clauses, not paraphrases",
+      "case_id": "2026-DEMO-10",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61141015",
+      "selected_wacs": [
+        "WAC 246-341-1000",
+        "WAC 246-341-0410",
+        "WAC 246-341-0420",
+        "WAC 246-341-0425"
+      ],
+      "complaint": "A complaint alleged an opioid treatment program dispensed take-home doses inconsistent with the individual's phase of treatment, without required medical director review, and with incomplete individual service record documentation of dosing decisions.\n\nStaff allegedly failed to develop, maintain, and implement policies and procedures for OTP requirements, failed to follow policies for missed doses, and did not document counseling contacts. The complainant stated program administration did not ensure medical director responsibilities, adequate staffing, and individual service record standards were met."
+    },
+    {
+      "id": "youth_inpatient_rights",
+      "label": "11 · Youth inpatient rights / consent",
+      "focus": "1124 clinical-record consent + 0600 rights + RCW 71.34; exact WAC/RCW language",
+      "case_id": "2026-DEMO-11",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140707",
+      "selected_wacs": [
+        "WAC 246-341-1124",
+        "WAC 246-341-0600",
+        "WAC 246-341-0410",
+        "RCW 71.34.510"
+      ],
+      "complaint": "A complaint alleged that an adolescent admitted for inpatient mental health treatment did not have an attempt to obtain informed consent documented in the clinical record, was not asked whether they wished to involve parents, and was not informed of individual rights in an age-appropriate manner.\n\nStaff allegedly restricted family contact without documenting clinical justification. The complainant further alleged required parental notice regarding the voluntary admission was delayed, and administrator oversight of certified behavioral health treatment services and rights practices was not followed."
+    },
+    {
+      "id": "weak_overlap",
+      "label": "12 · Weak overlap (low confidence)",
+      "focus": "Must stay low-confidence; no invented strong duties or long run-on allegation lines",
+      "case_id": "2026-DEMO-12",
+      "investigation_date": "07/31/2026",
+      "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
+      "credential_number": "BHA.FS.61140707",
+      "selected_wacs": [
+        "WAC 246-341-0600"
+      ],
+      "complaint": "The complainant reported dissatisfaction with cafeteria menu options, parking availability, and the color of the waiting-room chairs.\n\nNo clinical safety, rights, treatment, or privacy concerns were described beyond general dissatisfaction with amenities."
+    }
   ]
 }

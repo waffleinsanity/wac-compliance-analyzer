@@ -122,13 +122,13 @@ def _fold_for_match(text: str) -> str:
     t = _fold_quotes(normalize_ws(text))
     # Store: `"Release" means…`  Allegation: `Release means…`
     t = re.sub(r"['\"]+", "", t)
-    return normalize_ws(t)
+    return normalize_ws(t).lower()
 
 
 def is_contiguous_substring(quote: str, source: str) -> bool:
     """True when quote is a contiguous substring of source (store-authored duties).
 
-    Tolerates definitional quotes, whitespace, and trailing punctuation so text we
+    Tolerates definitional quotes, whitespace, case, and trailing punctuation so text we
     just pulled from the PDF store does not false-fail against that same store.
     """
     q = _fold_for_match(quote)
@@ -142,16 +142,90 @@ def is_contiguous_substring(quote: str, source: str) -> bool:
     return bool(q2) and q2 in s2
 
 
+def _normalize_duty_opener_for_match(text: str) -> str:
+    """Align gerund/infinitive openers (Developing ↔ develop) for store checks."""
+    from app.services.wac_scope import gerund_opener_to_infinitive
+
+    body = _fold_for_match(text).rstrip(" .;,:")
+    return _fold_for_match(gerund_opener_to_infinitive(body)).rstrip(" .;,:")
+
+
+def duty_span_matches_cite(span: str, cite: str) -> bool:
+    """True when a Baseline duty span is exact store language for the cite.
+
+    Accepts:
+    - Contiguous leaf/parent node text
+    - List-intro + leaf compositions (same as Compare Exact PDF text)
+    - Leading gerund folded to infinitive after 'failed to'
+    """
+    from app.services.wac_scope import (
+        _duty_phrase_for_option,
+        subsection_ancestor_context,
+        subsection_display_text,
+        validate_subsection_cite,
+    )
+
+    source = store_text_for_cite(cite)
+    if source and is_contiguous_substring(span, source):
+        return True
+
+    code = _code_from_cite(cite)
+    sub = validate_subsection_cite(code, cite) if code else None
+    if not sub:
+        return False
+
+    for expected in (
+        _duty_phrase_for_option(sub),
+        subsection_display_text(sub),
+        normalize_ws(sub.text),
+    ):
+        if expected and _normalize_duty_opener_for_match(span) == _normalize_duty_opener_for_match(
+            expected
+        ):
+            return True
+
+    # Part-wise sole-source check: intro in ancestor node, leaf topic in leaf node.
+    intro = subsection_ancestor_context(sub)
+    leaf = normalize_ws(sub.text)
+    if not intro or not leaf:
+        return False
+    span_norm = _normalize_duty_opener_for_match(span)
+    intro_norm = _normalize_duty_opener_for_match(intro)
+    leaf_norm = _fold_for_match(leaf).rstrip(" .;,:")
+    if intro_norm and leaf_norm and intro_norm in span_norm and leaf_norm in span_norm:
+        parent_ok = False
+        for parent_cite_label in (
+            # Walk parent labels from the leaf cite, e.g. (1)(f) → (1)
+            re.sub(r"\([^)]+\)\s*$", "", cite),
+            code,
+        ):
+            parent_source = store_text_for_cite(parent_cite_label.strip())
+            if parent_source and is_contiguous_substring(intro, parent_source):
+                parent_ok = True
+                break
+        leaf_ok = bool(source and is_contiguous_substring(leaf, source))
+        return parent_ok and leaf_ok
+    return False
+
+
 def repair_allegation_text_from_store(text: str, wac_code: str) -> str:
     """Rewrite labeled duty phrases using exact PDF store text for each cite.
 
     Used after auto-draft so Compare never flags statute wording we ourselves emitted.
+    Preserves list-intro + leaf compositions (not bare leaf nouns alone).
+    Never truncates or rewrites exact WAC duty wording.
     """
     from app.services.wac_scope import (
-        duty_phrase_from_text,
-        normalize_statute_text,
+        _SEE_ALSO_SHORTCUT_RE,
+        _duty_phrase_for_option,
+        normalize_allegation_line,
         validate_subsection_cite,
     )
+
+    # Drop forbidden cite-only trailer before repairing labeled duties
+    text = _SEE_ALSO_SHORTCUT_RE.sub("", text or "").strip()
+    text = re.sub(r"\bsee also\b.*$", "", text, flags=re.IGNORECASE).strip()
+    text = normalize_allegation_line(text)
 
     m = _FAILED_TO_BODY_RE.search(text or "")
     if not m:
@@ -167,24 +241,31 @@ def repair_allegation_text_from_store(text: str, wac_code: str) -> str:
             continue
         labeled = _SUBSECTION_LABEL_RE.match(part)
         if not labeled:
+            # Skip leftover bare labels from old see-also shortcuts
+            if re.fullmatch(r"(?:\([^)]+\))+", part):
+                continue
             rebuilt.append(part)
             continue
         label = labeled.group(1)
+        remainder = (labeled.group(2) or "").strip()
+        # Bare label with no duty text — skip (legacy shortcut residue)
+        if not remainder:
+            continue
         sub = validate_subsection_cite(code, f"{code}{label}")
         if not sub or not sub.text:
             rebuilt.append(part)
             continue
-        duty = normalize_statute_text(sub.text).rstrip(" ;.")
-        if len(duty) > 320:
-            duty = duty_phrase_from_text(sub.text).rstrip(" ;.")
+        duty = _duty_phrase_for_option(sub)
+        if not duty:
+            duty = normalize_ws(sub.text).rstrip(" ;.")
         rebuilt.append(f"{label} {duty}".strip())
     if not rebuilt:
-        return text
+        return normalize_allegation_line(text)
     if len(rebuilt) == 1:
         mid = rebuilt[0]
     else:
         mid = "; ".join(rebuilt[:-1]) + "; and " + rebuilt[-1]
-    return f"{prefix}by having failed to {mid}.".strip()
+    return normalize_allegation_line(f"{prefix}by having failed to {mid}.")
 
 
 @dataclass
@@ -285,6 +366,10 @@ def check_quoted_text(
             code = _code_from_cite(cite)
             if allowed is not None and code and code not in allowed:
                 continue
+            if duty_span_matches_cite(span, cite):
+                matched_cite = cite
+                matched_source = True
+                break
             source = store_text_for_cite(cite)
             if source and is_contiguous_substring(span, source):
                 matched_cite = cite
@@ -295,6 +380,10 @@ def check_quoted_text(
             # Try each selected code body if no cite worked
             if allowed:
                 for code in allowed:
+                    if duty_span_matches_cite(span, code):
+                        matched_cite = code
+                        matched_source = True
+                        break
                     source = store_text_for_cite(code)
                     if source and is_contiguous_substring(span, source):
                         matched_cite = code

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 import clsx from 'clsx'
 import type {
+  AllegationDutyOption,
   CaseDetail,
   InvestigationReport,
   QuoteFailure,
@@ -9,7 +10,7 @@ import type {
   WACComparison,
 } from '../api'
 import { quoteFailureLabel } from '../investigatorLabels'
-import { normalizeAllegationLine } from '../allegationFormat'
+import { composeAllegationFromDuties, allegationHasShortcut, normalizeAllegationLine } from '../allegationFormat'
 import { ApplicationStrengthBadge } from './ApplicationStrengthBadge'
 import { IrTemplatePicker } from './IrTemplatePicker'
 import { StatuteSearchPanel } from './StatuteSearchPanel'
@@ -18,8 +19,10 @@ type Props = {
   comparisons: WACComparison[]
   complaintText: string
   report?: InvestigationReport | null
+  onReportChange?: (report: InvestigationReport) => void
   onBack: () => void
-  onContinue: () => void
+  /** Called with confirmed WAC ids after investigator confirms cites. */
+  onContinue: (confirmedCodes: string[]) => void
   busy: boolean
   /** Optional research — find additional WACs/RCWs that may apply more strongly. */
   statuteHits?: StatuteHit[]
@@ -88,6 +91,7 @@ export function ReviewStep({
   comparisons,
   complaintText,
   report,
+  onReportChange,
   onBack,
   onContinue,
   busy,
@@ -105,6 +109,183 @@ export function ReviewStep({
   const [showFullCode, setShowFullCode] = useState(false)
   const total = comparisons.length
   const active = comparisons[activeIdx] || null
+
+  const codeKey = (c: WACComparison) => c.wac_id || c.code
+
+  const [confirmed, setConfirmed] = useState<Set<string>>(() => {
+    const prior = report?.confirmed_allegation_codes || []
+    if (report?.compare_cites_confirmed && prior.length) return new Set(prior)
+    return new Set()
+  })
+
+  /** Per-comparison selected duty cites (start with included_by_default). */
+  const [selectedDuties, setSelectedDuties] = useState<Record<string, string[]>>({})
+  const [dutiesSyncedKey, setDutiesSyncedKey] = useState('')
+
+  const starterCitesFor = (c: WACComparison): string[] => {
+    const opts = c.duty_options || []
+    if (!opts.length) return []
+    const starters = opts.filter((o) => o.included_by_default).map((o) => o.cite)
+    return starters.length ? starters : opts.slice(0, 2).map((o) => o.cite)
+  }
+
+  const clauseCount = (text: string) =>
+    (text.match(/(?:\([0-9a-z]+\))+/gi) || []).length
+
+  /**
+   * Always align the visible allegation line to the starting two duties when
+   * Compare loads a draft that still has the old multi-clause dump (or no
+   * duty_options sync yet). Prevents stale case JSON from looking like the
+   * checkbox UX did nothing.
+   */
+  useEffect(() => {
+    if (!report || !onReportChange || !comparisons.length) return
+    const fingerprint = comparisons
+      .map((c) => `${c.wac_id || c.code}:${(c.duty_options || []).map((o) => o.cite).join(',')}`)
+      .join('|')
+    if (!fingerprint || fingerprint === dutiesSyncedKey) return
+
+    const nextSelected: Record<string, string[]> = {}
+    let changed = false
+    let nextComparisons = report.comparisons
+    let nextAllegations = report.allegations || []
+    let nextConclusions = report.conclusions || []
+
+    for (const c of comparisons) {
+      const key = c.wac_id || c.code
+      const opts = c.duty_options || []
+      if (!opts.length) continue
+      const starters = starterCitesFor(c)
+      nextSelected[key] = starters
+      const chosen = opts.filter((o) => starters.includes(o.cite))
+      const line = composeAllegationFromDuties(
+        c.code,
+        c.title,
+        chosen.map((o) => ({ label: o.label, duty_phrase: o.duty_phrase })),
+      )
+      const stale =
+        allegationHasShortcut(c.allegation_draft || '') ||
+        clauseCount(c.allegation_draft || '') > Math.max(starters.length, 2) ||
+        (c.allegation_draft || '').trim() !== line.trim()
+      if (!stale) continue
+      changed = true
+      const matched = chosen.map((o) => o.cite)
+      nextComparisons = nextComparisons.map((row) =>
+        (row.wac_id || row.code) === key
+          ? { ...row, allegation_draft: line, matched_subsections: matched }
+          : row,
+      )
+      nextAllegations = nextAllegations.map((a) =>
+        a.wac_code === c.code
+          ? { ...a, allegation_text: line, matched_subsections: matched }
+          : a,
+      )
+      nextConclusions = nextConclusions.map((row) =>
+        row.wac_code === c.code ? { ...row, allegation_text: line } : row,
+      )
+    }
+
+    setSelectedDuties((prev) => ({ ...prev, ...nextSelected }))
+    setDutiesSyncedKey(fingerprint)
+    if (changed) {
+      onReportChange({
+        ...report,
+        comparisons: nextComparisons,
+        allegations: nextAllegations,
+        conclusions: nextConclusions,
+        compare_cites_confirmed: false,
+      })
+    }
+  }, [comparisons, report, onReportChange, dutiesSyncedKey])
+
+  const applyDutySelection = (comparison: WACComparison, cites: string[]) => {
+    if (!report || !onReportChange) return
+    const opts = comparison.duty_options || []
+    // Preserve option order (strong→moderate) among selected cites
+    const chosen: AllegationDutyOption[] = opts.filter((o) => cites.includes(o.cite))
+    const line = composeAllegationFromDuties(
+      comparison.code,
+      comparison.title,
+      chosen.map((o) => ({ label: o.label, duty_phrase: o.duty_phrase })),
+    )
+    const matched = chosen.map((o) => o.cite)
+    const nextComparisons = report.comparisons.map((c) =>
+      (c.wac_id || c.code) === (comparison.wac_id || comparison.code)
+        ? { ...c, allegation_draft: line, matched_subsections: matched.length ? matched : c.matched_subsections }
+        : c,
+    )
+    const nextAllegations = (report.allegations || []).map((a) =>
+      a.wac_code === comparison.code
+        ? { ...a, allegation_text: line, matched_subsections: matched.length ? matched : a.matched_subsections }
+        : a,
+    )
+    const nextConclusions = (report.conclusions || []).map((c) =>
+      c.wac_code === comparison.code ? { ...c, allegation_text: line } : c,
+    )
+    onReportChange({
+      ...report,
+      comparisons: nextComparisons,
+      allegations: nextAllegations,
+      conclusions: nextConclusions,
+      compare_cites_confirmed: false,
+    })
+    setConfirmed((prev) => {
+      const next = new Set(prev)
+      next.delete(comparison.wac_id || comparison.code)
+      return next
+    })
+  }
+
+  const toggleDuty = (comparison: WACComparison, cite: string) => {
+    const key = comparison.wac_id || comparison.code
+    const opts = comparison.duty_options || []
+    setSelectedDuties((prev) => {
+      const current = new Set(prev[key] || starterCitesFor(comparison))
+      if (current.has(cite)) {
+        if (current.size <= 1) return prev
+        current.delete(cite)
+      } else {
+        current.add(cite)
+      }
+      const ordered = opts.map((o) => o.cite).filter((c) => current.has(c))
+      applyDutySelection(comparison, ordered)
+      return { ...prev, [key]: ordered }
+    })
+  }
+
+  useEffect(() => {
+    const keys = comparisons.map((c) => c.wac_id || c.code).join('|')
+    setConfirmed((prev) => {
+      if (report?.compare_cites_confirmed && (report.confirmed_allegation_codes || []).length) {
+        const allowed = new Set(comparisons.map((c) => c.wac_id || c.code))
+        return new Set((report.confirmed_allegation_codes || []).filter((k) => allowed.has(k)))
+      }
+      const allowedList = comparisons.map((c) => c.wac_id || c.code)
+      const next = new Set<string>()
+      for (const k of prev) {
+        if (allowedList.includes(k)) next.add(k)
+      }
+      return next
+    })
+    void keys
+  }, [comparisons, report?.compare_cites_confirmed, report?.confirmed_allegation_codes])
+
+  const allConfirmed = total > 0 && comparisons.every((c) => confirmed.has(codeKey(c)))
+
+  const toggleConfirmActive = () => {
+    if (!active) return
+    const key = codeKey(active)
+    setConfirmed((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const confirmAll = () => {
+    setConfirmed(new Set(comparisons.map(codeKey)))
+  }
 
   const goTo = (idx: number, opts?: { openPdf?: boolean }) => {
     if (!total) return
@@ -196,20 +377,41 @@ export function ReviewStep({
             Working allegations
           </h2>
           <p className="mt-2 max-w-2xl font-sans text-sm leading-relaxed text-ink-500">
-            One allegation line per approved code ({total} total). Application strength shows how
-            clearly each code fits the complaint. Use optional research below if another WAC/RCW may
-            apply more strongly.
+            One allegation line per approved code ({total} total). Confirm each cite (or confirm all)
+            before opening the report editor. Application strength shows how clearly each code fits the
+            complaint.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-secondary" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
-          <button type="button" className="btn-primary" disabled={busy} onClick={onContinue}>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={busy || allConfirmed}
+            onClick={confirmAll}
+          >
+            Confirm all cites
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy || !allConfirmed}
+            title={allConfirmed ? undefined : 'Confirm each allegation cite before continuing'}
+            onClick={() => onContinue(comparisons.map(codeKey))}
+          >
             Open report editor <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       </div>
+
+      {!allConfirmed && (
+        <p className="border-l-2 border-amber-600/70 bg-amber-500/[0.06] px-3 py-2 font-sans text-sm text-ink-700 dark:text-ink-200">
+          Confirm allegation cites before Report ({confirmed.size}/{total} confirmed). Rebuilds clear
+          confirmation so dropped cites are reviewed again.
+        </p>
+      )}
 
       <IrTemplatePicker
         caseId={caseId}
@@ -291,7 +493,10 @@ export function ReviewStep({
                               : 'border-transparent hover:bg-ink-100/70 dark:hover:bg-ink-800/40',
                           )}
                         >
-                          <div className="font-mono text-xs font-semibold tracking-tight">{c.code}</div>
+                          <div className="font-mono text-xs font-semibold tracking-tight">
+                            {confirmed.has(codeKey(c)) ? '✓ ' : ''}
+                            {c.code}
+                          </div>
                           <div className="mt-0.5 line-clamp-2 font-sans text-[11px] leading-snug text-ink-500">
                             {c.title}
                           </div>
@@ -380,18 +585,77 @@ export function ReviewStep({
                   )}
                 </article>
 
-                {!!active.matched_subsections?.length && (
+                {!!(active.duty_options?.length || active.matched_subsections?.length) && (
                   <div className="border-t border-ink-200 px-5 py-3 dark:border-ink-700">
-                    <p className="compare-meta mb-1.5">Matched subsections</p>
-                    <p className="flex flex-wrap gap-x-3 gap-y-1">
-                      {active.matched_subsections.map((cite) => (
-                        <span key={cite} className="compare-cite">
-                          {cite}
-                        </span>
-                      ))}
-                    </p>
+                    <p className="compare-meta mb-1.5">Duties in this allegation</p>
+                    {(active.duty_options?.length ?? 0) === 0 ? (
+                      <p className="font-sans text-sm text-amber-800 dark:text-amber-300">
+                        No exact duty phrases were matched for this code yet. Rebuild the draft from
+                        Intake so allegations use full WAC wording — never abbreviated cite lists.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="mb-2 font-sans text-xs leading-relaxed text-ink-500">
+                          Starts with the two strongest fits. Check additional subsections below if
+                          the line needs more coverage.
+                        </p>
+                        <ul className="space-y-2">
+                          {active.duty_options!.map((opt, idx) => {
+                            const key = codeKey(active)
+                            const checked = (selectedDuties[key] || starterCitesFor(active)).includes(
+                              opt.cite,
+                            )
+                            const isStarter = idx < 2
+                            return (
+                              <li key={opt.cite}>
+                                <label className="flex cursor-pointer items-start gap-2.5 font-sans text-sm text-ink-700 dark:text-ink-200">
+                                  <input
+                                    type="checkbox"
+                                    className="mt-1"
+                                    checked={checked}
+                                    disabled={
+                                      busy ||
+                                      (checked &&
+                                        (selectedDuties[key] || starterCitesFor(active)).length <= 1)
+                                    }
+                                    onChange={() => toggleDuty(active, opt.cite)}
+                                  />
+                                  <span className="min-w-0">
+                                    <span className="compare-cite font-semibold">{opt.cite}</span>
+                                    <span className="ml-2 text-[11px] uppercase tracking-wide text-ink-400">
+                                      {opt.band}
+                                      {isStarter && opt.included_by_default ? ' · starting' : ''}
+                                    </span>
+                                    <span className="mt-0.5 block font-serif text-[13px] leading-snug text-ink-600 dark:text-ink-300">
+                                      {opt.duty_phrase}
+                                    </span>
+                                  </span>
+                                </label>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </>
+                    )}
                   </div>
                 )}
+
+                <div className="border-t border-ink-200 px-5 py-3 dark:border-ink-700">
+                  <label className="flex cursor-pointer items-start gap-2.5 font-sans text-sm text-ink-700 dark:text-ink-200">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={confirmed.has(codeKey(active))}
+                      onChange={toggleConfirmActive}
+                    />
+                    <span>
+                      Cite confirmed for this code
+                      {confirmed.has(codeKey(active))
+                        ? ' — included for Report'
+                        : ' — required before opening Report'}
+                    </span>
+                  </label>
+                </div>
               </section>
 
               <button

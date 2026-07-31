@@ -1,4 +1,9 @@
-"""Local compliance analysis engine — no external LLM APIs."""
+"""Legacy local compliance analyzer — NOT part of the WACMAKR IR product path.
+
+Deprecated for investigation reports. Intake → Compare → Report uses
+`investigation.build_investigation_report` + `wac_scope` sole-source drafting.
+Kept only for historical/reference callers; do not wire new IR features here.
+"""
 
 from __future__ import annotations
 

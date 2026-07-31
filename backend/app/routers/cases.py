@@ -74,7 +74,8 @@ from app.services.ir_templates import (
     resolve_case_template_path,
     template_to_out,
 )
-from app.services.pii_gate import ensure_clean_or_redact
+from app.services.pii_gate import ensure_clean_or_redact, scan_text
+from app.services.documents import extract_text_from_bytes
 from app.services.quote_verify import verify_report_quotes
 from app.services.template_fill import TemplateFillError, smart_fill
 
@@ -82,6 +83,65 @@ router = APIRouter(prefix="/api/cases", tags=["cases"])
 logger = logging.getLogger(__name__)
 
 ALLOWED_EVIDENCE_EXT = {".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"}
+_TEXT_EVIDENCE_EXT = {".txt", ".md", ".pdf", ".docx"}
+_IMAGE_EVIDENCE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+def _scan_evidence_payload(filename: str, data: bytes) -> tuple[bytes, str]:
+    """Scan extractable evidence for Cat 3/4 PII; redact .txt/.md or block binary docs.
+
+    Returns (bytes_to_store, notes_suffix). Images are not text-scanned.
+    """
+    ext = Path(filename).suffix.lower()
+    if ext in _IMAGE_EVIDENCE_EXT:
+        return data, " [privacy: image not text-scanned — prefer de-identified exhibits]"
+    if ext not in _TEXT_EVIDENCE_EXT:
+        return data, ""
+    try:
+        extracted = extract_text_from_bytes(filename, data)
+    except Exception:
+        extracted = ""
+    if not (extracted or "").strip():
+        return data, " [privacy: no extractable text to scan]"
+    scan = scan_text(extracted)
+    if not scan.get("has_hits"):
+        return data, " [privacy: scanned — no Cat 3/4 patterns]"
+    kinds = sorted((scan.get("summary") or {}).get("by_kind") or {})
+    kind_note = ", ".join(kinds) if kinds else "Cat 3/4"
+    if ext in {".txt", ".md"}:
+        cleaned, meta = ensure_clean_or_redact(extracted, auto_redact=True)
+        n = int(meta.get("applied_count") or 0)
+        return cleaned.encode("utf-8"), (
+            f" [privacy: auto-redacted {n} Cat 3/4 span(s) ({kind_note})]"
+        )
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Evidence file appears to contain Category 3/4 information ({kind_note}). "
+            "De-identify the PDF/DOCX and upload again, or attach a .txt/.md excerpt "
+            "(text uploads are auto-redacted)."
+        ),
+    )
+
+
+def _quote_integrity_blocks_finalize(report: InvestigationReport) -> str | None:
+    """Return error detail when quote integrity must block finalize; else None."""
+    integrity = verify_report_quotes(report)
+    if integrity.ok:
+        # Also honor persisted flag when verify path is clean but report marked broken.
+        qi = report.quote_integrity
+        if qi is not None and qi.ok is False:
+            n = len(qi.failures or [])
+            return (
+                f"Cannot finalize: quote integrity failed ({n} issue(s)). "
+                "Fix statute wording in the draft, then try again. Working-draft DOCX remains available."
+            )
+        return None
+    n = len(integrity.failures or [])
+    return (
+        f"Cannot finalize: quote integrity failed ({n} issue(s)). "
+        "Fix statute wording in the draft, then try again. Working-draft DOCX remains available."
+    )
 
 
 def _latest_snapshot_id(db: Session, case_id: int) -> int | None:
@@ -549,6 +609,9 @@ def update_status(
         else:
             require_role_edit(user)
         report = _report_for_export(case)
+        block = _quote_integrity_blocks_finalize(report)
+        if block:
+            raise HTTPException(status_code=400, detail=block)
         save_snapshot(db, case, report, user, note=payload.note or "Marked final")
         set_status(db, case, "final", user)
         _harvest_ir_style(db, case, report, user, trigger="finalized")
@@ -741,6 +804,8 @@ async def upload_evidence(
     if len(data) > max_bytes:
         raise HTTPException(status_code=400, detail=f"File exceeds {settings.case_upload_max_mb} MB limit")
 
+    data, privacy_note = _scan_evidence_payload(filename, data)
+
     try:
         links = json.loads(linked_wac_ids) if linked_wac_ids.strip().startswith("[") else [
             s.strip() for s in linked_wac_ids.split(",") if s.strip()
@@ -760,7 +825,7 @@ async def upload_evidence(
         stored_path=str(dest.relative_to(settings.cases_dir)),
         content_type=file.content_type or "",
         linked_wac_ids=dumps_list(links),
-        notes=notes or "",
+        notes=((notes or "").strip() + privacy_note).strip(),
         uploaded_by=user.id,
     )
     db.add(ev)

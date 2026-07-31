@@ -16,6 +16,7 @@ from app.config import settings
 from app.services.investigator_prompt import INVESTIGATOR_SYSTEM_PROMPT
 from app.services.pii_gate import ensure_clean_or_redact
 from app.services.wac_scope import (
+    MAX_ALLEGATION_DRAFT_CLAUSES,
     draft_allegation_from_source,
     filter_cites_to_source,
     format_scoped_context,
@@ -181,7 +182,9 @@ def _local_code_investigation(
     complaint: str,
 ) -> CodeInvestigation:
     # Allegation + cites come ONLY from PDF-derived subsection text
-    draft = draft_allegation_from_source(code, title, complaint, max_subs=10)
+    draft = draft_allegation_from_source(
+        code, title, complaint, max_subs=MAX_ALLEGATION_DRAFT_CLAUSES
+    )
     allegation, labels = normalize_allegation_line(draft.text), draft.cites
     relevant = score_relevant_subsections(complaint, code, max_items=14)
     known = []
@@ -461,24 +464,16 @@ def _parse_llm_result(
         llm_cites = [str(x) for x in (raw.get("relevant_subsections") or [])]
         validated = filter_cites_to_source(code, llm_cites)
         draft = draft_allegation_from_source(
-            code, title_map[code], complaint_for_draft, max_subs=10
+            code, title_map[code], complaint_for_draft, max_subs=MAX_ALLEGATION_DRAFT_CLAUSES
         )
         allegation, source_cites = normalize_allegation_line(draft.text), draft.cites
-        # Prefer intersection of LLM suggestions with source-ranked cites when both exist
+        # Prefer intersection of LLM suggestions with source-ranked cites for display only.
+        # Do NOT append LLM cites into the complaint as synthetic explicit_cite hints —
+        # that bypassed the overlap gate and steered which leaves entered the allegation.
         if validated:
-            # Re-draft still from source, but surface validated LLM cites that also score in source
             source_set = set(source_cites)
-            merged = [c for c in validated if c in source_set] or source_cites
-            # If LLM named valid PDF subsections, re-score using those as explicit preference
-            # by appending them into a synthetic cite hint for ranking — already validated.
-            if merged != source_cites:
-                # Rebuild using complaint + explicit cite strings so extract_explicit_cites can fire
-                hint = complaint_for_draft + " " + " ".join(merged)
-                draft = draft_allegation_from_source(
-                    code, title_map[code], hint, max_subs=10
-                )
-                allegation, source_cites = normalize_allegation_line(draft.text), draft.cites
-            subs = source_cites
+            preferred = [c for c in validated if c in source_set]
+            subs = preferred or source_cites
             source = "llm+source"
             rationale = _clean(str(raw.get("rationale") or ""))
             if rationale:

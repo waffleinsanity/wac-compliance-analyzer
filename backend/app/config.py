@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     case_upload_max_mb: int = 15
 
     # Auth: public password registration (disable on shared/multi-user hosts)
-    allow_public_registration: bool = True
+    # Default off for shared/Railway hosts; local .env can set true for open signup.
+    allow_public_registration: bool = False
     # When public registration is off, allow signup only with a valid invite code
     allow_invite_signup: bool = True
     # Comma-separated email domains (empty = any). Example: "doh.wa.gov,wa.gov"

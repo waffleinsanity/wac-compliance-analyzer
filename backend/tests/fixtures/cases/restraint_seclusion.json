@@ -1,0 +1,20 @@
+{
+  "id": "restraint_seclusion",
+  "complaint": "A complaint alleged that a resident was placed in seclusion for several hours after a verbal altercation, without timely physician authorization and without continuous monitoring documentation. Staff reportedly used physical holds before seclusion. The complainant alleged residents were not informed of rights related to restraint and seclusion, that staff lacked training for de-escalation, and that governance failed to ensure policies on restraint use were followed and reviewed after the event.",
+  "selected_wacs": [
+    "WAC 246-337-110",
+    "WAC 246-337-075",
+    "WAC 246-337-045",
+    "WAC 246-341-0410"
+  ],
+  "expected_cite_prefixes": ["246-337-110", "246-337-075"],
+  "expected_selected_labels": {
+    "246-337-075": ["(1)(e)(ii)", "(2)(b)", "(1)(e)"]
+  },
+  "require_any_selected_token": {
+    "246-337-110": ["seclusion", "restraint", "hold", "monitor", "authorization", "physician"]
+  },
+  "expect_quote_integrity": true,
+  "must_quote_statute": true,
+  "notes": "Restraint/seclusion facts should select 337-110 leaves with seclusion/restraint substance and 337-075 rights leaves."
+}

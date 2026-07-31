@@ -337,6 +337,17 @@ class QuoteIntegrityOut(BaseModel):
     failures: list[QuoteFailureOut] = Field(default_factory=list)
 
 
+class AllegationDutyOption(BaseModel):
+    """Compare checkbox option: start with strongest two; add moderate+ as needed."""
+
+    cite: str
+    label: str = ""
+    duty_phrase: str
+    score: float = 0.0
+    band: str = "moderate"  # strong | moderate | weak
+    included_by_default: bool = False
+
+
 class WACComparison(BaseModel):
     wac_id: str
     code: str
@@ -354,6 +365,8 @@ class WACComparison(BaseModel):
     match_score: float | None = None
     quote_ok: bool | None = None
     low_confidence: bool = False
+    # Strong→moderate duties; first two included_by_default for the starting line
+    duty_options: list[AllegationDutyOption] = Field(default_factory=list)
 
 
 class InvestigationAllegation(BaseModel):
@@ -368,6 +381,7 @@ class InvestigationAllegation(BaseModel):
     match_score: float | None = None
     quote_ok: bool | None = None
     low_confidence: bool = False
+    duty_options: list[AllegationDutyOption] = Field(default_factory=list)
 
 
 class RegulatoryFrameworkEntry(BaseModel):
@@ -467,6 +481,9 @@ class InvestigationReport(BaseModel):
     llm_model: str | None = None
     llm_error: str | None = None
     quote_integrity: QuoteIntegrityOut = Field(default_factory=QuoteIntegrityOut)
+    # Compare step: investigator confirmed allegation cites before opening Report
+    compare_cites_confirmed: bool = False
+    confirmed_allegation_codes: list[str] = Field(default_factory=list)
 
 
 class ValidateReportRequest(BaseModel):
@@ -642,6 +659,7 @@ class DefensibilityCheckOut(BaseModel):
 class DefensibilityOut(BaseModel):
     overall: str
     can_export: bool
+    can_finalize: bool = True
     summary: str
     checks: list[DefensibilityCheckOut] = Field(default_factory=list)
 

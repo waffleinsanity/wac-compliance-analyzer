@@ -44,11 +44,17 @@ def test_investigate_assault_structure(client):
             "allegation_text"
         ].lower() or '"' in a["allegation_text"]
         assert "investigator review" not in a["allegation_text"].lower()
-        assert len(a["allegation_text"]) <= 520
+        assert "see also" not in a["allegation_text"].lower()
         assert a.get("matched_subsections")
         assert a.get("match_reason")
         assert a.get("quote_ok") is True
         assert "low_confidence" in a
+        # Starting line uses ≤2 duties; optional pool may list more for Compare checkboxes.
+        opts = a.get("duty_options") or []
+        if opts:
+            included = [o for o in opts if o.get("included_by_default")]
+            assert 1 <= len(included) <= 2
+            assert len(opts) >= len(included)
 
     text = data["report_text"]
     assert text.startswith("Investigative Report")

@@ -11,6 +11,7 @@ data/wac_app.db
 data/*.db
 .DS_Store
 *.log
+logs/
 .env
 .pytest_cache/
 reference/

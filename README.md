@@ -67,6 +67,25 @@ npm run dev
 
 Or run `start-frontend.bat`. Open http://localhost:5173
 
+### Local demos (admin + localhost)
+
+On http://localhost:5173, signed-in **admins** get a demo picker on Intake:
+
+1. Choose a scenario → **Load demo** (fills complaint, metadata, approved WACs), or
+2. **Load & draft** (same, then runs Investigate into Compare).
+
+Twelve scenarios live in `frontend/src/fixtures/localQuickDraft.ts` (mirrored in `data/examples/local_demo_catalog.json`). They are tuned for the current allegation system: exact WAC duty language, two starter clauses, and Compare duty checkboxes. Re-sync the JSON mirror with:
+
+```bat
+npx --yes tsx scripts/export_local_demos.mjs
+```
+
+Smoke-check drafting against the local PDF store:
+
+```bat
+backend\.venv\Scripts\python.exe scripts\verify_local_demos.py
+```
+
 ### 3. Investigator LLM (Google Gemini free tier)
 
 Copy `backend/.env.example` to `backend/.env` and set a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey):

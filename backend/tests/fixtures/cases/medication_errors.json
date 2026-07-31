@@ -1,0 +1,23 @@
+{
+  "id": "medication_errors",
+  "complaint": "The complaint alleged repeated medication errors at a residential treatment facility, including missed evening doses and administration of the wrong dose of a psychiatric medication. Staff allegedly failed to document medication administration accurately, did not notify a prescriber after an adverse reaction, and storage of controlled medications was left unlocked on one shift. The complainant also alleged inadequate staffing and supervision of medication-trained personnel.",
+  "selected_wacs": [
+    "WAC 246-337-105",
+    "WAC 246-337-080",
+    "WAC 246-337-050",
+    "WAC 246-341-0515"
+  ],
+  "expected_cite_prefixes": ["246-337-105"],
+  "expected_selected_labels": {
+    "246-337-105": ["(4)(g)", "(4)(f)(ii)"]
+  },
+  "forbid_selected_tokens": {
+    "246-341-0515": ["gambling", "gambler", "casino", "problem gambling"]
+  },
+  "forbid_selected_labels": {
+    "246-341-0515": ["(4)", "(2)"]
+  },
+  "expect_quote_integrity": true,
+  "must_quote_statute": true,
+  "notes": "Meds facts must select 337-105 med duties; 0515 must not cite gambling staffing or generic clinical supervision."
+}

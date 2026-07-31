@@ -13,7 +13,7 @@ from those PDF nodes. Example DOCX files shape IR shell phrasing only.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
@@ -43,10 +43,13 @@ SOURCE_FILES = (
     "RCW 71.34.pdf",
 )
 
-DUTY_MAX_CHARS = 120
-# Allegation drafts may cite several duties so investigators can prune; not a full dump.
+DUTY_MAX_CHARS = 480
+# Allegation LINE: start with the strongest duties; Compare can add more from the pool.
+# Never truncate or replace exact WAC duty wording to meet a character budget.
 MAX_DUTY_CLAUSES = 2  # legacy tight default for callers that still pass max_subs=2
-MAX_ALLEGATION_CLAUSES = 10
+# Starting count for the drafted line — Compare can add more optional duties beyond this.
+MAX_ALLEGATION_DRAFT_CLAUSES = 2
+MAX_ALLEGATION_CLAUSES = 6  # optional-duty / chip pool
 MAX_RANKED_SUBSECTIONS = 14
 LOW_CONFIDENCE_SCORE = 0.15
 # Application bands (raw ranked scores after TF-IDF + light boosts):
@@ -55,8 +58,11 @@ STRONG_SCORE = 0.50
 MODERATE_SCORE = 0.30
 # Include strong + upper half of moderate (≥ midpoint of 0.30–0.49).
 ALLEGATION_INCLUDE_MIN = 0.40
-ALLEGATION_TARGET_CHARS = 900
+# Soft UI hint only — never used to shorten or rewrite statute duty text.
+ALLEGATION_TARGET_CHARS = 1200
 DEFAULT_QUOTE_MAX_CHARS = DUTY_MAX_CHARS
+# Forbidden shortcut trailer (legacy bug). Never emit cite-only leftovers.
+_SEE_ALSO_SHORTCUT_RE = re.compile(r";\s*see also\b.*$", re.IGNORECASE)
 
 
 @dataclass
@@ -136,29 +142,376 @@ def own_clause_text(text: str) -> str:
 
 
 def duty_phrase_from_subsection(sub: ScopedSubsection, max_chars: int = DUTY_MAX_CHARS) -> str:
-    """Allegation duty fragment: nearest list-intro parent + leaf duty when applicable."""
-    parents = parent_subsection_labels(sub.label)
-    intro = ""
-    if parents:
-        nearest = parents[-1]
-        parent = validate_subsection_cite(sub.code, f"{sub.code}{nearest}")
-        if parent:
-            candidate = own_clause_text(parent.text)
-            if candidate and (
-                candidate.rstrip().endswith(":")
-                or _is_list_intro_stub(candidate)
-                or len(candidate) <= 220
+    """Allegation duty fragment — leaf-only exact PDF text (contiguous in the leaf node).
+
+    We deliberately do NOT concatenate parent list-intro + leaf here, because that
+    combined string is rarely a contiguous substring of any single PDF node and
+    quote_verify then rewrites the line back to a bare leaf via
+    ``repair_allegation_text_from_store``. The DOH Baseline shape works best when
+    the drafted duty is an exact leaf phrase; promotion of bare-noun leaves to a
+    verb/gerund-led ancestor happens in ``_prefer_verb_led_for_draft`` for the
+    drafted line only — this helper stays leaf-only for chip / quote checks.
+    """
+    return duty_phrase_from_text(sub.text, max_chars=max_chars)
+
+
+# Statute duty phrases read naturally after "by having failed to" when they open with a
+# gerund (Adopting, Developing, Providing) or a common imperative verb (Provide, Ensure).
+# Bare noun openers (Management, Environmental, Staff, Personnel, Contracts) do not — we
+# still emit exact leaf text as a last resort, but promote to a verb-led ancestor when we
+# can and prefer verb-led siblings in the drafted line.
+_STATUTE_VERB_STARTERS = frozenset(
+    {
+        "adopt",
+        "address",
+        "adhere",
+        "administer",
+        "assess",
+        "assign",
+        "be",
+        "conduct",
+        "comply",
+        "develop",
+        "document",
+        "ensure",
+        "establish",
+        "evaluate",
+        "govern",
+        "have",
+        "implement",
+        "keep",
+        "make",
+        "maintain",
+        "manage",
+        "monitor",
+        "notify",
+        "obtain",
+        "orient",
+        "prepare",
+        "provide",
+        "protect",
+        "report",
+        "retaliate",
+        "review",
+        "safeguard",
+        "supervise",
+        "train",
+        "update",
+        "use",
+    }
+)
+
+
+_HANGING_DUTY_ENDINGS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "by",
+        "for",
+        "including",
+        "of",
+        "or",
+        "that",
+        "the",
+        "to",
+        "which",
+        "whose",
+        "with",
+    }
+)
+
+
+def _is_incomplete_duty_phrase(phrase: str) -> bool:
+    """True when a duty fragment trails off mid-clause (list intros, truncated cuts)."""
+    body = _strip_list_edge_punct(phrase or "")
+    if not body:
+        return True
+    last = body.split()[-1].lower().strip(".,;:()[]\"'")
+    return last in _HANGING_DUTY_ENDINGS
+
+
+def _is_topic_heading_duty(phrase: str) -> bool:
+    """Short noun/gerund headings that do not read after 'failed to' (e.g. Cleaning and disinfection)."""
+    body = _strip_list_edge_punct(phrase or "")
+    words = body.split()
+    if len(words) <= 4:
+        # Topic labels: "Hand hygiene", "Housekeeping functions", "Cleaning and disinfection"
+        return True
+    return False
+
+
+def _is_verb_led_duty(phrase: str) -> bool:
+    """True when the duty phrase opens with a gerund / imperative-verb form.
+
+    Reads well after "by having failed to". Rejects bare-noun openers, short topic
+    headings ("Cleaning and disinfection"), and hanging list intros ("… for", "… whose").
+    Accepts Baseline-style "not retaliate…" (exact WAC after stripping "must").
+    """
+    body = _strip_list_edge_punct(phrase or "")
+    if not body or _is_incomplete_duty_phrase(body):
+        return False
+    if _is_topic_heading_duty(body):
+        # Still allow short imperatives: "Provide staffing", "Ensure safety"
+        m = re.match(r"^[\(\[\"'“”]*([A-Za-z][A-Za-z\-]*)", body)
+        if not m:
+            return False
+        first = m.group(1).lower()
+        return first in _STATUTE_VERB_STARTERS and not first.endswith("ing")
+    # Exact WAC "not retaliate against…" after ceremonial "must" strip
+    body = re.sub(r"^not\s+", "", body, count=1, flags=re.IGNORECASE)
+    m = re.match(r"^[\(\[\"'“”]*([A-Za-z][A-Za-z\-]*)", body)
+    if not m:
+        return False
+    first = m.group(1).lower()
+    if not first:
+        return False
+    if first.endswith("ing"):
+        return True
+    candidates = {first}
+    if first.endswith("es") and len(first) > 3:
+        candidates.add(first[:-2])  # addresses → address
+    if first.endswith("s") and len(first) > 2:
+        candidates.add(first[:-1])  # ensures → ensure
+    return bool(candidates & _STATUTE_VERB_STARTERS)
+
+
+def _complete_list_intro_duty(text: str) -> str:
+    """Strip hanging list-intro tails (' for:', ' whose:', ' including:') to a complete gerund clause.
+
+    The result remains a contiguous prefix of the source node text (sole-source safe).
+    Prefer ``_compose_list_intro_leaf_duty`` when a concrete leaf topic exists — stripping
+    ``for:`` alone drops the specific WAC item the allegation should cite.
+    """
+    body = normalize_statute_text(_clean(text))
+    if not body:
+        return ""
+    # Drop trailing relative/prepositional hangers that introduce nested children.
+    trimmed = re.sub(
+        r"\s+(?:for|whose|which|that|including|with|of|to)\s*:?\s*$",
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
+    trimmed = _strip_list_edge_punct(_strip_duty_leadins(trimmed))
+    if not trimmed or _is_incomplete_duty_phrase(trimmed):
+        return ""
+    if not _is_verb_led_duty(trimmed):
+        return ""
+    return trimmed
+
+
+def _is_hanging_list_intro(text: str) -> bool:
+    """True when text is a list opener that expects nested leaf topics (… for:)."""
+    body = normalize_statute_text(_clean(text))
+    if not body:
+        return False
+    if _is_list_intro_stub(body):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:for|whose|which|that|including)\s*:?\s*$",
+            body,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _compose_list_intro_leaf_duty(sub: ScopedSubsection) -> str:
+    """Exact WAC duty for a bare-noun leaf under a list intro (parent intro + leaf).
+
+    Matches Compare's Exact PDF Subsection Text, e.g.:
+      Developing written policies and procedures for: Management of staff …
+      not retaliate against any: Employee of the agency
+    Parent and leaf stay separate store nodes; the composed string is exact language
+    from both, joined the same way as ``subsection_display_text``. Never paraphrased.
+    """
+    leaf = _strip_list_edge_punct(normalize_statute_text(sub.text or ""))
+    if not leaf:
+        return ""
+    # Already a complete verb-led duty on the leaf itself — no parent join needed.
+    if _is_verb_led_duty(leaf) and not _is_incomplete_duty_phrase(leaf):
+        return ""
+    context = subsection_ancestor_context(sub)
+    if not context or not _is_hanging_list_intro(context):
+        return ""
+    display = _strip_list_edge_punct(subsection_display_text(sub))
+    # PDF list tails often end with "; and" / "; or" — not part of the duty content.
+    display = re.sub(r"(?:;?\s*(?:and|or))+$", "", display, flags=re.IGNORECASE).strip()
+    display = _strip_list_edge_punct(display)
+    if not display or display == leaf:
+        return ""
+    # Strip only ceremonial subject/modal prefixes; keep every remaining WAC word exact.
+    phrase = _strip_list_edge_punct(_strip_duty_leadins(display))
+    if not phrase:
+        return ""
+    if not _is_verb_led_duty(phrase) or _is_incomplete_duty_phrase(phrase):
+        return ""
+    return phrase
+
+
+def gerund_opener_to_infinitive(phrase: str) -> str:
+    """Fold a leading statute gerund to an infinitive so 'failed to …' reads as a sentence.
+
+    Keeps the remainder of the WAC wording exact (including 'for: …' leaf topics).
+    Developing → develop; Providing → provide; Ensuring → ensure.
+    """
+    body = (phrase or "").strip()
+    if not body:
+        return ""
+    m = re.match(r"^([A-Za-z][A-Za-z\-]*)ing\b(.*)$", body)
+    if not m:
+        return body
+    stem = m.group(1).lower()
+    rest = m.group(2)
+    candidates = [stem, f"{stem}e"]
+    # Doubled consonant gerunds: running → run (rare in WAC openers)
+    if len(stem) >= 2 and stem[-1] == stem[-2]:
+        candidates.append(stem[:-1])
+    for cand in candidates:
+        if cand in _STATUTE_VERB_STARTERS:
+            return f"{cand}{rest}"
+    return body
+
+
+def _promote_to_verb_led_parent(sub: ScopedSubsection) -> ScopedSubsection | None:
+    """Return nearest verb-led ancestor as a ScopedSubsection using completed intro text.
+
+    Used only when a bare-noun leaf would otherwise land in the drafted line. Prefer a
+    complete gerund clause from the ancestor (stripping hanging 'for'/'whose') so the
+    drafted line never ends mid-phrase. Text remains a contiguous prefix of the
+    ancestor PDF node.
+    """
+    for parent_label in reversed(parent_subsection_labels(sub.label)):
+        parent = validate_subsection_cite(sub.code, f"{sub.code}{parent_label}")
+        if not parent:
+            continue
+        candidate = _complete_list_intro_duty(own_clause_text(parent.text))
+        if not candidate:
+            # Fall back to full own-clause when it is already a complete verb-led duty.
+            intro = own_clause_text(parent.text)
+            candidate = _strip_list_edge_punct(
+                _strip_duty_leadins(normalize_statute_text(intro))
+            )
+            if (
+                not candidate
+                or len(candidate) < 20
+                or _is_incomplete_duty_phrase(candidate)
+                or not _is_verb_led_duty(candidate)
             ):
-                intro = _strip_list_edge_punct(candidate)
-    leaf = duty_phrase_from_text(sub.text, max_chars=max_chars)
-    if intro and leaf:
-        if leaf.lower().startswith(intro[: min(40, len(intro))].lower()):
-            return leaf
-        combined = f"{intro} {leaf}"
-        if len(combined) <= max(max_chars + 80, 260):
-            return _strip_list_edge_punct(combined)
-        return leaf
-    return leaf
+                continue
+        return ScopedSubsection(
+            code=parent.code,
+            label=parent.label,
+            hierarchy_path=parent.hierarchy_path,
+            title=parent.title,
+            text=candidate,
+            level=parent.level,
+            score=sub.score,
+            reason=sub.reason,
+            instrument=parent.instrument,
+        )
+    return None
+
+
+def _prefer_verb_led_for_draft(
+    subs: list[ScopedSubsection], count: int
+) -> list[ScopedSubsection]:
+    """Reorder chip selection into a draft-line ordering.
+
+    Only verb/gerund-led, complete duties enter the drafted line. Bare-noun leaves under
+    a list intro keep their leaf cite and use exact parent-intro + leaf WAC text (same as
+    Compare's Exact PDF view). Otherwise promote to a completed verb-led ancestor when
+    possible; never emit "failed to Management of…".
+    """
+    if count <= 0 or not subs:
+        return []
+    verb_led: list[ScopedSubsection] = []
+    bare: list[ScopedSubsection] = []
+    for s in subs:
+        # Skip hanging parent list intros when we can draft from their leaves instead.
+        if _is_hanging_list_intro(own_clause_text(s.text) or s.text):
+            # Still allow if no leaf composition is possible elsewhere — handled below
+            # only when this node itself has actionable nested text already in s.text.
+            if _looks_like_container(s.text) or _is_list_intro_stub(own_clause_text(s.text) or ""):
+                bare.append(s)
+                continue
+        composed = _compose_list_intro_leaf_duty(s)
+        if composed:
+            verb_led.append(
+                ScopedSubsection(
+                    code=s.code,
+                    label=s.label,
+                    hierarchy_path=s.hierarchy_path,
+                    title=s.title,
+                    text=composed,
+                    level=s.level,
+                    score=s.score,
+                    reason=s.reason,
+                    instrument=s.instrument,
+                )
+            )
+            continue
+        phrase = duty_phrase_from_text(s.text)
+        # Prefer completed list-intro text when the raw duty hangs (e.g. "… for").
+        if _is_incomplete_duty_phrase(phrase) or not phrase:
+            completed = _complete_list_intro_duty(own_clause_text(s.text) or s.text)
+            if completed and not _is_hanging_list_intro(own_clause_text(s.text) or ""):
+                verb_led.append(
+                    ScopedSubsection(
+                        code=s.code,
+                        label=s.label,
+                        hierarchy_path=s.hierarchy_path,
+                        title=s.title,
+                        text=completed,
+                        level=s.level,
+                        score=s.score,
+                        reason=s.reason,
+                        instrument=s.instrument,
+                    )
+                )
+                continue
+            if completed and _is_hanging_list_intro(own_clause_text(s.text) or ""):
+                # Parent-only "Developing written policies…" without a leaf topic —
+                # keep as last-resort bare; prefer sibling leaves when present.
+                bare.append(s)
+                continue
+        if _is_verb_led_duty(phrase) and not _is_incomplete_duty_phrase(phrase):
+            verb_led.append(s)
+        else:
+            bare.append(s)
+    if len(verb_led) >= count:
+        return verb_led[:count]
+    result: list[ScopedSubsection] = list(verb_led)
+    seen_labels: set[str] = {s.label for s in result if s.label}
+    for s in bare:
+        if len(result) >= count:
+            break
+        composed = _compose_list_intro_leaf_duty(s)
+        if composed and s.label and s.label not in seen_labels:
+            result.append(
+                ScopedSubsection(
+                    code=s.code,
+                    label=s.label,
+                    hierarchy_path=s.hierarchy_path,
+                    title=s.title,
+                    text=composed,
+                    level=s.level,
+                    score=s.score,
+                    reason=s.reason,
+                    instrument=s.instrument,
+                )
+            )
+            seen_labels.add(s.label)
+            continue
+        # Do not promote hanging parents into the line when leaves already cover them.
+        if _is_hanging_list_intro(own_clause_text(s.text) or s.text):
+            continue
+        promoted = _promote_to_verb_led_parent(s)
+        if promoted and promoted.label and promoted.label not in seen_labels:
+            result.append(promoted)
+            seen_labels.add(promoted.label)
+    return result[:count]
 
 
 def code_node_for(code: str) -> Any | None:
@@ -465,12 +818,23 @@ _ALLEGATION_WEAK_ROLE_TOKENS = frozenset(
         "providers",
     }
 )
-# Domain markers that disqualify a leaf when absent from the complaint (e.g. gambling on a meds case).
+# Domain markers that disqualify a leaf when absent from the complaint
+# (e.g. gambling / seclusion / OTP specialty leaves on an unrelated complaint).
 _ALLEGATION_DOMAIN_EXCLUSIVE_TOKENS = frozenset(
     {
         "gambling",
         "gambler",
         "casino",
+        "seclusion",
+        "restraint",
+        "restraints",
+        "opioid",
+        "methadone",
+        "buprenorphine",
+        "otp",
+        "withdrawal",
+        "detoxification",
+        "detox",
     }
 )
 
@@ -774,10 +1138,22 @@ def _apply_structural_anchors(
     ranked: list[ScopedSubsection],
     all_subs: list[ScopedSubsection],
 ) -> list[ScopedSubsection]:
-    """Ensure curated umbrella duties enter the include band when the code is selected."""
+    """Inject curated umbrella duties only when the code already shows complaint signal.
+
+    Avoids forcing 0410(1)(a–c) / similar umbrellas onto narrow complaints (e.g. meds-only)
+    merely because the parent code was authorized. Requires an existing moderate+ or
+    explicit-cite leaf among non-anchor ranks before anchors are injected.
+    """
     code = code.replace("WAC ", "").replace("RCW ", "").strip()
     wanted = STRUCTURAL_ANCHORS.get(code)
     if not wanted:
+        return ranked
+    has_signal = any(
+        s.reason == "explicit_cite" or float(s.score) >= MODERATE_SCORE
+        for s in ranked
+        if s.reason != "structural_anchor"
+    )
+    if not has_signal:
         return ranked
     by_label = {s.label: s for s in all_subs if s.label}
     by_key = {s.label or s.hierarchy_path: s for s in ranked}
@@ -825,9 +1201,10 @@ def subsection_passes_complaint_overlap(complaint: str, sub: ScopedSubsection) -
     """Require real complaint substance overlap — not boilerplate / weak role words alone.
 
     Prefer dropping a duty over citing an irrelevant leaf (e.g. problem-gambling staffing
-    on a medication-error complaint). Explicit cites and structural anchors skip this gate.
+    on a medication-error complaint). Explicit complaint cites skip this gate; structural
+    anchors must still share complaint substance so umbrella duties are not forced in.
     """
-    if sub.reason in {"explicit_cite", "structural_anchor"}:
+    if sub.reason == "explicit_cite":
         return True
     complaint_c = _clean(complaint)
     if not complaint_c:
@@ -846,6 +1223,9 @@ def subsection_passes_complaint_overlap(complaint: str, sub: ScopedSubsection) -
     if strong_shared:
         return True
     # Weak-role-only overlap is insufficient unless TF-IDF is already strong.
+    # Structural anchors never qualify on weak-role-only overlap.
+    if sub.reason == "structural_anchor":
+        return False
     return bool(shared) and float(sub.score) >= STRONG_SCORE
 
 
@@ -855,10 +1235,11 @@ def select_for_allegation(
     max_items: int = MAX_ALLEGATION_CLAUSES,
     complaint: str = "",
 ) -> list[ScopedSubsection]:
-    """Strong + upper-moderate + structural anchors for allegation/compare chips.
+    """Strong + upper-moderate + overlap-passing anchors for allegation/compare chips.
 
     Applies a complaint-overlap gate so weak TF-IDF leaves (gambling staffing, generic
     clinical supervision on a meds complaint, etc.) are dropped rather than forced in.
+    Structural anchors must pass the same substance gate (explicit cites still skip it).
     Floor keeps at most top-2 leaves that pass the gate and clear the low-confidence
     noise floor — never invents a 'best of the worst' cite with no substance overlap.
     Caps at max_items so investigators prune rather than face a full-code dump.
@@ -871,9 +1252,13 @@ def select_for_allegation(
         key = s.label or s.hierarchy_path
         if key in used:
             continue
-        if s.reason in {"explicit_cite", "structural_anchor"}:
+        if s.reason == "explicit_cite":
             selected.append(s)
             used.add(key)
+        elif s.reason == "structural_anchor":
+            if subsection_passes_complaint_overlap(complaint, s):
+                selected.append(s)
+                used.add(key)
         elif s.score >= ALLEGATION_INCLUDE_MIN and subsection_passes_complaint_overlap(
             complaint, s
         ):
@@ -889,6 +1274,8 @@ def select_for_allegation(
         if key in used:
             continue
         if s.score < LOW_CONFIDENCE_SCORE:
+            continue
+        if s.reason == "structural_anchor":
             continue
         if not subsection_passes_complaint_overlap(complaint, s):
             continue
@@ -1002,6 +1389,35 @@ def sentence_boundary_excerpt(text: str, max_chars: int = DEFAULT_QUOTE_MAX_CHAR
     return window.rstrip()
 
 
+def _strip_duty_leadins(body: str) -> str:
+    """Trim ceremonial subjects and modal helpers so duty text reads after 'failed to'.
+
+    Only removes a leading subject/modal prefix that is already present in the PDF
+    sentence — never rewrites the remaining statute words. Applied so Baseline
+    "by having failed to …" lines keep exact WAC duty language.
+    """
+    body = (body or "").strip()
+    # An/the/each agency or agency provider | administrator | facility | …
+    body = re.sub(
+        r"^(?:(?:an|the|each)\s+)?("
+        r"agency(?:\s+or\s+agency\s+provider)?(?:\s+administrator)?|"
+        r"administrator(?:\s+or\s+their\s+designee)?|"
+        r"facility|provider|rtf|licensee|behavioral health agency"
+        r")\s+",
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
+    body = re.sub(
+        r"^(must|shall|will|is required to|is responsible for|may)\s+",
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
+    # Do not strip a lone "ensure/ensuring" when it is the statute verb itself after failed to.
+    return body
+
+
 def duty_phrase_from_text(text: str, max_chars: int = DUTY_MAX_CHARS) -> str:
     """Short verbatim duty fragment suitable after 'by having failed to' (Baseline IR shape)."""
     raw = _clean(text)
@@ -1025,7 +1441,8 @@ def duty_phrase_from_text(text: str, max_chars: int = DUTY_MAX_CHARS) -> str:
 
     # Short leaf duties: keep the whole clause — do not mid-cut at DUTY_MAX
     if normalized and not _looks_like_container(raw) and len(normalized) <= max(max_chars, 300):
-        phrase = sanitize_for_outer_quotes(normalized)
+        body = _strip_duty_leadins(normalized)
+        phrase = sanitize_for_outer_quotes(body)
         phrase = re.sub(r"(?:;?\s*and)+$", "", phrase, flags=re.IGNORECASE)
         return _strip_list_edge_punct(phrase)
     # Prefer the first concrete lettered item inside a container parent
@@ -1037,23 +1454,7 @@ def duty_phrase_from_text(text: str, max_chars: int = DUTY_MAX_CHARS) -> str:
         )
         if item and len(item.group(2).split()) >= 3:
             raw = item.group(2).strip()
-    body = re.sub(r"\s+", " ", raw).strip()
-    body = re.sub(
-        r"^(the\s+)?("
-        r"agency(\s+administrator)?|administrator(\s+or\s+their\s+designee)?|"
-        r"facility|provider|rtf|licensee|behavioral health agency"
-        r")\s+",
-        "",
-        body,
-        flags=re.IGNORECASE,
-    )
-    body = re.sub(
-        r"^(must|shall|will|is required to|is responsible for|may)\s+",
-        "",
-        body,
-        flags=re.IGNORECASE,
-    )
-    body = re.sub(r"^(ensure|ensuring)\s+", "", body, flags=re.IGNORECASE)
+    body = _strip_duty_leadins(re.sub(r"\s+", " ", raw).strip())
     # Stop before the next nested subsection marker inside the same blob
     cut = re.search(r"\s\([A-Za-z0-9]+\)\s", body)
     if cut and cut.start() >= 24:
@@ -1072,9 +1473,16 @@ def _strip_list_edge_punct(text: str) -> str:
 
 
 def normalize_allegation_line(text: str) -> str:
-    """Baseline IR allegation shape: no quotation marks; clean clause punctuation."""
+    """Baseline IR allegation shape: no quotation marks; clean clause punctuation.
+
+    Also strips the forbidden legacy "; see also (labels)" shortcut trailer — that
+    path must never survive into Compare/Report.
+    """
     out = (text or "").replace('"', "").replace("“", "").replace("”", "").replace("„", "")
     out = re.sub(r"\s+", " ", out).strip()
+    # Forbidden shortcut: cite-only leftovers after a truncated first duty
+    out = _SEE_ALSO_SHORTCUT_RE.sub("", out).strip()
+    out = re.sub(r"\bsee also\b.*$", "", out, flags=re.IGNORECASE).strip()
     # Legacy drafts used "A potential violation…" — Baseline / blank IR omit the leading A.
     out = re.sub(r"^A\s+potential\s+violation\b", "Potential violation", out, flags=re.IGNORECASE)
     # Collapse doubled / mixed list punctuation from PDF list items + allegation joiners
@@ -1102,14 +1510,32 @@ def exact_quotes_from_subsections(
     max_quotes: int = MAX_DUTY_CLAUSES,
     max_chars: int = DUTY_MAX_CHARS,
 ) -> list[tuple[str, str]]:
-    """Return (label, short exact PDF duty phrase) pairs — never full subsection dumps."""
+    """Return (label, short exact PDF duty phrase) pairs — never full subsection dumps.
+
+    Two-word bare-noun leaves like "Hand hygiene" / "Resident hygiene" pass the
+    word-count floor so infection-control style codes can still surface specific
+    labeled duties alongside a promoted verb-led parent.
+    """
     out: list[tuple[str, str]] = []
     for s in subs:
         body = _clean(s.text)
-        if len(body.split()) < 4:
+        if len(body.split()) < 2:
             continue
-        quote = duty_phrase_from_subsection(s, max_chars=max_chars)
-        if len(quote.split()) < 3:
+        quote = _duty_phrase_for_option(s)
+        if not quote:
+            # Prefer a completed list-intro when the stored text hangs ("… for:").
+            completed = _complete_list_intro_duty(own_clause_text(s.text) or s.text)
+            if completed:
+                quote = completed
+            else:
+                quote = duty_phrase_from_subsection(s, max_chars=max_chars)
+        if len(quote.split()) < 2:
+            continue
+        if _is_incomplete_duty_phrase(quote):
+            continue
+        # Draft-line callers pass already-preferred subs; still refuse bare topic headings
+        # that cannot follow "failed to" unless they are true imperatives.
+        if not _is_verb_led_duty(quote):
             continue
         out.append((s.label, quote))
         if len(out) >= max_quotes:
@@ -1131,6 +1557,8 @@ class AllegationDraft:
     match_reason: str
     match_score: float
     low_confidence: bool
+    # Optional duties for Compare checkboxes (strong→moderate); start with top 2 included.
+    duty_options: list[dict[str, Any]] = field(default_factory=list)
 
     # Tuple-unpacking compatibility for older callers: text, cites = draft
     def __iter__(self):
@@ -1138,142 +1566,243 @@ class AllegationDraft:
         yield self.cites
 
 
-def draft_allegation_from_source(
+def _score_band(score: float) -> str:
+    if float(score) >= STRONG_SCORE:
+        return "strong"
+    if float(score) >= MODERATE_SCORE:
+        return "moderate"
+    return "weak"
+
+
+def _duty_phrase_for_option(sub: ScopedSubsection) -> str:
+    """Exact duty phrase for a draft/option leaf — list-intro + leaf when needed."""
+    # Resolve from the store node for this label so composed intros stay exact even
+    # when ``_prefer_verb_led_for_draft`` already rewrote ``sub.text``.
+    src = sub
+    if sub.label:
+        store_sub = validate_subsection_cite(sub.code, f"{sub.code}{sub.label}")
+        if store_sub:
+            src = store_sub
+    composed = _compose_list_intro_leaf_duty(src)
+    if composed:
+        return composed
+
+    # Promoted / rewritten draft text on ``sub`` (contiguous prefix of the store node).
+    drafted = _strip_list_edge_punct(normalize_statute_text(sub.text or ""))
+    store_body = normalize_statute_text(src.text or "")
+    if (
+        drafted
+        and _is_verb_led_duty(drafted)
+        and not _is_incomplete_duty_phrase(drafted)
+        and drafted.lower() in store_body.lower()
+    ):
+        return drafted
+
+    # Hanging parent list intros: only the completed verb clause (no bare "for:").
+    if _is_hanging_list_intro(own_clause_text(src.text) or src.text):
+        completed = _complete_list_intro_duty(own_clause_text(src.text) or src.text)
+        if completed and _is_verb_led_duty(completed) and not _is_incomplete_duty_phrase(completed):
+            return completed
+        return ""
+
+    completed = _complete_list_intro_duty(own_clause_text(src.text) or src.text)
+    if completed and _is_verb_led_duty(completed) and not _is_incomplete_duty_phrase(completed):
+        return completed
+    phrase = duty_phrase_from_subsection(src, max_chars=DUTY_MAX_CHARS)
+    if phrase and _is_verb_led_duty(phrase) and not _is_incomplete_duty_phrase(phrase):
+        return phrase
+    return ""
+
+
+def compose_allegation_from_duties(
     code: str,
     title: str,
-    complaint: str,
+    duties: list[tuple[str, str]],
     *,
-    max_subs: int = MAX_ALLEGATION_CLAUSES,
-    relevant: list[ScopedSubsection] | None = None,
     preferred_connector: str | None = None,
-) -> AllegationDraft:
-    """Build a DOH-shaped allegation from ranked PDF duty phrases.
+) -> str:
+    """Compose a Baseline allegation line from (label, exact_duty_phrase) pairs.
 
-    Includes strong + upper-moderate subsections (see select_for_allegation) so
-    investigators can prune — not a full-code dump. Shape:
-      Potential violation of WAC {code}, {title}, by having failed to (1)(a) …; and (2) ….
+    Duty phrases stay exact PDF wording (list-intro + leaf when needed). After
+    ``having failed to`` / ``failing to``, a leading gerund is folded to an
+    infinitive so the line reads as a sentence (Developing → develop).
     """
     code = code.replace("WAC ", "").replace("RCW ", "").strip()
     prefix = cite_prefix(code)
     connector = (preferred_connector or "having failed to").strip().lower()
     if connector not in {"having failed to", "failing to", "not", "violating"}:
         connector = "having failed to"
-    if relevant is None:
-        ranked = score_relevant_subsections(
-            complaint, code, max_items=max(max_subs, MAX_RANKED_SUBSECTIONS)
-        )
-        relevant = select_for_allegation(ranked, max_items=max_subs, complaint=complaint)
-    else:
-        relevant = select_for_allegation(
-            list(relevant), max_items=max_subs, complaint=complaint
-        )
-
     clean_title = _clean(title).replace("—", " - ").replace("–", " - ")
-    # Keep title short in the allegation line
     if len(clean_title) > 80:
         clean_title = clean_title[:77].rstrip() + "…"
     opener = f"Potential violation of {prefix} {code}, {clean_title}"
+    fold_infinitive = connector in {"having failed to", "failing to"}
 
-    # No complaint-aligned duties under this code — prefer empty cites over irrelevant leaves.
-    if not relevant:
+    parts: list[str] = []
+    for label, phrase in duties:
+        quote = _strip_list_edge_punct(phrase or "")
+        if not quote:
+            continue
+        if fold_infinitive:
+            quote = gerund_opener_to_infinitive(quote)
+        cite = f"{label} " if label else ""
+        frag = f"{cite}{quote}".strip()
+        parts.append(frag if not parts else f"and {frag}")
+    if not parts:
+        return f"{opener}, as applied to the reported concern in the complaint intake."
+    return _allegation_without_quotes(f"{opener}, by {connector} {'; '.join(parts)}.")
+
+
+def allegation_has_shortcut(text: str) -> bool:
+    """True when a draft used the forbidden cite-only / see-also shortcut."""
+    body = text or ""
+    if _SEE_ALSO_SHORTCUT_RE.search(body):
+        return True
+    return bool(re.search(r"\bsee also\b", body, flags=re.IGNORECASE))
+
+
+def build_allegation_duty_options(
+    code: str,
+    selection: list[ScopedSubsection],
+    *,
+    start_count: int = MAX_ALLEGATION_DRAFT_CLAUSES,
+) -> list[dict[str, Any]]:
+    """Strong→moderate duty options for Compare: start with top ``start_count`` included.
+
+    Returns dicts: cite, label, duty_phrase, score, band, included_by_default.
+    """
+    code = code.replace("WAC ", "").replace("RCW ", "").strip()
+    prefix = cite_prefix(code)
+    eligible = _prefer_verb_led_for_draft(
+        selection, count=max(len(selection), start_count, MAX_ALLEGATION_CLAUSES)
+    )
+    # Strongest first for the starting pair; keep relative score order.
+    eligible_sorted = sorted(
+        eligible,
+        key=lambda s: (-float(s.score), 0 if _score_band(s.score) == "strong" else 1, s.label or ""),
+    )
+    options: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for s in eligible_sorted:
+        phrase = _duty_phrase_for_option(s)
+        if not phrase:
+            continue
+        label = s.label or ""
+        key = label or s.hierarchy_path
+        if key in seen:
+            continue
+        seen.add(key)
+        cite = f"{prefix} {code}{label}" if label else f"{prefix} {code}"
+        options.append(
+            {
+                "cite": cite,
+                "label": label,
+                "duty_phrase": phrase,
+                "score": round(float(s.score), 4),
+                "band": _score_band(s.score),
+                "included_by_default": len(options) < start_count,
+            }
+        )
+        if len(options) >= MAX_ALLEGATION_CLAUSES:
+            break
+    return options
+
+
+def draft_allegation_from_source(
+    code: str,
+    title: str,
+    complaint: str,
+    *,
+    max_subs: int = MAX_ALLEGATION_DRAFT_CLAUSES,
+    relevant: list[ScopedSubsection] | None = None,
+    preferred_connector: str | None = None,
+) -> AllegationDraft:
+    """Build a DOH-shaped allegation from ranked PDF duty phrases.
+
+    Starts with up to ``max_subs`` labeled duties (default 2 — strongest first).
+    ``duty_options`` lists additional strong/moderate duties investigators can add
+    in Compare. ``cites`` keeps the wider chip selection. Shape:
+      Potential violation of WAC {code}, {title}, by having failed to (1)(a) …; and (2) ….
+    """
+    code = code.replace("WAC ", "").replace("RCW ", "").strip()
+    connector = (preferred_connector or "having failed to").strip().lower()
+    if connector not in {"having failed to", "failing to", "not", "violating"}:
+        connector = "having failed to"
+    if relevant is None:
+        ranked = score_relevant_subsections(
+            complaint, code, max_items=MAX_RANKED_SUBSECTIONS
+        )
+        selection = select_for_allegation(
+            ranked, max_items=MAX_ALLEGATION_CLAUSES, complaint=complaint
+        )
+    else:
+        selection = select_for_allegation(
+            list(relevant), max_items=MAX_ALLEGATION_CLAUSES, complaint=complaint
+        )
+
+    duty_options = build_allegation_duty_options(
+        code, selection, start_count=max_subs
+    )
+    included = [o for o in duty_options if o.get("included_by_default")]
+    if not included and duty_options:
+        included = duty_options[:max_subs]
+
+    def _cite_for_option(o: dict[str, Any]) -> str:
+        label = o.get("label") or ""
+        return f"{code}{label}" if label else code
+
+    cites: list[str] = []
+    seen_cites: set[str] = set()
+    for o in included + duty_options:
+        c = _cite_for_option(o)
+        if c and c not in seen_cites:
+            seen_cites.add(c)
+            cites.append(c)
+    # Also keep raw selection cites for chip coverage
+    for s in selection:
+        c = f"{code}{s.label}" if s.label else code
+        if c not in seen_cites:
+            seen_cites.add(c)
+            cites.append(c)
+    cites = cites[:MAX_ALLEGATION_CLAUSES]
+
+    top_score = max((s.score for s in selection), default=0.0)
+    top_reason = selection[0].reason if selection else "code_fallback"
+    if selection and selection[0].reason == "code_fallback":
+        top_reason = "code_fallback"
+    low_confidence = top_reason == "code_fallback" or top_score < LOW_CONFIDENCE_SCORE
+
+    if not selection:
         return AllegationDraft(
-            text=f"{opener}, as applied to the reported concern in the complaint intake.",
+            text=compose_allegation_from_duties(code, title, [], preferred_connector=connector),
             cites=[],
             match_reason="code_fallback",
             match_score=0.0,
             low_confidence=True,
+            duty_options=[],
         )
 
-    # Shorter duty phrases when many cites so the line stays editable, not a wall of text
-    per_quote = DUTY_MAX_CHARS if len(relevant) <= 3 else max(72, DUTY_MAX_CHARS - 20 * (len(relevant) - 3))
-    quotes = exact_quotes_from_subsections(relevant, max_quotes=max_subs, max_chars=per_quote)
-    cites = [f"{code}{s.label}" if s.label else code for s in relevant[:max_subs]]
-
-    top_score = max((s.score for s in relevant), default=0.0)
-    top_reason = relevant[0].reason if relevant else "code_fallback"
-    if relevant and relevant[0].reason == "code_fallback":
-        top_reason = "code_fallback"
-    low_confidence = top_reason == "code_fallback" or top_score < LOW_CONFIDENCE_SCORE
-
-    if not quotes:
-        # Prefer the closest ranked subsection text before falling back to the whole code body.
-        low_confidence = True
-        top_reason = relevant[0].reason if relevant else "code_fallback"
-        top_score = max((s.score for s in relevant), default=0.0)
-        snippet = ""
-        cite_label = ""
-        if relevant:
-            snippet = duty_phrase_from_subsection(relevant[0], max_chars=DUTY_MAX_CHARS)
-            cite_label = relevant[0].label or ""
-            if not cites:
-                cites = [f"{code}{s.label}" if s.label else code for s in relevant[:max_subs]]
-        if not snippet:
-            node = code_node_for(code)
-            snippet = duty_phrase_from_text(node.text if node else "", max_chars=DUTY_MAX_CHARS)
-            top_reason = "code_fallback"
-            top_score = 0.0
-        if snippet:
-            cite0 = f"{cite_label} " if cite_label else ""
-            text = _allegation_without_quotes(f"{opener}, by {connector} {cite0}{snippet}.").strip()
-        else:
-            text = f"{opener}, as applied to the reported concern in the complaint intake."
+    if not included:
         return AllegationDraft(
-            text=text,
+            text=compose_allegation_from_duties(code, title, [], preferred_connector=connector),
             cites=cites,
             match_reason=top_reason,
             match_score=top_score,
             low_confidence=True,
+            duty_options=duty_options,
         )
 
-    parts: list[str] = []
-    for i, (label, quote) in enumerate(quotes):
-        cite = f"{label} " if label else ""
-        fragment = f"{cite}{_strip_list_edge_punct(quote)}".strip()
-        if not _strip_list_edge_punct(quote):
-            continue
-        if i == 0 or not parts:
-            parts.append(fragment)
-        else:
-            parts.append(f"and {fragment}")
-    if not parts:
-        text = f"{opener}, as applied to the reported concern in the complaint intake."
-    else:
-        body = "; ".join(parts)
-        text = _allegation_without_quotes(f"{opener}, by {connector} {body}.")
-
-    # Prefer shortening duties over dropping cites — investigators prune excess chips.
-    if len(text) > ALLEGATION_TARGET_CHARS and len(quotes) > 2:
-        short_parts: list[str] = []
-        for i, (label, quote) in enumerate(quotes):
-            cite = f"{label} " if label else ""
-            short = duty_phrase_from_text(quote, max_chars=64)
-            frag = f"{cite}{_strip_list_edge_punct(short)}".strip()
-            if not frag:
-                continue
-            short_parts.append(frag if i == 0 else f"and {frag}")
-        if short_parts:
-            text = _allegation_without_quotes(
-                f"{opener}, by {connector} {'; '.join(short_parts)}."
-            )
-    if len(text) > ALLEGATION_TARGET_CHARS + 120 and len(quotes) > 1:
-        # Cite list with first duty only — keep all cites on the draft object for chips
-        label0, quote0 = quotes[0]
-        cite0 = f"{label0} " if label0 else ""
-        short = duty_phrase_from_text(quote0, max_chars=90)
-        also = "; ".join(lab for lab, _ in quotes[1:] if lab)
-        if also:
-            text = _allegation_without_quotes(
-                f"{opener}, by {connector} {cite0}{short}; see also {also}."
-            )
-        else:
-            text = _allegation_without_quotes(f"{opener}, by {connector} {cite0}{short}.").strip()
-
+    duties = [(str(o.get("label") or ""), str(o.get("duty_phrase") or "")) for o in included]
+    text = compose_allegation_from_duties(
+        code, title, duties, preferred_connector=connector
+    )
     return AllegationDraft(
         text=text,
-        cites=cites[:max_subs],
+        cites=cites,
         match_reason=top_reason,
         match_score=top_score,
         low_confidence=low_confidence,
+        duty_options=duty_options,
     )
 
 
@@ -1301,7 +1830,10 @@ def regulatory_framework_entries(
     for code, title in codes:
         code = code.replace("WAC ", "").replace("RCW ", "").strip()
         prefix = cite_prefix(code)
-        relevant = score_relevant_subsections(complaint, code, max_items=max_subs_per_code)
+        ranked = score_relevant_subsections(complaint, code, max_items=max(14, max_subs_per_code))
+        relevant = select_for_allegation(
+            ranked, max_items=max_subs_per_code, complaint=complaint
+        )
         subsections = [
             {
                 "cite": f"{prefix} {code}{s.label}" if s.label else f"{prefix} {code}",
