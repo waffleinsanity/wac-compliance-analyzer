@@ -1,6 +1,6 @@
 /**
- * Local-only demo catalog for Intake → Compare → Report without shipping.
- * Admin + localhost only. Narratives avoid Cat 3/4 PII patterns.
+ * Admin demo catalog for Intake → Compare → Report (local and Railway).
+ * Narratives avoid Cat 3/4 PII patterns. Not ingested by template_corpus.
  *
  * Tuned for the current allegation system + local PDF subsection corpus:
  * - Starts with the two strongest exact-WAC duties

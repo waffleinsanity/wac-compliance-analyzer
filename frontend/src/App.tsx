@@ -38,7 +38,7 @@ import { InvestigationReportEditor } from './components/InvestigationReportEdito
 import { PrivacyGate } from './components/PrivacyGate'
 import { RelatedStatutesPanel } from './components/RelatedStatutesPanel'
 import { ResizeHandle } from './components/ResizeHandle'
-import { isLocalDemoHost, LOCAL_DEMO_SCENARIOS } from './fixtures/localQuickDraft'
+import { LOCAL_DEMO_SCENARIOS } from './fixtures/localQuickDraft'
 import { ReviewStep } from './components/ReviewStep'
 import { StatuteSearchPanel } from './components/StatuteSearchPanel'
 import { WACSelectionPanel } from './components/WACSelectionPanel'
@@ -518,7 +518,7 @@ export default function App() {
                         onBlurScan={() => {
                           void scanPrivacy(text)
                         }}
-                        showLocalDemo={isLocalDemoHost() && userCanAdmin}
+                        showLocalDemo={userCanAdmin}
                         localDemoOptions={LOCAL_DEMO_SCENARIOS.map((d) => ({
                           id: d.id,
                           label: d.label,

@@ -441,12 +441,12 @@ export function useInvestigationWorkspace(opts: {
 
   const applyLocalQuickDraft = (demoId = localDemoId) => {
     if (!canAccessAdmin(userRole, isAdmin)) {
-      setError('Local demo is limited to administrator accounts.')
+      setError('Demo scenarios are limited to administrator accounts.')
       return
     }
     const d = getLocalDemoById(demoId)
     if (!d) {
-      setError('Select a local demo scenario first.')
+      setError('Select a demo scenario first.')
       return
     }
     setLocalDemoId(d.id)
@@ -468,12 +468,12 @@ export function useInvestigationWorkspace(opts: {
 
   const loadLocalDemoAndDraft = (demoId = localDemoId) => {
     if (!canAccessAdmin(userRole, isAdmin)) {
-      setError('Local demo is limited to administrator accounts.')
+      setError('Demo scenarios are limited to administrator accounts.')
       return
     }
     const d = getLocalDemoById(demoId)
     if (!d) {
-      setError('Select a local demo scenario first.')
+      setError('Select a demo scenario first.')
       return
     }
     applyLocalQuickDraft(d.id)

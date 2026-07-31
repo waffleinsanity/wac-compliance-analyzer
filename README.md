@@ -67,9 +67,9 @@ npm run dev
 
 Or run `start-frontend.bat`. Open http://localhost:5173
 
-### Local demos (admin + localhost)
+### Demo scenarios (admin)
 
-On http://localhost:5173, signed-in **admins** get a demo picker on Intake:
+Signed-in **admins** get a demo picker on Intake (local and Railway):
 
 1. Choose a scenario → **Load demo** (fills complaint, metadata, approved WACs), or
 2. **Load & draft** (same, then runs Investigate into Compare).
