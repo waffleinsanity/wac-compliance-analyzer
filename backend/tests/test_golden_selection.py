@@ -92,10 +92,13 @@ def test_investigate_goldens_quote_and_selection(client):
         assert data.get("quote_integrity", {}).get("ok") is True, (
             f"{case['id']}: {data.get('quote_integrity')}"
         )
-        by_code = {a["wac_code"]: a for a in data.get("allegations") or []}
+        by_code = {_code(a["wac_code"]): a for a in data.get("allegations") or []}
         for code, expected in (case.get("expected_selected_labels") or {}).items():
-            a = by_code.get(code)
-            assert a, f"{case['id']}: missing allegation for {code}"
+            a = by_code.get(_code(code))
+            assert a, (
+                f"{case['id']}: missing allegation for {code}; "
+                f"got {sorted(by_code)}"
+            )
             matched = set(a.get("matched_subsections") or [])
             # matched_subsections may be full cites or labels — accept either
             label_hits = {

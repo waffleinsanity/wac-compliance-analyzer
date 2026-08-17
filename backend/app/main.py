@@ -28,6 +28,8 @@ _BOT_UA = (
 
 def _background_corpus_startup() -> None:
     """Heavy Chroma/PDF ingest must not block /api/health (Railway healthchecks)."""
+    if wac_store.ready:
+        return
     db = SessionLocal()
     try:
         result = wac_store.ingest(db, force=False)

@@ -373,14 +373,20 @@ def build_investigation_report(
         pass
 
     selected_nodes = wac_store.resolve_selection(selected_wacs)
-    code_nodes = [n for n in selected_nodes if n.level == "code"]
-    if not code_nodes:
-        parents: dict[str, Any] = {}
-        for n in selected_nodes:
-            parent = wac_store.code_index.get(n.code)
-            if parent:
-                parents[parent.id] = parent
-        code_nodes = list(parents.values())
+    # Always promote subsection hits to their code parent so a mixed selection
+    # cannot drop an approved code (parent fallback used to run only when *no*
+    # code-level nodes were present).
+    by_id: dict[str, Any] = {}
+    for n in selected_nodes:
+        if n.level == "code":
+            by_id[n.id] = n
+            continue
+        parent = wac_store.code_index.get(n.code) or wac_store.code_index.get(
+            (n.code or "").replace("WAC ", "").replace("RCW ", "").strip()
+        )
+        if parent:
+            by_id[parent.id] = parent
+    code_nodes = list(by_id.values())
 
     def _sort_key(n: Any) -> tuple:
         ch = n.chapter

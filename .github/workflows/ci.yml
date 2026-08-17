@@ -37,7 +37,9 @@ jobs:
             tests/test_investigate_api.py \
             tests/test_application_strength_bands.py \
             tests/test_ir_docx_format.py \
-            tests/test_privacy_gate.py
+            tests/test_privacy_gate.py \
+            tests/test_guidance_corpus.py \
+            tests/test_sod_draft.py
 
   frontend-check:
     runs-on: ubuntu-latest

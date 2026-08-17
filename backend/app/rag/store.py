@@ -42,8 +42,8 @@ class WACStore:
         rows = db.query(WACCodeRecord).all()
         if not rows:
             return 0
-        self.nodes.clear()
-        self.code_index.clear()
+        nodes: dict[str, WACNode] = {}
+        code_index: dict[str, WACNode] = {}
         for row in rows:
             phrases = []
             try:
@@ -67,10 +67,13 @@ class WACStore:
                 source_file=row.source_file,
                 trigger_phrases=phrases,
             )
-            self.nodes[node.id] = node
+            nodes[node.id] = node
             if node.level == "code":
-                self.code_index[node.code] = node
-                self.code_index[node.id] = node
+                code_index[node.code] = node
+                code_index[node.id] = node
+        # Swap atomically so concurrent investigate calls never see an empty index.
+        self.nodes = nodes
+        self.code_index = code_index
         try:
             from app.services import wac_scope
 
