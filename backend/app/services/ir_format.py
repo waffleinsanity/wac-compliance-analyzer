@@ -46,6 +46,11 @@ def facility_header_lines(report: InvestigationReport) -> list[tuple[str, str]]:
     ]
 
 
+def investigation_type_line(report: InvestigationReport) -> str:
+    """Blank IR investigation-type dropdown value (subtitle)."""
+    return (getattr(report, "subtitle", None) or "").strip()
+
+
 def allegation_body_text(allegation: InvestigationAllegation | dict[str, Any]) -> str:
     """Normalized allegation sentence without leading 'Allegation:' prefix."""
     if isinstance(allegation, InvestigationAllegation):
@@ -94,6 +99,9 @@ def conclusion_export_lines(report: InvestigationReport) -> list[str]:
 def build_report_plain_text(report: InvestigationReport) -> str:
     """Plain-text IR matching blank DOCX section order (no letterhead, no RF appendix)."""
     lines: list[str] = [TITLE]
+    inv_type = investigation_type_line(report)
+    if inv_type:
+        lines.append(inv_type)
     for label, value in facility_header_lines(report):
         lines.append(f"{label} {value}".rstrip())
     lines.extend(

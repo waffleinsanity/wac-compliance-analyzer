@@ -31,6 +31,22 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.07.31.1',
+    buildTag: '2026.07.31.1',
+    date: '2026-07-31',
+    title: 'IR demos, exact allegations, and easy Download',
+    summary:
+      'Admin demos seed blank-IR shell fields and match today’s product: full exact WAC duties, always-available Download DOCX, Report Edit dropdowns, and policy guidance under data/examples/policy_guidance/.',
+    highlights: [
+      'Twelve demos carry investigation type + licensing/federal priorities into the drafted IR and DOCX.',
+      'Allegations keep full PDF duty language — no "; see also" cite-list shortcuts or truncated duties.',
+      'Working-draft Download DOCX is always available; evidence attach accepts multiple files.',
+      'Report toolbar sits flush under Intake–Compare–Report; Edit dropdowns update the IR shell.',
+      'Core docs: blank IR template plus Peer Review / SOD / Enforcement / DPOC desk manuals in policy_guidance/.',
+    ],
+    areas: ['investigation', 'admin', 'platform'],
+  },
+  {
     id: '2026.07.22.2',
     buildTag: '2026.07.22.2',
     date: '2026-07-22',

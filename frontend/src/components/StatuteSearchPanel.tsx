@@ -17,6 +17,15 @@ type Props = {
   compact?: boolean
 }
 
+function reasonLabel(reason: string): string {
+  const r = (reason || '').toLowerCase()
+  if (r === 'explicit_cite') return 'Cited in complaint'
+  if (r === 'structural_anchor') return 'Structural duty'
+  if (r === 'lexical_overlap') return 'Duty overlap with complaint'
+  if (r === 'code_fallback') return 'Weak code-level match'
+  return reason || 'Matched'
+}
+
 export function StatuteSearchPanel({
   hits,
   busy,
@@ -45,8 +54,8 @@ export function StatuteSearchPanel({
     <div className="overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 px-2 py-2">
         <p className="max-w-2xl text-xs text-muted-foreground">
-          Rank local WAC/RCW language against this complaint to spot codes that may apply more
-          strongly than your current approvals. Research only — not authorization.
+          Same ranking as Compare drafts: find codes whose duties overlap this complaint, then
+          preview application strength. Research only — never authorization.
         </p>
         <button type="button" className="btn-outline btn-sm shrink-0" disabled={busy} onClick={onSearch}>
           {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Search className="mr-1 h-3.5 w-3.5" />}
@@ -56,9 +65,10 @@ export function StatuteSearchPanel({
       <div className={compact ? 'max-h-64 space-y-2 overflow-y-auto p-3' : 'max-h-[28rem] space-y-2 overflow-y-auto p-3'}>
         {!hits.length && (
           <p className="px-1 py-8 text-center text-xs leading-relaxed text-muted-foreground">
-            Search the local PDF corpus for additional WAC/RCW that may better fit the allegation.
-            Each hit shows Strong / Moderate / Weak / No clear application — the same scale used on
-            Compare. Add a hit only if it becomes an officially approved code for this case.
+            Search ranks WAC/RCW by the duties that would surface if you approved the code — not
+            random corpus neighbors. Each hit shows Strong / Moderate / Weak / None on the Compare
+            scale, plus the best overlapping duty. Add only if it becomes an officially approved
+            code for this case.
           </p>
         )}
         {hits.map((hit) => {
@@ -68,6 +78,7 @@ export function StatuteSearchPanel({
             score: hit.score,
             reason: hit.reason,
             source: 'research',
+            scoreBasis: hit.score_basis || 'ir_leaf',
           })
           const betterFit = Boolean(
             weakestApproved && isStrongerThan(strength, weakestApproved) && !selected,
@@ -89,6 +100,10 @@ export function StatuteSearchPanel({
                     />
                   </div>
                   <div className="truncate text-xs text-muted-foreground">{hit.title}</div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">
+                    {reasonLabel(hit.reason)}
+                    {hit.duty_label ? ` · ${hit.duty_label}` : ''}
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button

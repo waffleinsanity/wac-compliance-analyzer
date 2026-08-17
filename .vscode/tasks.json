@@ -2,6 +2,22 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "WACMAKR: Launch.bat (full stack)",
+      "type": "shell",
+      "command": "cmd /c Launch.bat",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {}
+      },
+      "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      }
+    },
+    {
       "label": "WACMAKR: start UI",
       "type": "npm",
       "script": "dev",
@@ -107,11 +123,27 @@
     {
       "label": "WACMAKR: ensure stack (heal)",
       "type": "shell",
-      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/ensure-stack.ps1\" -OpenBrowser",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/ensure-stack.ps1\"",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
-        "panel": "shared"
+        "panel": "shared",
+        "focus": false
+      }
+    },
+    {
+      "label": "WACMAKR: Run (heal + browser)",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/ensure-stack.ps1\" -OpenBrowser",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
       }
     }
   ]

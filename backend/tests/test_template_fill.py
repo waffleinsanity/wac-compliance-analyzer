@@ -27,7 +27,7 @@ from app.services.template_fill import (
 def _sample_report(**kwargs) -> InvestigationReport:
     base = dict(
         title="Investigative Report",
-        subtitle="State Investigation",
+        subtitle="On-site State Investigation",
         investigation_date="07/23/2026",
         case_id="2025-11777",
         facility_info=FacilityInfo(

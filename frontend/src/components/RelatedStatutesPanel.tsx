@@ -17,6 +17,15 @@ type Props = {
   comparisons?: WACComparison[]
 }
 
+function reasonLabel(reason: string): string {
+  const r = (reason || '').toLowerCase()
+  if (r === 'explicit_cite') return 'Cited in complaint'
+  if (r === 'structural_anchor') return 'Structural duty'
+  if (r === 'lexical_overlap') return 'Duty overlap'
+  if (r === 'code_fallback') return 'Weak match'
+  return reason || 'Matched'
+}
+
 export function RelatedStatutesPanel({
   suggestions,
   busy,
@@ -57,7 +66,7 @@ export function RelatedStatutesPanel({
             Research — find stronger fits
           </div>
           <p className="mt-0.5 pl-5 text-[11px] text-muted-foreground">
-            Related WAC/RCW with application strength · not authorization
+            IR-ranked related codes · not authorization
           </p>
         </div>
       </button>
@@ -77,14 +86,14 @@ export function RelatedStatutesPanel({
           <div className="max-h-56 min-h-0 space-y-2 overflow-y-auto p-2">
             {!hasSelection && (
               <p className="p-2 text-xs text-muted-foreground">
-                Select approved WACs first. Then suggest related codes that may apply more strongly to
-                the complaint.
+                Select approved WACs first. Then suggest related codes whose duties overlap this
+                complaint more strongly.
               </p>
             )}
             {hasSelection && !suggestions.length && !busy && (
               <p className="p-2 text-xs text-muted-foreground">
-                Suggest related WAC/RCW to compare application strength (Strong / Moderate / Weak /
-                None) against your current approvals.
+                Suggest related codes ranked by the same duty-overlap logic as Compare — not random
+                neighbors of your current approvals.
               </p>
             )}
             {suggestions.map((hit) => {
@@ -94,6 +103,7 @@ export function RelatedStatutesPanel({
                 score: hit.score,
                 reason: hit.reason,
                 source: 'research',
+                scoreBasis: hit.score_basis || 'ir_leaf',
               })
               const betterFit = Boolean(
                 weakestApproved && isStrongerThan(strength, weakestApproved) && !selected,
@@ -114,6 +124,10 @@ export function RelatedStatutesPanel({
                         />
                       </div>
                       <div className="truncate text-[11px] text-muted-foreground">{hit.title}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {reasonLabel(hit.reason)}
+                        {hit.duty_label ? ` · ${hit.duty_label}` : ''}
+                      </div>
                     </div>
                     <button
                       type="button"

@@ -63,7 +63,11 @@ from app.services.case_store import (
     unit_analytics,
 )
 from app.services.defensibility import check_defensibility
-from app.services.docx_export import build_deficiency_cite_sheet, build_investigation_docx
+from app.services.docx_export import (
+    build_deficiency_cite_sheet,
+    build_investigation_docx,
+    build_sod_docx,
+)
 from app.services.investigation import build_investigation_report
 from app.services.audit import log_action
 from app.services.ir_learning import harvest_completed_ir
@@ -507,17 +511,17 @@ def rebuild_draft(
 
     case.complaint_text = _apply_privacy_to_complaint(case, case.complaint_text or "")
 
-    if case.current_report_json:
-        existing = report_from_json(case.current_report_json)
-        if existing:
-            save_snapshot(
-                db,
-                case,
-                existing,
-                user,
-                note="Auto-snapshot before rebuild (investigator edits may be overwritten)",
-            )
+    existing = report_from_json(case.current_report_json) if case.current_report_json else None
+    if existing:
+        save_snapshot(
+            db,
+            case,
+            existing,
+            user,
+            note="Auto-snapshot before rebuild (investigator edits may be overwritten)",
+        )
 
+    prior_sod = existing.sod if existing else None
     report = build_investigation_report(
         db=db,
         complaint_text=case.complaint_text,
@@ -528,6 +532,14 @@ def rebuild_draft(
         facility_address=case.facility_address or None,
         credential_number=case.credential_number or None,
     )
+    # Preserve investigator SOD edits (findings / Based on) across rebuild when cites match.
+    if prior_sod:
+        from app.services.ir_format import sync_report_text
+        from app.services.sod_draft import attach_sod_to_report
+
+        report.sod = prior_sod
+        attach_sod_to_report(report)
+        sync_report_text(report)
     save_snapshot(db, case, report, user, note="Rebuilt from approved WACs")
     db.refresh(case)
     return _detail(db, case)
@@ -740,6 +752,29 @@ def export_docx(
     )
 
 
+@router.post("/{case_id}/export/sod")
+def export_sod(
+    case_id: int,
+    acknowledge_gaps: bool = False,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Facility-facing Statement of Deficiency DOCX (POC column blank)."""
+    require_role_export(user)
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    assert_case_not_trashed(case, action="exporting")
+    report = _report_for_export(case)
+    _ = acknowledge_gaps
+    content = build_sod_docx(report)
+    filename = f"SOD_{case.case_id_label or case.id}.docx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/{case_id}/export/pack")
 def export_pack(
     case_id: int,
@@ -747,15 +782,37 @@ def export_pack(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Multi-doc pack: IR DOCX + deficiency cite sheet."""
+    """Multi-doc pack: IR DOCX + SOD DOCX (+ working cite sheet)."""
     require_role_export(user)
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
     assert_case_not_trashed(case, action="exporting")
     report = _report_for_export(case)
     selected = parse_json_list(case.approved_wac_ids) or [a.wac_code for a in report.allegations]
+    from app.schemas import InvestigationAllegation
+
+    # Quote-check Compare cite-first drafts (IR categorical lines are not statute quotes).
+    cite_allegations = [
+        InvestigationAllegation(
+            wac_code=c.code,
+            wac_title=c.title,
+            allegation_text=c.allegation_draft,
+            matched_subsections=list(c.matched_subsections or []),
+        )
+        for c in (report.comparisons or [])
+        if (c.allegation_draft or "").strip()
+    ]
     verify_report_quotes(
-        allegations=report.allegations,
+        allegations=cite_allegations
+        or [
+            InvestigationAllegation(
+                wac_code=a.wac_code,
+                wac_title=a.wac_title,
+                allegation_text=a.allegation_text,
+                matched_subsections=list(a.matched_subsections or []),
+            )
+            for a in (report.allegations or [])
+        ],
         regulatory_framework=report.regulatory_framework or [],
         evidentiary_examples=report.evidentiary_examples or [],
         selected_codes=selected or None,
@@ -764,18 +821,21 @@ def export_pack(
     _ = acknowledge_gaps
 
     ir = _export_ir_bytes(db, case, report)
+    sod_bytes = build_sod_docx(report)
     cites = build_deficiency_cite_sheet(report)
     _harvest_ir_style(db, case, report, user, trigger="export_pack")
     buf = BytesIO()
+    label = case.case_id_label or case.id
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"IR_{case.case_id_label or case.id}.docx", ir)
-        zf.writestr(f"Deficiency_Cite_Sheet_{case.case_id_label or case.id}.docx", cites)
+        zf.writestr(f"IR_{label}.docx", ir)
+        zf.writestr(f"SOD_{label}.docx", sod_bytes)
+        zf.writestr(f"Deficiency_Cite_Sheet_{label}.docx", cites)
     buf.seek(0)
     return StreamingResponse(
         buf,
         media_type="application/zip",
         headers={
-            "Content-Disposition": f'attachment; filename="case_{case.case_id_label or case.id}_pack.zip"'
+            "Content-Disposition": f'attachment; filename="case_{label}_pack.zip"'
         },
     )
 

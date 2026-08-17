@@ -203,6 +203,12 @@ def build_investigation_docx(
     _set_run_font(r, size_pt=SIZE_SECTION, bold=True, underline=True)
     _add_blank(doc, STYLE_BODY)
 
+    # Investigation type (blank content-control dropdown under title)
+    inv_type = (getattr(report, "subtitle", None) or "").strip()
+    if inv_type:
+        _add(doc, inv_type, STYLE_BODY, italic=True, center=True, size_pt=SIZE_BODY)
+        _add_blank(doc, STYLE_BODY)
+
     for label, value in facility_header_lines(report):
         _add_facility_line(doc, label, value)
 
@@ -268,7 +274,7 @@ def build_investigation_docx(
 
 
 def build_deficiency_cite_sheet(report: InvestigationReport | dict[str, Any]) -> bytes:
-    """Simple multi-doc pack companion: deficiency cite sheet from conclusions."""
+    """Working cite sheet (internal). Prefer build_sod_docx for facility-facing SOD."""
     if isinstance(report, InvestigationReport):
         data = report.model_dump()
     else:
@@ -290,22 +296,169 @@ def build_deficiency_cite_sheet(report: InvestigationReport | dict[str, Any]) ->
     doc.add_paragraph(f"Credential: {fi.get('credential_number') or '—'}")
     doc.add_paragraph()
 
-    substantiated = [
-        c
-        for c in (data.get("conclusions") or [])
-        if (c.get("result") or "") == "Substantiated"
-    ]
-    if not substantiated:
-        doc.add_paragraph("No substantiated conclusions in the current draft.")
-    else:
-        for c in substantiated:
+    sod = data.get("sod") or {}
+    defs = sod.get("deficiencies") or []
+    if defs:
+        for d in defs:
             bp = doc.add_paragraph()
-            br = bp.add_run(f"Cite: {c.get('wac_code') or ''}")
+            br = bp.add_run(f"Cite: {d.get('regulation_cite') or ''}")
             br.bold = True
-            doc.add_paragraph(c.get("allegation_text") or "")
-            doc.add_paragraph(c.get("deficiency_details") or "Deficiency details pending.")
+            doc.add_paragraph((d.get("based_on") or "")[:500])
             doc.add_paragraph()
+    else:
+        substantiated = [
+            c
+            for c in (data.get("conclusions") or [])
+            if "substantiated" in (c.get("result") or "").lower()
+        ]
+        if not substantiated:
+            doc.add_paragraph("No SOD deficiency blocks and no substantiated conclusions yet.")
+        else:
+            for c in substantiated:
+                bp = doc.add_paragraph()
+                br = bp.add_run(f"Cite: {c.get('wac_code') or ''}")
+                br.bold = True
+                doc.add_paragraph(c.get("allegation_text") or "")
+                doc.add_paragraph(c.get("deficiency_details") or "Deficiency details pending.")
+                doc.add_paragraph()
 
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
+    """Facility-facing Statement of Deficiency DOCX (POC column left blank).
+
+    Identifier key is intentionally omitted — never ship Patient/Staff maps to the facility.
+    """
+    if isinstance(report, InvestigationReport):
+        data = report.model_dump()
+    else:
+        data = report
+    sod = data.get("sod") or {}
+    fi = data.get("facility_info") or {}
+
+    doc = Document()
+    for section in doc.sections:
+        section.top_margin = Inches(0.75)
+        section.bottom_margin = Inches(0.75)
+        section.left_margin = Inches(0.75)
+        section.right_margin = Inches(0.75)
+
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    tr = title.add_run(sod.get("title") or "Statement of Deficiency")
+    tr.bold = True
+    tr.font.size = Pt(14)
+    tr.font.name = "Arial"
+
+    def _p(text: str, *, bold: bool = False) -> None:
+        para = doc.add_paragraph()
+        run = para.add_run(text)
+        run.font.size = Pt(12)
+        run.font.name = "Arial"
+        run.bold = bold
+
+    _p(f"Case/Intake Number: {sod.get('case_id') or data.get('case_id') or '—'}")
+    _p(f"Facility / Agency: {sod.get('facility_name') or fi.get('facility_address') or '—'}")
+    _p(f"Facility Address: {sod.get('facility_address') or fi.get('facility_address') or '—'}")
+    _p(f"Credential Number: {sod.get('credential_number') or fi.get('credential_number') or '—'}")
+    _p(f"Administrator: {sod.get('administrator') or '—'}")
+    _p(f"Inspection Type: {sod.get('inspection_type') or 'Investigation'}")
+    _p(
+        f"Date(s) of Investigation: "
+        f"{sod.get('investigation_dates') or fi.get('investigation_dates') or data.get('investigation_date') or '—'}"
+    )
+    _p(f"Investigator #: {sod.get('investigator_number') or '—'}")
+    poc = sod.get("poc_due_days") or 14
+    _p(
+        f"A written Plan of Correction is due within {poc} calendar days of receipt of this Statement of Deficiency."
+    )
+    doc.add_paragraph()
+
+    table = doc.add_table(rows=1, cols=3)
+    table.style = "Table Grid"
+    hdr = table.rows[0].cells
+    hdr[0].text = "Deficiency Number and Rule Reference"
+    hdr[1].text = "Findings"
+    hdr[2].text = "Plan of Correction"
+    for cell in hdr:
+        for paragraph in cell.paragraphs:
+            for run in paragraph.runs:
+                run.bold = True
+                run.font.size = Pt(11)
+                run.font.name = "Arial"
+
+    deficiencies = sod.get("deficiencies") or []
+    if not deficiencies:
+        row = table.add_row().cells
+        row[0].text = "—"
+        row[1].text = "No deficiency blocks drafted yet. Confirm Compare duties and complete findings."
+        row[2].text = ""
+    else:
+        for idx, d in enumerate(deficiencies, start=1):
+            row = table.add_row().cells
+            cite_parts = [
+                f"{idx}. {d.get('regulation_cite') or ''}",
+                (d.get("regulation_text") or "").strip(),
+            ]
+            row[0].text = "\n\n".join(p for p in cite_parts if p)
+            findings_parts = [
+                (d.get("based_on") or "").strip(),
+                (d.get("failure_to") or "").strip(),
+            ]
+            if d.get("reference"):
+                findings_parts.append(f"Reference: {d['reference']}")
+            items = d.get("items") or []
+            if items:
+                for it in items:
+                    findings_parts.append(f"Item #{it.get('number', 1)} – {it.get('title') or ''}")
+                    fins = it.get("findings") or []
+                    if fins:
+                        findings_parts.append("Findings included:")
+                        for n, f in enumerate(fins, start=1):
+                            findings_parts.append(f"{n}. {f.get('text') or ''}")
+            else:
+                fins = d.get("findings") or []
+                if fins:
+                    findings_parts.append("Findings included:")
+                    for n, f in enumerate(fins, start=1):
+                        method = (f.get("method") or "").strip()
+                        body = (f.get("text") or "").strip()
+                        findings_parts.append(f"{n}. {method + ': ' if method else ''}{body}")
+            row[1].text = "\n\n".join(p for p in findings_parts if p)
+            row[2].text = ""  # Facility-owned POC
+            for cell in row:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.name = "Arial"
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def build_sod_identifier_key(report: InvestigationReport | dict[str, Any]) -> bytes:
+    """Internal-only identifier key — do not include in facility-facing packs by default."""
+    if isinstance(report, InvestigationReport):
+        data = report.model_dump()
+    else:
+        data = report
+    sod = data.get("sod") or {}
+    doc = Document()
+    t = doc.add_paragraph()
+    r = t.add_run("SOD Identifier Key (INTERNAL — do not send to facility)")
+    r.bold = True
+    r.font.size = Pt(14)
+    for entry in sod.get("identifier_key") or []:
+        doc.add_paragraph(
+            f"{entry.get('kind') or 'Patient'} {entry.get('code') or ''}: "
+            f"{entry.get('description') or ''}"
+        )
+    if not (sod.get("identifier_key") or []):
+        doc.add_paragraph("No identifier mappings recorded yet.")
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()

@@ -59,11 +59,34 @@ def check_defensibility(
         wac = c.get("wac_code") or "?"
         if result in {"", "Pending Investigation"}:
             add(f"pending_conclusion:{wac}", "warn", f"Conclusion still pending for {wac}.")
-        if result == "Substantiated" and not (c.get("deficiency_details") or "").strip():
+        deficient = (
+            "deficient practice or condition cited" in result.lower()
+            and "no current" not in result.lower()
+        )
+        if deficient and not (c.get("deficiency_details") or "").strip():
             add(
                 f"substantiated_no_detail:{wac}",
                 "warn",
-                f"Substantiated without deficiency details for {wac}.",
+                f"Deficient practice cited without IR deficiency details for {wac}.",
+            )
+
+    sod = data.get("sod") or {}
+    sod_defs = sod.get("deficiencies") or []
+    if not sod_defs:
+        add("sod_empty", "warn", "Sister SOD has no deficiency blocks yet.")
+    else:
+        empty_findings = [
+            d.get("regulation_cite") or "?"
+            for d in sod_defs
+            if not (d.get("findings") or [])
+            and not any((it.get("findings") or []) for it in (d.get("items") or []))
+        ]
+        if empty_findings:
+            add(
+                "sod_findings_empty",
+                "warn",
+                f"SOD findings empty for: {', '.join(empty_findings[:5])}"
+                + ("…" if len(empty_findings) > 5 else ""),
             )
 
     qi = quote_integrity

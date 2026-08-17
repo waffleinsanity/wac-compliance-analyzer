@@ -2,90 +2,62 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "WACMAKR: Run",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/ensure-stack.ps1\" -OpenBrowser",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "WACMAKR: Full stack",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/ensure-stack.ps1\" -OpenBrowser",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "WACMAKR: Launch.bat (no debug)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "cmd /c Launch.bat",
+      "cwd": "${workspaceFolder}"
+    },
+    {
       "name": "WACMAKR: API (stable)",
-      "type": "node",
+      "type": "node-terminal",
       "request": "launch",
-      "runtimeExecutable": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
-      "runtimeArgs": [
-        "-m",
-        "uvicorn",
-        "app.main:app",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "8000"
-      ],
+      "command": "\"${workspaceFolder}/backend/.venv/Scripts/python.exe\" -m uvicorn app.main:app --host 127.0.0.1 --port 8000",
       "cwd": "${workspaceFolder}/backend",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/backend",
         "PYTHONUNBUFFERED": "1"
-      },
-      "console": "integratedTerminal",
-      "autoAttachChildProcesses": false
-    },
-    {
-      "name": "WACMAKR: API (reload)",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
-      "runtimeArgs": [
-        "-m",
-        "uvicorn",
-        "app.main:app",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "8000",
-        "--reload"
-      ],
-      "cwd": "${workspaceFolder}/backend",
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}/backend",
-        "PYTHONUNBUFFERED": "1"
-      },
-      "console": "integratedTerminal",
-      "autoAttachChildProcesses": false
-    },
-    {
-      "name": "WACMAKR: UI",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "npm.cmd",
-      "runtimeArgs": ["run", "dev", "--", "--host", "localhost", "--port", "5173"],
-      "cwd": "${workspaceFolder}/frontend",
-      "console": "integratedTerminal",
-      "autoAttachChildProcesses": false,
-      "serverReadyAction": {
-        "pattern": "Local:\\s+https?://[^\\s]+",
-        "uriFormat": "http://localhost:5173/login",
-        "action": "debugWithChrome"
       }
     },
     {
-      "name": "WACMAKR: UI (Chrome)",
-      "type": "chrome",
+      "name": "WACMAKR: API (reload)",
+      "type": "node-terminal",
       "request": "launch",
-      "url": "http://localhost:5173/login",
-      "webRoot": "${workspaceFolder}/frontend/src"
+      "command": "\"${workspaceFolder}/backend/.venv/Scripts/python.exe\" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload",
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend",
+        "PYTHONUNBUFFERED": "1"
+      }
+    },
+    {
+      "name": "WACMAKR: UI",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm.cmd run dev -- --host 0.0.0.0 --port 5173",
+      "cwd": "${workspaceFolder}/frontend"
     },
     {
       "name": "WACMAKR: Open app (browser)",
       "type": "chrome",
       "request": "launch",
       "url": "http://localhost:5173/login",
-      "webRoot": "${workspaceFolder}/frontend/src"
-    }
-  ],
-  "compounds": [
-    {
-      "name": "WACMAKR: Full stack",
-      "configurations": ["WACMAKR: API (stable)", "WACMAKR: UI", "WACMAKR: Open app (browser)"],
-      "stopAll": true,
-      "presentation": {
-        "order": 1,
-        "group": "WACMAKR",
-        "hidden": false
-      }
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "preLaunchTask": "WACMAKR: ensure stack (heal)"
     }
   ]
 }

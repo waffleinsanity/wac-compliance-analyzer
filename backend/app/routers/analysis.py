@@ -23,6 +23,10 @@ from app.services.documents import extract_text_from_bytes
 from app.services.investigation import build_investigation_report
 from app.services.pii_gate import ensure_clean_or_redact
 from app.services.quote_verify import verify_report_quotes
+from app.services.research_suggest import (
+    chapters_for_selection,
+    rank_research_suggestions,
+)
 from app.services.wac_scope import cite_prefix
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -46,9 +50,9 @@ async def extract_document(
     return {"filename": file.filename, "text": text, "characters": len(text)}
 
 
-def _hit_from_node(node, score: float, reason: str) -> StatuteHit:
+def _hit_from_suggestion(s) -> StatuteHit:
+    node = s.node
     text = (node.text or "").strip()
-    excerpt = text if len(text) <= 420 else text[:419].rstrip() + "…"
     instrument = cite_prefix(node.code)
     return StatuteHit(
         id=node.id,
@@ -58,10 +62,12 @@ def _hit_from_node(node, score: float, reason: str) -> StatuteHit:
         title=node.title or "",
         level=node.level,
         hierarchy_path=node.hierarchy_path,
-        score=round(float(score), 4),
-        reason=reason,
+        score=round(float(s.score), 4),
+        reason=s.reason,
         text=text,
-        excerpt=excerpt,
+        excerpt=s.excerpt or (text if len(text) <= 420 else text[:419].rstrip() + "…"),
+        score_basis=s.score_basis or "ir_leaf",
+        duty_label=s.duty_label or "",
     )
 
 
@@ -70,18 +76,21 @@ async def search_statutes(
     payload: StatuteSearchRequest,
     _: User = Depends(get_current_user),
 ):
-    """Full-corpus research RAG over local WAC + RCW PDFs (TF-IDF + Chroma blend)."""
+    """Optional research: corpus candidates re-scored with IR leaf/overlap ranking.
+
+    Discovery only — never authorizes codes. Strength uses the same Compare bands.
+    """
     if not payload.text.strip():
         raise HTTPException(status_code=400, detail="Complaint text is required")
     if not wac_store.ready:
         raise HTTPException(status_code=503, detail="Statute corpus is not loaded")
     exclude = {c.replace("WAC ", "").replace("RCW ", "") for c in payload.exclude_codes}
-    ranked = wac_store.corpus_search(
+    ranked = rank_research_suggestions(
         payload.text,
         top_k=max(1, min(payload.top_k, 50)),
         exclude_codes=exclude or None,
     )
-    hits = [_hit_from_node(n, s, reason) for n, s, reason in ranked]
+    hits = [_hit_from_suggestion(s) for s in ranked]
     preview = payload.text.strip()
     return StatuteSearchResponse(
         hits=hits,
@@ -95,45 +104,34 @@ async def suggest_related(
     payload: SuggestRelatedRequest,
     _: User = Depends(get_current_user),
 ):
-    """Suggest related WAC/RCW sections after approved selection (research only)."""
+    """Suggest related WAC/RCW after approved selection (research only).
+
+    Complaint-driven IR preview ranking; selected codes are excluded and only
+    provide soft chapter affinity — statute body is never pasted into the query.
+    """
     if not payload.selected_wacs:
         raise HTTPException(status_code=400, detail="Select at least one authorized WAC/RCW")
     if not wac_store.ready:
         raise HTTPException(status_code=503, detail="Statute corpus is not loaded")
+    if not payload.text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Complaint text is required to rank related codes against the allegation",
+        )
 
     selected_nodes = wac_store.resolve_selection(payload.selected_wacs)
     selected_codes = {
         n.code.replace("WAC ", "").replace("RCW ", "") for n in selected_nodes
     }
-    seed_parts = [payload.text.strip()]
-    for n in selected_nodes:
-        if n.level == "code":
-            seed_parts.append(f"{n.code} {n.title} {n.text[:800]}")
-    seed = "\n".join(p for p in seed_parts if p)
-    if not seed.strip():
-        raise HTTPException(status_code=400, detail="Need selected codes or complaint text")
-
-    ranked = wac_store.corpus_search(
-        seed,
+    preferred = chapters_for_selection(payload.selected_wacs)
+    ranked = rank_research_suggestions(
+        payload.text,
         top_k=max(1, min(payload.top_k, 40)),
         exclude_codes=selected_codes,
+        preferred_chapters=preferred or None,
     )
-    suggestions: list[StatuteHit] = []
-    seen_codes: set[str] = set()
-    for node, score, reason in ranked:
-        key = node.code
-        if node.level not in {"code", "primary", "secondary"}:
-            continue
-        if key in seen_codes and node.level != "code":
-            continue
-        if node.level == "code":
-            seen_codes.add(key)
-        suggestions.append(_hit_from_node(node, score, reason))
-        if len(suggestions) >= payload.top_k:
-            break
-
     return SuggestRelatedResponse(
-        suggestions=suggestions,
+        suggestions=[_hit_from_suggestion(s) for s in ranked],
         selected_count=len(selected_codes),
     )
 
@@ -198,7 +196,8 @@ def ingest(
 
 @router.get("/templates")
 def list_templates(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Show which example IR shell templates are loaded (phrasing only, not duty authority)."""
+    """Show which example IR shell templates + policy guidance are loaded."""
+    from app.services.guidance_corpus import guidance_stats
     from app.services.ir_learning import corpus_stats
     from app.services.template_corpus import load_template_corpus
 
@@ -210,21 +209,33 @@ def list_templates(_: User = Depends(get_current_user), db: Session = Depends(ge
         "codes_covered": sorted(corpus.by_code.keys()),
         "by_code_counts": {k: len(v) for k, v in sorted(corpus.by_code.items())},
         "learned": learned,
+        "guidance": guidance_stats(),
         "reload": "POST /api/templates/reload",
     }
 
 
 @router.post("/templates/reload")
 def reload_templates(_: User = Depends(get_admin_user)):
+    from app.services.guidance_corpus import reload_guidance_corpus
     from app.services.template_corpus import reload_corpus
 
     corpus = reload_corpus()
+    guidance = reload_guidance_corpus()
     return {
         "reloaded": True,
         "example_files": [e.source_file for e in corpus.examples],
         "allegation_templates": sum(len(v) for v in corpus.by_code.values()),
         "codes_covered": len(corpus.by_code),
+        "guidance_files": len(guidance.files),
     }
+
+
+@router.get("/guidance")
+def get_guidance(_: User = Depends(get_current_user)):
+    """Policy guidance corpus stats (structure/voice only — not statute authority)."""
+    from app.services.guidance_corpus import guidance_stats
+
+    return guidance_stats()
 
 
 @router.get("/health")

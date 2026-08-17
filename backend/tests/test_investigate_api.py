@@ -37,17 +37,14 @@ def test_investigate_assault_structure(client):
     assert data.get("quote_integrity", {}).get("ok") is True, data.get("quote_integrity")
 
     for a in data["allegations"]:
-        assert a["allegation_text"].lower().startswith(
+        # IR allegations are categorical (cite-first lives on Compare drafts / SOD).
+        assert not a["allegation_text"].lower().startswith(
             ("a potential violation", "potential violation")
         )
-        assert "by having failed to" in a["allegation_text"].lower() or "by failing to" in a[
-            "allegation_text"
-        ].lower() or '"' in a["allegation_text"]
         assert "investigator review" not in a["allegation_text"].lower()
         assert "see also" not in a["allegation_text"].lower()
         assert a.get("matched_subsections")
         assert a.get("match_reason")
-        assert a.get("quote_ok") is True
         assert "low_confidence" in a
         # Starting line uses ≤2 duties; optional pool may list more for Compare checkboxes.
         opts = a.get("duty_options") or []
@@ -55,6 +52,18 @@ def test_investigate_assault_structure(client):
             included = [o for o in opts if o.get("included_by_default")]
             assert 1 <= len(included) <= 2
             assert len(opts) >= len(included)
+
+    for c in data.get("comparisons") or []:
+        draft = (c.get("allegation_draft") or "").lower()
+        assert draft.startswith(("a potential violation", "potential violation"))
+        assert "by having failed to" in draft or "by failing to" in draft or '"' in draft
+
+    sod = data.get("sod") or {}
+    assert sod.get("deficiencies"), "sister SOD skeleton should be created with IR"
+    for d in sod["deficiencies"]:
+        assert d.get("regulation_cite")
+        assert d.get("regulation_text")
+        assert (d.get("based_on") or "").lower().startswith("based on")
 
     text = data["report_text"]
     assert text.startswith("Investigative Report")
@@ -71,7 +80,8 @@ def test_investigate_assault_structure(client):
     assert "Document Review" in text
     assert "Summary of Findings" in text
     assert "Conclusion/ Results of Investigation" in text
-    assert "The investigator found the facility" in text
+    assert "Concerning" in text
+    assert "Pending Investigation" in text
     assert "Actions:" in text
     assert "Regulatory Framework:" not in text
     process = data.get("investigative_process") or []
@@ -96,14 +106,14 @@ def test_investigate_confidentiality_includes_rcw(client):
     data = res.json()
     assert any(e["instrument"] == "RCW" for e in data["regulatory_framework"])
     for a in data["allegations"]:
-        # Baseline shape: unquoted duty language after subsection labels
+        # IR: categorical topics (no cite-first Potential violation…)
+        assert not a["allegation_text"].startswith("Potential violation")
         assert '"' not in a["allegation_text"]
-        assert (
-            "by having failed to" in a["allegation_text"].lower()
-            or "by failing to" in a["allegation_text"].lower()
-            or "as applied to the reported concern" in a["allegation_text"].lower()
-        )
-        assert a["allegation_text"].startswith("Potential violation")
+    for c in data.get("comparisons") or []:
+        draft = c.get("allegation_draft") or ""
+        assert draft.startswith("Potential violation")
+        assert '"' not in draft
+    assert data.get("sod", {}).get("deficiencies")
     assert data["quote_integrity"]["ok"] is True
 
 

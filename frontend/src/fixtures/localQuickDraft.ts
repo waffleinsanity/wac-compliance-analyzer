@@ -1,12 +1,15 @@
 /**
- * Admin demo catalog for Intake → Compare → Report (local and Railway).
+ * Admin demo catalog for Intake → Compare → Report (IR Download DOCX; local and Railway).
  * Narratives avoid Cat 3/4 PII patterns. Not ingested by template_corpus.
  *
- * Tuned for the current allegation system + local PDF subsection corpus:
- * - Starts with the two strongest exact-WAC duties
- * - Compare checkboxes add more strong/moderate duties
- * - List-intro leaves keep parent lead-in + leaf topic (e.g. 246-337-060)
- * - Selected codes are ones that actually have subsection trees in the store
+ * Tuned for the current Investigation Report product (2026-07-31):
+ * - Officially approved WAC multi-select drives the draft (suggestions never auto-authorize)
+ * - Allegations use full exact PDF duty language (Baseline shape; never "; see also" shortcuts)
+ * - Compare starts with the two strongest duties; checkboxes add more
+ * - Report Edit dropdowns (investigation type, priorities, actions) update the IR + Download
+ * - Working-draft Download DOCX is always available; evidence attach is multi-file optional
+ * - Blank IR shell: data/templates/5. Investigation report.docx
+ * - Peer / SOD policy guidance: data/examples/policy_guidance/ (desk manuals + samples)
  */
 
 export const CHOOSE_DEMO = 'Choose a demo…'
@@ -15,12 +18,16 @@ export type LocalDemoScenario = {
   id: string
   /** Short label for the Intake picker */
   label: string
-  /** What this scenario stresses in ranking / allegation drafting */
+  /** What this scenario stresses in ranking / allegation drafting / Report shell */
   focus: string
   case_id: string
   investigation_date: string
   facility_address: string
   credential_number: string
+  /** Blank IR investigation-type content control */
+  investigation_type: string
+  state_licensing_priority: string
+  federal_certification_priority: string
   selected_wacs: readonly string[]
   complaint: string
 }
@@ -29,15 +36,18 @@ const META = {
   investigation_date: '07/31/2026',
   facility_address: '123 Demo Behavioral Health Way, Olympia, WA 98501',
   credential_number: 'BHA.FS.61140707',
+  investigation_type: 'On-site State Investigation',
+  state_licensing_priority: 'C',
+  federal_certification_priority: 'Non-IJ Medium',
 } as const
 
-/** At least 10 variable scenarios spanning BHA, RTF, RCW, and weak-match paths. */
+/** At least 10 variable scenarios spanning BHA, RTF, RCW, weak-match, and Report shell fields. */
 export const LOCAL_DEMO_SCENARIOS: readonly LocalDemoScenario[] = [
   {
     id: 'assault_safety',
     label: '1 · Patient-to-patient assault / safety',
     focus:
-      '0410 admin + 0600 protect/sexual-harassment leaves; exact duties; Compare starts with top 2',
+      'Exact 0410/0600 duties (no see-also); top-2 Compare starters; On-site State IR shell + priorities for Download',
     case_id: '2026-DEMO-01',
     ...META,
     selected_wacs: [
@@ -57,9 +67,12 @@ The complainant reported that after the incident, staff delayed separating the p
     id: 'confidentiality_phi',
     label: '2 · PHI disclosure without consent',
     focus:
-      '0425 record system + 0600 confidentiality rights + RCW 71.05.020; exact duty phrasing',
+      'Exact 0425/0600 + RCW 71.05.020 duty language; privacy banner path; Off-site State shell fields',
     case_id: '2026-DEMO-02',
     ...META,
+    investigation_type: 'Off-site State Investigation',
+    state_licensing_priority: 'B',
+    federal_certification_priority: 'N/A',
     selected_wacs: [
       'WAC 246-341-0420',
       'WAC 246-341-0425',
@@ -74,10 +87,13 @@ The complaint states staff shared diagnosis, medication, and treatment appointme
     id: 'restraint_seclusion',
     label: '3 · Restraint / seclusion + governance',
     focus:
-      '337-110 restraint + 045 governance leaves; top-2 starters with optional duty checkboxes',
+      '337-110 + 045 governance leaves; Baseline gerund duties (adopting/providing); On-site State and Federal type',
     case_id: '2026-DEMO-03',
     ...META,
     credential_number: 'BHA.FS.61140821',
+    investigation_type: 'On-site State and Federal Investigation',
+    state_licensing_priority: 'A',
+    federal_certification_priority: 'Non-IJ High',
     selected_wacs: [
       'WAC 246-337-110',
       'WAC 246-337-075',
@@ -93,9 +109,12 @@ Governance failed at the RTF: no adopted policies were periodically reviewed or 
   {
     id: 'medication_errors',
     label: '4 · Medication management failures',
-    focus: '337-105 meds + 080 care + 050 personnel; exact labeled duties in Compare',
+    focus:
+      '337-105 meds + 080 care exact labeled duties; Edit priorities flow into Download DOCX; multi-file evidence optional',
     case_id: '2026-DEMO-04',
     ...META,
+    state_licensing_priority: 'B',
+    federal_certification_priority: 'Non-IJ Low',
     selected_wacs: [
       'WAC 246-337-105',
       'WAC 246-337-080',
@@ -109,7 +128,8 @@ Staff allegedly failed to document medication administration accurately, did not
   {
     id: 'assessment_isp',
     label: '5 · Missing assessment / ISP',
-    focus: '0640 clinical documentation + 0600 + 0410; exact WAC fragments after failed to',
+    focus:
+      '0640 clinical documentation + 0410 admin; full exact WAC fragments after failed to (never truncated cite lists)',
     case_id: '2026-DEMO-05',
     ...META,
     selected_wacs: [
@@ -124,10 +144,13 @@ Progress notes allegedly referenced treatment activities that were never tied to
   },
   {
     id: 'grievance_rights',
-    label: '6 · Rights / grievance process ignored',
-    focus: '0600 rights + 0605 complaint process; Compare duty checkboxes for extra leaves',
+    label: '6 · Rights / grievance + retaliation',
+    focus:
+      '0605 compose parent+leaf (not retaliate against any: Employee…); 0600 rights; exact WAC only — no see-also shortcuts',
     case_id: '2026-DEMO-06',
     ...META,
+    state_licensing_priority: 'A',
+    federal_certification_priority: 'Referral - Other',
     selected_wacs: [
       'WAC 246-341-0600',
       'WAC 246-341-0605',
@@ -136,16 +159,19 @@ Progress notes allegedly referenced treatment activities that were never tied to
     ],
     complaint: `The complainant alleged that when a patient attempted to file a grievance about staff mistreatment, agency staff discouraged the complaint, failed to provide written information about individual rights, and did not follow the agency complaint process timelines.
 
-The patient reportedly asked for a copy of rights materials and was told to wait. No grievance log entry was created. The complaint also alleged posted rights were outdated, staff were unfamiliar with the complaint procedure, and the agency did not protect confidentiality of treatment information when communicating about the grievance.`,
+The patient reportedly asked for a copy of rights materials and was told to wait. No grievance log entry was created. After an employee of the agency assisted the patient in contacting the department, the employee was retaliated against by the agency provider. The complaint also alleged posted rights were outdated, staff were unfamiliar with the complaint procedure, and the agency did not protect confidentiality of treatment information when communicating about the grievance.`,
   },
   {
     id: 'infection_environment',
     label: '7 · Infection control / environment',
     focus:
-      '337-060 list-intro + leaf (develop written policies… for: Management of staff…); top-2 + checkboxes',
+      '337-060 list-intro + leaf (developing/develop written policies… for: Management of staff…); exact composed duties',
     case_id: '2026-DEMO-07',
     ...META,
     credential_number: 'BHA.FS.61140903',
+    investigation_type: 'On-site Federal Investigation',
+    state_licensing_priority: 'C',
+    federal_certification_priority: 'Immediate Jeopardy (IJ)',
     selected_wacs: [
       'WAC 246-337-060',
       'WAC 246-337-120',
@@ -161,9 +187,12 @@ Staff allegedly lacked personal protective equipment on one weekend shift. Gover
   {
     id: 'qi_critical_incident',
     label: '8 · Quality improvement / critical incident',
-    focus: '337-048 QI + 0410 quality plan + 045 governance; exact verb-led duties',
+    focus:
+      '337-048 QI + 045 governance exact verb-led duties; working-draft Download without requiring evidence first',
     case_id: '2026-DEMO-08',
     ...META,
+    state_licensing_priority: 'B',
+    federal_certification_priority: 'Non-IJ High',
     selected_wacs: [
       'WAC 246-337-048',
       'WAC 246-341-0410',
@@ -177,9 +206,11 @@ The complainant alleged the administrator failed to maintain an internal quality
   {
     id: 'crisis_outreach',
     label: '9 · Crisis outreach response delay',
-    focus: '0903 crisis MH services + 0410 admin; labeled exact duties in the draft line',
+    focus:
+      '0903 crisis MH + 0410 admin labeled exact duties; Report Edit investigation type appears under IR title',
     case_id: '2026-DEMO-09',
     ...META,
+    investigation_type: 'On-site State Investigation',
     selected_wacs: [
       'WAC 246-341-0903',
       'WAC 246-341-0410',
@@ -193,10 +224,14 @@ Callers allegedly were given inconsistent information about response times. The 
   {
     id: 'otp_dosing',
     label: '10 · Opioid treatment program dosing',
-    focus: 'OTP 1000 + 0410/0420 admin-records; exact duty clauses, not paraphrases',
+    focus:
+      'OTP 1000 exact duty clauses; aligns with SOD OTP sample guidance in policy_guidance/; Federal investigation type',
     case_id: '2026-DEMO-10',
     ...META,
     credential_number: 'BHA.FS.61141015',
+    investigation_type: 'On-site Federal Investigation',
+    state_licensing_priority: 'A',
+    federal_certification_priority: 'Non-IJ Medium',
     selected_wacs: [
       'WAC 246-341-1000',
       'WAC 246-341-0410',
@@ -210,9 +245,12 @@ Staff allegedly failed to develop, maintain, and implement policies and procedur
   {
     id: 'youth_inpatient_rights',
     label: '11 · Youth inpatient rights / consent',
-    focus: '1124 clinical-record consent + 0600 rights + RCW 71.34; exact WAC/RCW language',
+    focus:
+      '1124 clinical-record consent + 0600 + RCW 71.34 exact language; blank IR shell fields for Download',
     case_id: '2026-DEMO-11',
     ...META,
+    state_licensing_priority: 'C',
+    federal_certification_priority: 'Adminstrative Review/Offsite Investigation',
     selected_wacs: [
       'WAC 246-341-1124',
       'WAC 246-341-0600',
@@ -226,9 +264,13 @@ Staff allegedly restricted family contact without documenting clinical justifica
   {
     id: 'weak_overlap',
     label: '12 · Weak overlap (low confidence)',
-    focus: 'Must stay low-confidence; no invented strong duties or long run-on allegation lines',
+    focus:
+      'Must stay low-confidence; no invented strong duties, no see-also cite lists, no long run-on allegation lines',
     case_id: '2026-DEMO-12',
     ...META,
+    investigation_type: 'Off-site State Investigation',
+    state_licensing_priority: 'N/A',
+    federal_certification_priority: 'No Action Necessary',
     selected_wacs: ['WAC 246-341-0600'],
     complaint: `The complainant reported dissatisfaction with cafeteria menu options, parking availability, and the color of the waiting-room chairs.
 

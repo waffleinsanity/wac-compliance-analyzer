@@ -7,8 +7,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 const catalog = {
   notes:
-    'Mirror of frontend/src/fixtures/localQuickDraft.ts — local admin demos for Intake→Compare→Report (exact WAC duties, top-2 starters + duty checkboxes). Not ingested by template_corpus.',
+    'Mirror of frontend/src/fixtures/localQuickDraft.ts — admin demos for Intake→Compare→Report. ' +
+    'Exact WAC duties (no see-also shortcuts), top-2 starters + duty checkboxes, blank IR shell fields ' +
+    '(investigation_type, priorities). Policy guidance under data/examples/policy_guidance/. ' +
+    'Not ingested by template_corpus.',
   updated: '2026-07-31',
+  core_documents: {
+    blank_ir: 'data/templates/5. Investigation report.docx',
+    baseline_allegations: 'data/examples/Baseline Allegations RTF.txt',
+    policy_guidance: 'data/examples/policy_guidance/',
+  },
   scenarios: LOCAL_DEMO_SCENARIOS.map((s) => ({ ...s })),
 }
 

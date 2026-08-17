@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowLeft,
   Building2,
@@ -32,7 +32,9 @@ import { normalizeAllegationLine, normalizeReportAllegations } from '../allegati
 import {
   FINDING_PHRASES,
   PROCESS_LABELS,
+  conclusionDeficiencyCited,
   findingPhraseToResult,
+  normalizeIrConclusion,
   packProcessFields,
   resultToFindingPhrase,
   unpackProcessFields,
@@ -50,6 +52,24 @@ import {
   parseActionsFields,
 } from '../irTemplateChoices'
 import { IrTemplatePicker } from './IrTemplatePicker'
+
+/** Map legacy / invalid subtitle values onto blank IR investigation-type choices. */
+function normalizeInvestigationType(value: string | null | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw || raw === CHOOSE_ITEM) return ''
+  if ((INVESTIGATION_TYPE_CHOICES as readonly string[]).includes(raw)) return raw
+  // Legacy schema default before On-site/Off-site choices existed
+  if (/^state investigation$/i.test(raw)) return 'On-site State Investigation'
+  if (/federal/i.test(raw) && /state/i.test(raw)) return 'On-site State and Federal Investigation'
+  if (/federal/i.test(raw)) return 'On-site Federal Investigation'
+  if (/off-?site/i.test(raw)) return 'Off-site State Investigation'
+  return raw
+}
+
+function selectOptionsWithCurrent(choices: readonly string[], current: string): string[] {
+  if (current && !choices.includes(current)) return [current, ...choices]
+  return [...choices]
+}
 
 function allegationAnchorId(wacCode: string) {
   return `allegation-${wacCode.replace(/[^\w.-]+/g, '_')}`
@@ -104,11 +124,13 @@ function AllegationBadge({ a }: { a: InvestigationAllegation }) {
 }
 
 function findingSelectClass(phrase: FindingPhrase) {
-  if (phrase === 'not in compliance')
+  if (phrase === 'Substantiated with deficient practice or condition cited')
     return 'border-rose-400/50 bg-rose-50 text-rose-900 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-100'
-  if (phrase === 'in compliance')
+  if (phrase === 'Not Substantiated')
     return 'border-emerald-400/50 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100'
-  return 'border-amber-400/50 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100'
+  if (phrase === 'Substantiated with no current deficient practice or condition cited')
+    return 'border-amber-400/50 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100'
+  return 'border-ink-300/60 bg-ink-50 text-ink-800 dark:border-ink-600 dark:bg-ink-900/40 dark:text-ink-100'
 }
 
 function displayFinding(phrase: FindingPhrase): string {
@@ -121,7 +143,7 @@ function buildPlainText(report: InvestigationReport): string {
   const { determination, referral } = parseActionsFields(report)
   const lines: string[] = [
     'Investigative Report',
-    report.subtitle || CHOOSE_ITEM,
+    normalizeInvestigationType(report.subtitle) || CHOOSE_ITEM,
     `Facility Address: ${fi.facility_address || ''}`,
     `Laboratory Director: ${fi.laboratory_director || 'N/A'}`,
     `CLIA Number: ${fi.clia_number || 'N/A'}`,
@@ -168,12 +190,11 @@ function buildPlainText(report: InvestigationReport): string {
   report.allegations.forEach((a, i) => {
     const c = byCode[a.wac_code]
     const result = c?.result || 'Pending Investigation'
-    const finding = displayFinding(resultToFindingPhrase(result))
+    const finding = displayFinding(normalizeIrConclusion(result))
     const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-    let line = `${i + 1}. Allegation: The investigator found the facility ${finding} with ${instrument} ${a.wac_code}`
-    if (a.wac_title) line += `, ${a.wac_title}`
-    line += '.'
-    if (c?.deficiency_details && finding === 'not in compliance') {
+    const topic = (a.wac_title || a.wac_code).split(/[—–-]/)[0].trim() || a.wac_code
+    let line = `${i + 1}. Allegation: Concerning ${topic} (${instrument} ${a.wac_code}): ${finding}.`
+    if (c?.deficiency_details && conclusionDeficiencyCited(result)) {
       line += ` ${c.deficiency_details}`
     }
     lines.push(line, '')
@@ -286,7 +307,10 @@ function DocumentPreview({
               aria-label="State Licensing Priority"
             >
               <option value="">{CHOOSE_ITEM}</option>
-              {STATE_LICENSING_PRIORITY_CHOICES.map((opt) => (
+              {selectOptionsWithCurrent(
+                STATE_LICENSING_PRIORITY_CHOICES,
+                fi.state_licensing_priority || '',
+              ).map((opt) => (
                 <option key={opt} value={opt}>
                   {opt}
                 </option>
@@ -307,7 +331,10 @@ function DocumentPreview({
               aria-label="Federal Certification Priority"
             >
               <option value="">{CHOOSE_ITEM}</option>
-              {FEDERAL_CERTIFICATION_PRIORITY_CHOICES.map((opt) => (
+              {selectOptionsWithCurrent(
+                FEDERAL_CERTIFICATION_PRIORITY_CHOICES,
+                fi.federal_certification_priority || '',
+              ).map((opt) => (
                 <option key={opt} value={opt}>
                   {opt}
                 </option>
@@ -334,12 +361,15 @@ function DocumentPreview({
             <p className="ir-body mb-4 text-center">
               <select
                 className="ir-inline-select text-center italic"
-                value={report.subtitle || ''}
-                onChange={(e) => patch({ subtitle: e.target.value })}
+                value={normalizeInvestigationType(report.subtitle)}
+                onChange={(e) => patch({ subtitle: normalizeInvestigationType(e.target.value) })}
                 aria-label="Investigation type"
               >
                 <option value="">{CHOOSE_ITEM}</option>
-                {INVESTIGATION_TYPE_CHOICES.map((opt) => (
+                {selectOptionsWithCurrent(
+                  INVESTIGATION_TYPE_CHOICES,
+                  normalizeInvestigationType(report.subtitle),
+                ).map((opt) => (
                   <option key={opt} value={opt}>
                     {opt}
                   </option>
@@ -348,7 +378,7 @@ function DocumentPreview({
             </p>
           ) : (
             <p className="ir-body mb-4 text-center italic text-ink-800">
-              {report.subtitle || CHOOSE_ITEM}
+              {normalizeInvestigationType(report.subtitle) || CHOOSE_ITEM}
             </p>
           )}
           <div className="mb-4 space-y-0">
@@ -416,17 +446,17 @@ function DocumentPreview({
                 const result = c?.result || 'Pending Investigation'
                 const finding = resultToFindingPhrase(result)
                 const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-                const title = a.wac_title ? `, ${a.wac_title}` : ''
+                const topic = (a.wac_title || a.wac_code).split(/[—–-]/)[0].trim() || a.wac_code
                 const extra =
-                  c?.deficiency_details && finding === 'not in compliance'
+                  c?.deficiency_details && conclusionDeficiencyCited(result)
                     ? ` ${c.deficiency_details}`
                     : ''
                 return (
                   <li key={`conc-preview-${a.wac_code}`} className="whitespace-pre-wrap">
-                    Allegation: The investigator found the facility{' '}
+                    Allegation: Concerning {topic} ({instrument} {a.wac_code}):{' '}
                     {editable && idx >= 0 ? (
                       <select
-                        className="ir-inline-select"
+                        className="ir-inline-select max-w-full"
                         value={finding}
                         aria-label={`Finding for ${a.wac_code}`}
                         onChange={(e) => {
@@ -436,7 +466,9 @@ function DocumentPreview({
                               ? {
                                   ...row,
                                   result: findingPhraseToResult(phrase),
-                                  deficiency_cited: phrase === 'not in compliance',
+                                  deficiency_cited: conclusionDeficiencyCited(
+                                    findingPhraseToResult(phrase),
+                                  ),
                                 }
                               : row,
                           )
@@ -452,9 +484,8 @@ function DocumentPreview({
                       </select>
                     ) : (
                       displayFinding(finding)
-                    )}{' '}
-                    with {instrument} {a.wac_code}
-                    {title}.{extra}
+                    )}
+                    .{extra}
                   </li>
                 )
               })}
@@ -521,7 +552,10 @@ export function InvestigationReportEditor({
   canEdit = true,
   canExport = true,
 }: Props) {
-  const [report, setReport] = useState(() => normalizeReportAllegations({ ...initial }))
+  const [report, setReport] = useState(() => {
+    const base = normalizeReportAllegations({ ...initial })
+    return { ...base, subtitle: normalizeInvestigationType(base.subtitle) }
+  })
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview')
   const [copied, setCopied] = useState(false)
   const [showFindings, setShowFindings] = useState(false)
@@ -530,14 +564,33 @@ export function InvestigationReportEditor({
   const [saving, setSaving] = useState(false)
   const [info, setInfo] = useState('')
   const [defensibility, setDefensibility] = useState<DefensibilityResult | null>(null)
+  // Ignore parent echo of our own onReportChange so Edit dropdowns are not snapped back.
+  const syncingFromParent = useRef(false)
+  const lastExternalKey = useRef('')
+  const externalKey = `${caseId ?? 'new'}|${initial.analysis_id ?? ''}|${initial.selected_count}|${(
+    initial.allegations || []
+  )
+    .map((a) => a.wac_code)
+    .join(',')}|${Math.round(initial.duration_ms || 0)}`
 
   useEffect(() => {
-    setReport(normalizeReportAllegations({ ...initial }))
+    if (externalKey === lastExternalKey.current) return
+    lastExternalKey.current = externalKey
+    syncingFromParent.current = true
+    const base = normalizeReportAllegations({
+      ...initial,
+      facility_info: { ...initial.facility_info },
+    })
+    setReport({ ...base, subtitle: normalizeInvestigationType(base.subtitle) })
     setExportError('')
     setInfo('')
-  }, [initial])
+  }, [externalKey, initial])
 
   useEffect(() => {
+    if (syncingFromParent.current) {
+      syncingFromParent.current = false
+      return
+    }
     onReportChange?.(report)
   }, [report, onReportChange])
 
@@ -599,16 +652,11 @@ export function InvestigationReportEditor({
   const updateConclusion = useCallback((index: number, patch: Partial<InvestigationConclusion>) => {
     setReport((prev) => {
       const conclusions = [...prev.conclusions]
-      conclusions[index] = { ...conclusions[index], ...patch }
-      if (patch.result === 'Substantiated') {
-        conclusions[index].deficiency_cited = true
-        if (!conclusions[index].deficiency_details) {
-          conclusions[index].deficiency_details = 'Substantiated with deficient practice or condition cited.'
-        }
+      const next = { ...conclusions[index], ...patch }
+      if (patch.result !== undefined && patch.deficiency_cited === undefined) {
+        next.deficiency_cited = conclusionDeficiencyCited(patch.result)
       }
-      if (patch.result && patch.result !== 'Substantiated') {
-        conclusions[index].deficiency_cited = false
-      }
+      conclusions[index] = next
       return { ...prev, conclusions }
     })
   }, [])
@@ -1066,11 +1114,19 @@ export function InvestigationReportEditor({
                 <label className="label">Investigation type</label>
                 <select
                   className="input"
-                  value={report.subtitle || ''}
-                  onChange={(e) => setReport((p) => ({ ...p, subtitle: e.target.value }))}
+                  value={normalizeInvestigationType(report.subtitle)}
+                  onChange={(e) =>
+                    setReport((p) => ({
+                      ...p,
+                      subtitle: normalizeInvestigationType(e.target.value),
+                    }))
+                  }
                 >
-                  <option value="">Choose an item.</option>
-                  {INVESTIGATION_TYPE_CHOICES.map((opt) => (
+                  <option value="">{CHOOSE_ITEM}</option>
+                  {selectOptionsWithCurrent(
+                    INVESTIGATION_TYPE_CHOICES,
+                    normalizeInvestigationType(report.subtitle),
+                  ).map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
@@ -1104,8 +1160,11 @@ export function InvestigationReportEditor({
                   value={report.facility_info.state_licensing_priority || ''}
                   onChange={(e) => updateFacility('state_licensing_priority', e.target.value)}
                 >
-                  <option value="">Choose an item.</option>
-                  {STATE_LICENSING_PRIORITY_CHOICES.map((opt) => (
+                  <option value="">{CHOOSE_ITEM}</option>
+                  {selectOptionsWithCurrent(
+                    STATE_LICENSING_PRIORITY_CHOICES,
+                    report.facility_info.state_licensing_priority || '',
+                  ).map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
@@ -1119,8 +1178,11 @@ export function InvestigationReportEditor({
                   value={report.facility_info.federal_certification_priority || ''}
                   onChange={(e) => updateFacility('federal_certification_priority', e.target.value)}
                 >
-                  <option value="">Choose an item.</option>
-                  {FEDERAL_CERTIFICATION_PRIORITY_CHOICES.map((opt) => (
+                  <option value="">{CHOOSE_ITEM}</option>
+                  {selectOptionsWithCurrent(
+                    FEDERAL_CERTIFICATION_PRIORITY_CHOICES,
+                    report.facility_info.federal_certification_priority || '',
+                  ).map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
@@ -1425,7 +1487,8 @@ export function InvestigationReportEditor({
               <FileCheck className="h-4 w-4 text-tide-600" /> Conclusion / Results of Investigation
             </h3>
             <p className="mb-4 font-sans text-xs text-ink-400">
-              Blank template finding menu: Choose an item., not in compliance, or in compliance.
+              IR Guidance outcomes: substantiated with / without deficient practice cited, or not
+              substantiated. Statute cites belong in the sister SOD.
             </p>
             <div className="space-y-4">
               {Object.entries(grouped).map(([category, items]) => (
@@ -1442,7 +1505,8 @@ export function InvestigationReportEditor({
                       const result = conclusion?.result || 'Pending Investigation'
                       const finding = resultToFindingPhrase(result)
                       const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-                      const title = (a.wac_title || '').replace(/[—–]/g, ' - ')
+                      const topic =
+                        (a.wac_title || a.wac_code).split(/[—–-]/)[0].trim() || a.wac_code
                       return (
                         <div
                           key={`conc-${a.wac_code}`}
@@ -1454,7 +1518,7 @@ export function InvestigationReportEditor({
                                 1}
                               . Allegation:
                             </span>{' '}
-                            The investigator found the facility{' '}
+                            Concerning {topic} ({instrument} {a.wac_code}):{' '}
                             <select
                               className={clsx(
                                 'mx-0.5 inline-block max-w-full rounded border px-1.5 py-0.5 font-serif text-sm font-semibold',
@@ -1466,9 +1530,10 @@ export function InvestigationReportEditor({
                               onChange={(e) => {
                                 if (idx < 0) return
                                 const phrase = e.target.value as FindingPhrase
+                                const nextResult = findingPhraseToResult(phrase)
                                 updateConclusion(idx, {
-                                  result: findingPhraseToResult(phrase),
-                                  deficiency_cited: phrase === 'not in compliance',
+                                  result: nextResult,
+                                  deficiency_cited: conclusionDeficiencyCited(nextResult),
                                 })
                               }}
                             >
@@ -1478,17 +1543,16 @@ export function InvestigationReportEditor({
                                   {opt}
                                 </option>
                               ))}
-                            </select>{' '}
-                            with {instrument} {a.wac_code}
-                            {title ? `, ${title}` : ''}.
+                            </select>
+                            .
                           </p>
-                          {finding === 'not in compliance' && idx >= 0 && (
+                          {conclusionDeficiencyCited(result) && idx >= 0 && (
                             <div className="mt-3">
-                              <label className="label">Deficiency details</label>
+                              <label className="label">Deficiency details (IR narrative)</label>
                               <input
                                 className="input"
                                 value={conclusion?.deficiency_details || ''}
-                                placeholder="Cited deficient practice or condition"
+                                placeholder="Optional note — full cite language lives in SOD"
                                 onChange={(e) =>
                                   updateConclusion(idx, {
                                     deficiency_details: e.target.value,
@@ -1513,7 +1577,8 @@ export function InvestigationReportEditor({
               <Pencil className="h-4 w-4 text-tide-600" /> Actions
             </h3>
             <p className="mb-3 font-sans text-xs text-ink-400">
-              Two blank-template menus: determination, then referral.
+              Determination and referral only — name SOD presence/absence; do not dump statute
+              citations here (they belong in the SOD).
             </p>
             <div className="grid gap-3 sm:grid-cols-1">
               {(() => {

@@ -38,6 +38,7 @@ import { InvestigationReportEditor } from './components/InvestigationReportEdito
 import { PrivacyGate } from './components/PrivacyGate'
 import { RelatedStatutesPanel } from './components/RelatedStatutesPanel'
 import { ResizeHandle } from './components/ResizeHandle'
+import { SodEditor } from './components/SodEditor'
 import { LOCAL_DEMO_SCENARIOS } from './fixtures/localQuickDraft'
 import { ReviewStep } from './components/ReviewStep'
 import { StatuteSearchPanel } from './components/StatuteSearchPanel'
@@ -64,6 +65,7 @@ export default function App() {
   const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [showCasesDrawer, setShowCasesDrawer] = useState(false)
   const [tab, setTab] = useState<MainTab>('analysis')
+  const [docSurface, setDocSurface] = useState<'ir' | 'sod'>('ir')
 
   const ws = useInvestigationWorkspace({
     userRole: user?.role,
@@ -535,8 +537,8 @@ export default function App() {
                             <span>
                               Optional research — find stronger WAC/RCW fits
                               <span className="mt-0.5 block text-xs font-normal text-ink-400">
-                                Shows Strong / Moderate / Weak / None application — same scale as Compare.
-                                Not authorization; does not replace left-rail approvals.
+                                Ranks codes by the same duty-overlap logic as Compare drafts (Strong /
+                                Moderate / Weak / None). Research only — not authorization.
                               </span>
                             </span>
                             <span className="text-xs text-ink-400 group-open:hidden">Show</span>
@@ -579,22 +581,65 @@ export default function App() {
                     />
                   )}
                   {step === 'report' && report && (
-                    <InvestigationReportEditor
-                      report={report}
-                      selectedWacs={selectedCodes}
-                      caseId={activeCaseId}
-                      caseDetail={caseDetail}
-                      onCaseRefresh={refreshCaseDetail}
-                      onReportChange={setReport}
-                      onRebuild={rebuildCaseDraft}
-                      onEnsureCase={async (reportPayload) => {
-                        const detail = await ensureCaseSaved(reportPayload)
-                        return detail.id
-                      }}
-                      onBack={() => setStep('review')}
-                      canEdit={userCanEdit}
-                      canExport={userCanExport}
-                    />
+                    <div className="flex min-h-0 flex-1 flex-col gap-3">
+                      <div className="flex flex-wrap gap-0 border-b border-ink-200 dark:border-ink-700">
+                        {(
+                          [
+                            ['ir', 'Investigation Report'],
+                            ['sod', 'Statement of Deficiencies'],
+                          ] as const
+                        ).map(([id, label]) => (
+                          <button
+                            key={id}
+                            type="button"
+                            className={clsx(
+                              'nav-pill',
+                              docSurface === id ? 'nav-pill-active' : 'nav-pill-idle',
+                            )}
+                            onClick={() => setDocSurface(id)}
+                          >
+                            {label}
+                            {id === 'sod' && (report.sod?.deficiencies?.length ?? 0) > 0 && (
+                              <span className="ml-1 font-mono text-[10px] text-ink-400">
+                                {report.sod!.deficiencies!.length}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      {docSurface === 'ir' ? (
+                        <InvestigationReportEditor
+                          report={report}
+                          selectedWacs={selectedCodes}
+                          caseId={activeCaseId}
+                          caseDetail={caseDetail}
+                          onCaseRefresh={refreshCaseDetail}
+                          onReportChange={setReport}
+                          onRebuild={rebuildCaseDraft}
+                          onEnsureCase={async (reportPayload) => {
+                            const detail = await ensureCaseSaved(reportPayload)
+                            return detail.id
+                          }}
+                          onBack={() => setStep('review')}
+                          canEdit={userCanEdit}
+                          canExport={userCanExport}
+                        />
+                      ) : (
+                        <SodEditor
+                          report={report}
+                          onReportChange={setReport}
+                          canEdit={userCanEdit}
+                          canExport={userCanExport}
+                          busy={busy}
+                          activeCaseId={activeCaseId}
+                          evidence={caseDetail?.evidence || []}
+                          onEnsureCase={async (reportPayload) => {
+                            const detail = await ensureCaseSaved(reportPayload)
+                            return detail.id
+                          }}
+                        />
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

@@ -4,17 +4,17 @@ Project-local swarm for the WAC Compliance Analyzer / **WACMAKR** Investigation 
 
 ## Product north star
 
-WACMAKR helps investigators draft DOH-style Investigation Reports from approved WAC/RCW selections and complaint text.
+WACMAKR helps investigators draft DOH-style **Investigation Report (IR)** and sister **Statement of Deficiencies (SOD)** packs from approved WAC/RCW selections and complaint text.
 
-**Assist scope:** Auto-draft **WAC/RCW-templated** portions only (allegation lines, Regulatory Framework, statute verification on Compare). **Human-owned:** investigation activity, evidentiary work, findings narrative, and any judgment that requires direct investigation.
+**Assist scope:** Auto-draft **WAC/RCW-templated** portions only (Compare cite-first duties, SOD regulation text, Regulatory Framework, statute verification). **Human-owned:** investigation activity, evidentiary work, findings narrative, SOD Findings included, and any judgment that requires direct investigation.
 
 **Invariants (non-negotiable):**
 
 1. Local PDFs under `data/source/` are the **sole authority** for subsection choice and statute quote text.
-2. Example DOCX under `data/examples/` / `data/templates/` shape **shell phrasing only** — never legal authority.
-3. User flow is **Intake → Compare → Report**. Legacy compliance-analyzer UX is secondary.
-4. LLM (Gemini/Ollama) stays **off the critical IR path** unless explicitly enriching scoped context (`LLM_FOR_INVESTIGATE` defaults false).
-5. Never invent statute text. Never commit secrets / `backend/.env`.
+2. Policy guidance under `data/examples/policy_guidance/` (`guidance_corpus`) shapes **structure, voice, and validation only** — never legal authority. Peer IR DOCX examples remain phrasing shells via `template_corpus`.
+3. User flow is **Intake → Compare → Documents** (IR | SOD sister drafts). Legacy compliance-analyzer UX is secondary.
+4. LLM (Gemini/Ollama) stays **off the critical cite path** unless explicitly enriching scoped context (`LLM_FOR_INVESTIGATE` defaults false).
+5. Never invent statute text. SOD identifier key is internal-only (never facility export). Never commit secrets / `backend/.env`.
 
 ## Master agent
 
@@ -55,11 +55,11 @@ Conflict priority (Master merge): sole-source PDF → IR-primary framing → Pri
 
 | Worker | Rule | Master-aligned goal | Owns (summary) |
 |--------|------|---------------------|----------------|
-| IR Drafting & Allegation | `worker-ir-drafting.mdc` | PDF-backed allegations + DOH IR draft/export | `investigation.py`, `wac_scope.py`, `quote_verify.py`, `ir_blank.py`, `template_corpus.py`, defensibility, docx export |
+| IR Drafting & Allegation | `worker-ir-drafting.mdc` | PDF-backed Compare duties + categorical IR + sister SOD | `investigation.py`, `sod_draft.py`, `sod_validate.py`, `guidance_corpus.py`, `wac_scope.py`, `quote_verify.py`, `ir_blank.py`, `template_corpus.py`, defensibility, docx export |
 | Statute Corpus & Ranking | `worker-statute-corpus.mdc` | Reliable PDF corpus + ranking for cites | parsers, `rag/store.py`, `data/source/`, ranking fixtures |
 | Investigator LLM & Prompts | `worker-investigator-llm.mdc` | Optional enrichment only; never sole-source | `investigator_llm.py`, `investigator_prompt.py`, LLM config |
 | Case Workspace & Review | `worker-case-review.mdc` | Save/resume/status/export for the IR flow | cases router/store, Cases/Review UI, status workflow, export pack |
-| Intake UX & Statute Selection | `worker-intake-ux.mdc` | IR-first Intake → Compare → Report UI | Complaint/WAC/Review stepper, statute panels, App shell rails |
+| Intake UX & Statute Selection | `worker-intake-ux.mdc` | IR-first Intake → Compare → Documents UI | Complaint/WAC/Review stepper, SodEditor, statute panels, App shell rails |
 | Privacy & PII Gate | `worker-privacy-pii.mdc` | Cat 3/4 warn → redact before persist/LLM | `pii_gate.py`, privacy router, PrivacyGate UI |
 | Identity, Roles & Admin | `worker-identity-admin.mdc` | Auth/roles that enable the IR workspace | auth/OAuth/permissions, admin users/inbox/audit |
 | Local DevEx & Launch | `worker-local-devex.mdc` | Healthy local stack for the IR workflow | Launch/setup bats, `.vscode` launch/tasks |

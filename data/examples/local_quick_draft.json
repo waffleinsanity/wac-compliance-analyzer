@@ -1,11 +1,14 @@
 {
   "id": "assault_safety",
   "label": "1 · Patient-to-patient assault / safety",
-  "focus": "0410 admin + 0600 protect/sexual-harassment leaves; exact duties; Compare starts with top 2",
+  "focus": "Exact 0410/0600 duties (no see-also); top-2 Compare starters; On-site State IR shell + priorities for Download",
   "case_id": "2026-DEMO-01",
   "investigation_date": "07/31/2026",
   "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
   "credential_number": "BHA.FS.61140707",
+  "investigation_type": "On-site State Investigation",
+  "state_licensing_priority": "C",
+  "federal_certification_priority": "Non-IJ Medium",
   "selected_wacs": [
     "WAC 246-341-0410",
     "WAC 246-341-0420",

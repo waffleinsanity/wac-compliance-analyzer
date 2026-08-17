@@ -71,10 +71,18 @@ Or run `start-frontend.bat`. Open http://localhost:5173
 
 Signed-in **admins** get a demo picker on Intake (local and Railway):
 
-1. Choose a scenario → **Load demo** (fills complaint, metadata, approved WACs), or
-2. **Load & draft** (same, then runs Investigate into Compare).
+1. Choose a scenario → **Load demo** (fills complaint, metadata, approved WACs, blank-IR shell fields), or
+2. **Load & draft** (same, then runs Investigate into Compare → Report with shell fields applied).
 
-Twelve scenarios live in `frontend/src/fixtures/localQuickDraft.ts` (mirrored in `data/examples/local_demo_catalog.json`). They are tuned for the current allegation system: exact WAC duty language, two starter clauses, and Compare duty checkboxes. Re-sync the JSON mirror with:
+Twelve scenarios live in `frontend/src/fixtures/localQuickDraft.ts` (mirrored in `data/examples/local_demo_catalog.json`). They exercise today’s IR product: exact WAC duty language (no `; see also` shortcuts), top-2 Compare starters + duty checkboxes, investigation type / priority dropdowns that flow into Download DOCX, and multi-file evidence attach. Core documents:
+
+| Role | Path |
+|------|------|
+| Blank IR shell | `data/templates/5. Investigation report.docx` |
+| Baseline allegation phrasing | `data/examples/Baseline Allegations RTF.txt` |
+| Peer / SOD / enforcement guidance | `data/examples/policy_guidance/` |
+
+Re-sync the JSON mirror with:
 
 ```bat
 npx --yes tsx scripts/export_local_demos.mjs

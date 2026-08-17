@@ -105,13 +105,44 @@ def blank_docx_path() -> Path:
 
 
 def conclusion_finding_phrase(result: str) -> str:
-    """Map editor result to blank-IR finding dropdown value (or empty = Choose an item.)."""
+    """Legacy blank-IR finding phrase (kept for older drafts). Prefer normalize_ir_conclusion."""
     r = (result or "").strip().lower()
     if r in {"substantiated", "out of compliance", "not in compliance"}:
         return "not in compliance"
     if r in {"unsubstantiated", "in compliance"}:
         return "in compliance"
     return ""
+
+
+def normalize_ir_conclusion(result: str) -> str:
+    """Map editor / legacy results onto IR Guidance conclusion options."""
+    from app.services.guidance_corpus import (
+        IR_CONCLUSION_NOT_SUBSTANTIATED,
+        IR_CONCLUSION_OPTIONS,
+        IR_CONCLUSION_SUBSTANTIATED_DEFICIENT,
+        IR_CONCLUSION_SUBSTANTIATED_NO_DEFICIENT,
+    )
+
+    r = (result or "").strip()
+    if r in IR_CONCLUSION_OPTIONS:
+        return r
+    low = r.lower()
+    if "no current deficient" in low:
+        return IR_CONCLUSION_SUBSTANTIATED_NO_DEFICIENT
+    if "deficient practice or condition cited" in low:
+        return IR_CONCLUSION_SUBSTANTIATED_DEFICIENT
+    if low in {"not substantiated", "unsubstantiated", "in compliance"}:
+        return IR_CONCLUSION_NOT_SUBSTANTIATED
+    if low in {"substantiated", "out of compliance", "not in compliance"}:
+        return IR_CONCLUSION_SUBSTANTIATED_DEFICIENT
+    if low in {"", "pending", "pending investigation", "choose an item."}:
+        return "Pending Investigation"
+    return r or "Pending Investigation"
+
+
+def conclusion_deficiency_cited(result: str) -> bool:
+    outcome = normalize_ir_conclusion(result).lower()
+    return "deficient practice or condition cited" in outcome and "no current" not in outcome
 
 
 def format_conclusion_line(
@@ -122,19 +153,17 @@ def format_conclusion_line(
     deficiency_details: str = "",
     instrument: str = "WAC",
 ) -> str:
+    """IR Guidance outcome line; WAC/RCW label is jurisdictional context (cites live in SOD)."""
     code = (wac_code or "").replace("WAC ", "").replace("RCW ", "").strip()
     prefix = "RCW" if code.startswith("71.") else instrument
     title = (wac_title or "").strip()
-    finding = conclusion_finding_phrase(result) or CHOOSE_ITEM
-    line = f"Allegation: The investigator found the facility {finding} with {prefix} {code}"
-    if title:
-        clean_title = title.replace("—", " - ").replace("–", " - ")
-        if len(clean_title) > 90:
-            clean_title = clean_title[:87].rstrip() + "…"
-        line += f", {clean_title}"
-    line += "."
+    topic = title.replace("—", " - ").replace("–", " - ").split(" - ")[0].strip() if title else code
+    if len(topic) > 90:
+        topic = topic[:87].rstrip() + "…"
+    outcome = normalize_ir_conclusion(result)
+    line = f"Allegation: Concerning {topic} ({prefix} {code}): {outcome}."
     extra = (deficiency_details or "").strip()
-    if extra and finding == "not in compliance":
+    if extra and conclusion_deficiency_cited(outcome):
         line += f" {extra}"
     return line
 

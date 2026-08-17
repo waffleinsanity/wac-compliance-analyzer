@@ -38,7 +38,9 @@ from app.services.template_corpus import (
     format_intake_narrative,
     load_template_corpus,
 )
+from app.services.guidance_corpus import categorical_allegation_text, load_guidance_corpus
 from app.services.ir_learning import learned_preamble, preferred_connector_for
+from app.services.sod_draft import attach_sod_to_report
 from app.services.wac_scope import (
     MAX_ALLEGATION_CLAUSES,
     MAX_ALLEGATION_DRAFT_CLAUSES,
@@ -416,7 +418,9 @@ def build_investigation_report(
             relevant=selected,
             preferred_connector=connector,
         )
-        allegation_text = normalize_allegation_line(draft.text)
+        # Compare / SOD: cite-first exact-WAC line. IR Allegation/s: categorical (IR Guidance).
+        cite_allegation = normalize_allegation_line(draft.text)
+        ir_allegation = categorical_allegation_text(node.code, node.title or node.code)
         cites = draft.cites
         # Compare / chips follow allegation selection only — never fall back to weak leaves.
         closest = selected
@@ -489,7 +493,7 @@ def build_investigation_report(
                 wac_text=wac_full,
                 wac_summary=wac_summary,
                 complaint_excerpts=excerpts,
-                allegation_draft=allegation_text,
+                allegation_draft=cite_allegation,
                 finding=None,
                 matched_subsections=matched or cites,
                 matched_subsection_texts=matched_texts,
@@ -504,7 +508,7 @@ def build_investigation_report(
                 case_category=bucket,
                 wac_code=node.code,
                 wac_title=node.title,
-                allegation_text=allegation_text,
+                allegation_text=ir_allegation,
                 status=source_note,
                 confidence=draft.match_score,
                 matched_subsections=included_cites or matched or cites,
@@ -517,7 +521,7 @@ def build_investigation_report(
         conclusions.append(
             InvestigationConclusion(
                 wac_code=node.code,
-                allegation_text=allegation_text,
+                allegation_text=ir_allegation,
                 result="Pending Investigation",
                 deficiency_cited=False,
                 deficiency_details="",
@@ -541,6 +545,7 @@ def build_investigation_report(
         federal_certification_priority="",
     )
 
+    load_guidance_corpus()
     shell = _shell()
     preview = complaint_text.strip().replace("\n", " ")
     preamble = learned_preamble(db) or shell.allegation_preamble or DOH_ALLEGATION_PREAMBLE
@@ -582,38 +587,44 @@ def build_investigation_report(
         llm_model=investigator.llm_model,
         llm_error=investigator.llm_error,
     )
+    # Sister SOD skeleton from Compare duty options (exact PDF duties).
+    attach_sod_to_report(report)
     sync_report_text(report)
 
     selected_codes = [n.code for n in code_nodes]
+    # Quote-check Compare cite-first drafts (IR categorical lines are not statute quotes).
     integrity = verify_report_quotes(
-        allegations=report.allegations,
+        allegations=[
+            InvestigationAllegation(
+                wac_code=c.code,
+                wac_title=c.title,
+                allegation_text=c.allegation_draft,
+                matched_subsections=c.matched_subsections,
+            )
+            for c in report.comparisons
+        ],
         regulatory_framework=report.regulatory_framework,
         evidentiary_examples=report.evidentiary_examples,
         selected_codes=selected_codes,
     )
-    # Auto-draft comes from the PDF store — repair any false mismatches / legacy shortcuts.
     failed_fields = {f.field for f in integrity.failures}
-    for a in report.allegations:
-        needs_repair = f"allegation:{a.wac_code}" in failed_fields or "see also" in (
-            a.allegation_text or ""
-        ).lower()
-        if needs_repair:
-            a.allegation_text = repair_allegation_text_from_store(
-                a.allegation_text, a.wac_code
+    for c in report.comparisons:
+        field = f"allegation:{c.code}"
+        if field in failed_fields or "see also" in (c.allegation_draft or "").lower():
+            c.allegation_draft = repair_allegation_text_from_store(
+                c.allegation_draft, c.code
             )
-    if failed_fields or any(
-        "see also" in (a.allegation_text or "").lower() for a in report.allegations
-    ):
-        for conc in report.conclusions:
-            match = next((a for a in report.allegations if a.wac_code == conc.wac_code), None)
-            if match:
-                conc.allegation_text = match.allegation_text
-        for c in report.comparisons:
-            match = next((a for a in report.allegations if a.wac_code == c.code), None)
-            if match:
-                c.allegation_draft = match.allegation_text
+    if failed_fields:
         integrity = verify_report_quotes(
-            allegations=report.allegations,
+            allegations=[
+                InvestigationAllegation(
+                    wac_code=c.code,
+                    wac_title=c.title,
+                    allegation_text=c.allegation_draft,
+                    matched_subsections=c.matched_subsections,
+                )
+                for c in report.comparisons
+            ],
             regulatory_framework=report.regulatory_framework,
             evidentiary_examples=report.evidentiary_examples,
             selected_codes=selected_codes,
@@ -622,12 +633,12 @@ def build_investigation_report(
 
     report.quote_integrity = QuoteIntegrityOut(**integrity.to_dict())
 
-    # Per-allegation quote_ok from integrity failures
-    for a in report.allegations:
-        a.quote_ok = f"allegation:{a.wac_code}" not in failed_fields
     for c in report.comparisons:
-        a_ok = next((a.quote_ok for a in report.allegations if a.wac_code == c.code), None)
-        c.quote_ok = a_ok
+        c.quote_ok = f"allegation:{c.code}" not in failed_fields
+    for a in report.allegations:
+        a.quote_ok = next(
+            (c.quote_ok for c in report.comparisons if c.code == a.wac_code), True
+        )
 
     report.duration_ms = (time.perf_counter() - started) * 1000
     return report

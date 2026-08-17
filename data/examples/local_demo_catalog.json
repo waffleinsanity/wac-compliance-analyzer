@@ -1,15 +1,23 @@
 {
-  "notes": "Mirror of frontend/src/fixtures/localQuickDraft.ts — local admin demos for Intake→Compare→Report (exact WAC duties, top-2 starters + duty checkboxes). Not ingested by template_corpus.",
+  "notes": "Mirror of frontend/src/fixtures/localQuickDraft.ts — admin demos for Intake→Compare→Report. Exact WAC duties (no see-also shortcuts), top-2 starters + duty checkboxes, blank IR shell fields (investigation_type, priorities). Policy guidance under data/examples/policy_guidance/. Not ingested by template_corpus.",
   "updated": "2026-07-31",
+  "core_documents": {
+    "blank_ir": "data/templates/5. Investigation report.docx",
+    "baseline_allegations": "data/examples/Baseline Allegations RTF.txt",
+    "policy_guidance": "data/examples/policy_guidance/"
+  },
   "scenarios": [
     {
       "id": "assault_safety",
       "label": "1 · Patient-to-patient assault / safety",
-      "focus": "0410 admin + 0600 protect/sexual-harassment leaves; exact duties; Compare starts with top 2",
+      "focus": "Exact 0410/0600 duties (no see-also); top-2 Compare starters; On-site State IR shell + priorities for Download",
       "case_id": "2026-DEMO-01",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140707",
+      "investigation_type": "On-site State Investigation",
+      "state_licensing_priority": "C",
+      "federal_certification_priority": "Non-IJ Medium",
       "selected_wacs": [
         "WAC 246-341-0410",
         "WAC 246-341-0420",
@@ -22,11 +30,14 @@
     {
       "id": "confidentiality_phi",
       "label": "2 · PHI disclosure without consent",
-      "focus": "0425 record system + 0600 confidentiality rights + RCW 71.05.020; exact duty phrasing",
+      "focus": "Exact 0425/0600 + RCW 71.05.020 duty language; privacy banner path; Off-site State shell fields",
       "case_id": "2026-DEMO-02",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140707",
+      "investigation_type": "Off-site State Investigation",
+      "state_licensing_priority": "B",
+      "federal_certification_priority": "N/A",
       "selected_wacs": [
         "WAC 246-341-0420",
         "WAC 246-341-0425",
@@ -38,11 +49,14 @@
     {
       "id": "restraint_seclusion",
       "label": "3 · Restraint / seclusion + governance",
-      "focus": "337-110 restraint + 045 governance leaves; top-2 starters with optional duty checkboxes",
+      "focus": "337-110 + 045 governance leaves; Baseline gerund duties (adopting/providing); On-site State and Federal type",
       "case_id": "2026-DEMO-03",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140821",
+      "investigation_type": "On-site State and Federal Investigation",
+      "state_licensing_priority": "A",
+      "federal_certification_priority": "Non-IJ High",
       "selected_wacs": [
         "WAC 246-337-110",
         "WAC 246-337-075",
@@ -54,11 +68,14 @@
     {
       "id": "medication_errors",
       "label": "4 · Medication management failures",
-      "focus": "337-105 meds + 080 care + 050 personnel; exact labeled duties in Compare",
+      "focus": "337-105 meds + 080 care exact labeled duties; Edit priorities flow into Download DOCX; multi-file evidence optional",
       "case_id": "2026-DEMO-04",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140707",
+      "investigation_type": "On-site State Investigation",
+      "state_licensing_priority": "B",
+      "federal_certification_priority": "Non-IJ Low",
       "selected_wacs": [
         "WAC 246-337-105",
         "WAC 246-337-080",
@@ -70,11 +87,14 @@
     {
       "id": "assessment_isp",
       "label": "5 · Missing assessment / ISP",
-      "focus": "0640 clinical documentation + 0600 + 0410; exact WAC fragments after failed to",
+      "focus": "0640 clinical documentation + 0410 admin; full exact WAC fragments after failed to (never truncated cite lists)",
       "case_id": "2026-DEMO-05",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140707",
+      "investigation_type": "On-site State Investigation",
+      "state_licensing_priority": "C",
+      "federal_certification_priority": "Non-IJ Medium",
       "selected_wacs": [
         "WAC 246-341-0640",
         "WAC 246-341-0600",
@@ -85,28 +105,34 @@
     },
     {
       "id": "grievance_rights",
-      "label": "6 · Rights / grievance process ignored",
-      "focus": "0600 rights + 0605 complaint process; Compare duty checkboxes for extra leaves",
+      "label": "6 · Rights / grievance + retaliation",
+      "focus": "0605 compose parent+leaf (not retaliate against any: Employee…); 0600 rights; exact WAC only — no see-also shortcuts",
       "case_id": "2026-DEMO-06",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140707",
+      "investigation_type": "On-site State Investigation",
+      "state_licensing_priority": "A",
+      "federal_certification_priority": "Referral - Other",
       "selected_wacs": [
         "WAC 246-341-0600",
         "WAC 246-341-0605",
         "WAC 246-341-0420",
         "WAC 246-337-075"
       ],
-      "complaint": "The complainant alleged that when a patient attempted to file a grievance about staff mistreatment, agency staff discouraged the complaint, failed to provide written information about individual rights, and did not follow the agency complaint process timelines.\n\nThe patient reportedly asked for a copy of rights materials and was told to wait. No grievance log entry was created. The complaint also alleged posted rights were outdated, staff were unfamiliar with the complaint procedure, and the agency did not protect confidentiality of treatment information when communicating about the grievance."
+      "complaint": "The complainant alleged that when a patient attempted to file a grievance about staff mistreatment, agency staff discouraged the complaint, failed to provide written information about individual rights, and did not follow the agency complaint process timelines.\n\nThe patient reportedly asked for a copy of rights materials and was told to wait. No grievance log entry was created. After an employee of the agency assisted the patient in contacting the department, the employee was retaliated against by the agency provider. The complaint also alleged posted rights were outdated, staff were unfamiliar with the complaint procedure, and the agency did not protect confidentiality of treatment information when communicating about the grievance."
     },
     {
       "id": "infection_environment",
       "label": "7 · Infection control / environment",
-      "focus": "337-060 list-intro + leaf (develop written policies… for: Management of staff…); top-2 + checkboxes",
+      "focus": "337-060 list-intro + leaf (developing/develop written policies… for: Management of staff…); exact composed duties",
       "case_id": "2026-DEMO-07",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140903",
+      "investigation_type": "On-site Federal Investigation",
+      "state_licensing_priority": "C",
+      "federal_certification_priority": "Immediate Jeopardy (IJ)",
       "selected_wacs": [
         "WAC 246-337-060",
         "WAC 246-337-120",
@@ -118,11 +144,14 @@
     {
       "id": "qi_critical_incident",
       "label": "8 · Quality improvement / critical incident",
-      "focus": "337-048 QI + 0410 quality plan + 045 governance; exact verb-led duties",
+      "focus": "337-048 QI + 045 governance exact verb-led duties; working-draft Download without requiring evidence first",
       "case_id": "2026-DEMO-08",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140707",
+      "investigation_type": "On-site State Investigation",
+      "state_licensing_priority": "B",
+      "federal_certification_priority": "Non-IJ High",
       "selected_wacs": [
         "WAC 246-337-048",
         "WAC 246-341-0410",
@@ -134,11 +163,14 @@
     {
       "id": "crisis_outreach",
       "label": "9 · Crisis outreach response delay",
-      "focus": "0903 crisis MH services + 0410 admin; labeled exact duties in the draft line",
+      "focus": "0903 crisis MH + 0410 admin labeled exact duties; Report Edit investigation type appears under IR title",
       "case_id": "2026-DEMO-09",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140707",
+      "investigation_type": "On-site State Investigation",
+      "state_licensing_priority": "C",
+      "federal_certification_priority": "Non-IJ Medium",
       "selected_wacs": [
         "WAC 246-341-0903",
         "WAC 246-341-0410",
@@ -150,11 +182,14 @@
     {
       "id": "otp_dosing",
       "label": "10 · Opioid treatment program dosing",
-      "focus": "OTP 1000 + 0410/0420 admin-records; exact duty clauses, not paraphrases",
+      "focus": "OTP 1000 exact duty clauses; aligns with SOD OTP sample guidance in policy_guidance/; Federal investigation type",
       "case_id": "2026-DEMO-10",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61141015",
+      "investigation_type": "On-site Federal Investigation",
+      "state_licensing_priority": "A",
+      "federal_certification_priority": "Non-IJ Medium",
       "selected_wacs": [
         "WAC 246-341-1000",
         "WAC 246-341-0410",
@@ -166,11 +201,14 @@
     {
       "id": "youth_inpatient_rights",
       "label": "11 · Youth inpatient rights / consent",
-      "focus": "1124 clinical-record consent + 0600 rights + RCW 71.34; exact WAC/RCW language",
+      "focus": "1124 clinical-record consent + 0600 + RCW 71.34 exact language; blank IR shell fields for Download",
       "case_id": "2026-DEMO-11",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140707",
+      "investigation_type": "On-site State Investigation",
+      "state_licensing_priority": "C",
+      "federal_certification_priority": "Adminstrative Review/Offsite Investigation",
       "selected_wacs": [
         "WAC 246-341-1124",
         "WAC 246-341-0600",
@@ -182,11 +220,14 @@
     {
       "id": "weak_overlap",
       "label": "12 · Weak overlap (low confidence)",
-      "focus": "Must stay low-confidence; no invented strong duties or long run-on allegation lines",
+      "focus": "Must stay low-confidence; no invented strong duties, no see-also cite lists, no long run-on allegation lines",
       "case_id": "2026-DEMO-12",
       "investigation_date": "07/31/2026",
       "facility_address": "123 Demo Behavioral Health Way, Olympia, WA 98501",
       "credential_number": "BHA.FS.61140707",
+      "investigation_type": "Off-site State Investigation",
+      "state_licensing_priority": "N/A",
+      "federal_certification_priority": "No Action Necessary",
       "selected_wacs": [
         "WAC 246-341-0600"
       ],

@@ -110,22 +110,64 @@ export function packProcessFields(fields: ProcessFields): string[] {
   ]
 }
 
-/** DOH blank conclusion finding phrases (content control). Empty = Choose an item. */
-export const FINDING_PHRASES = ['not in compliance', 'in compliance'] as const
+/** IR Guidance conclusion options (normalize desk-manual typo citied → cited). */
+export const IR_CONCLUSION_OPTIONS = [
+  'Substantiated with deficient practice or condition cited',
+  'Substantiated with no current deficient practice or condition cited',
+  'Not Substantiated',
+  'Pending Investigation',
+] as const
 
-export type FindingPhrase = (typeof FINDING_PHRASES)[number] | ''
+/** Selectable outcomes (empty = Choose an item.). */
+export const FINDING_PHRASES = [
+  'Substantiated with deficient practice or condition cited',
+  'Substantiated with no current deficient practice or condition cited',
+  'Not Substantiated',
+] as const
 
-export function resultToFindingPhrase(result: string): FindingPhrase {
-  const r = (result || '').trim().toLowerCase()
-  if (r === 'substantiated' || r === 'out of compliance' || r === 'not in compliance') {
-    return 'not in compliance'
+export type FindingPhrase = (typeof IR_CONCLUSION_OPTIONS)[number] | ''
+
+export function normalizeIrConclusion(result: string): FindingPhrase {
+  const r = (result || '').trim()
+  if ((IR_CONCLUSION_OPTIONS as readonly string[]).includes(r)) {
+    return r as FindingPhrase
   }
-  if (r === 'unsubstantiated' || r === 'in compliance') return 'in compliance'
+  const low = r.toLowerCase()
+  if (low.includes('no current deficient')) {
+    return 'Substantiated with no current deficient practice or condition cited'
+  }
+  if (low.includes('deficient practice or condition cited')) {
+    return 'Substantiated with deficient practice or condition cited'
+  }
+  if (
+    low === 'not substantiated' ||
+    low === 'unsubstantiated' ||
+    low === 'in compliance'
+  ) {
+    return 'Not Substantiated'
+  }
+  if (
+    low === 'substantiated' ||
+    low === 'out of compliance' ||
+    low === 'not in compliance'
+  ) {
+    return 'Substantiated with deficient practice or condition cited'
+  }
+  if (low === 'pending investigation' || low === 'pending') return 'Pending Investigation'
   return ''
 }
 
+/** @deprecated Use normalizeIrConclusion — kept for call sites. */
+export function resultToFindingPhrase(result: string): FindingPhrase {
+  return normalizeIrConclusion(result)
+}
+
 export function findingPhraseToResult(phrase: FindingPhrase): string {
-  if (phrase === 'not in compliance') return 'Substantiated'
-  if (phrase === 'in compliance') return 'Unsubstantiated'
-  return 'Pending Investigation'
+  if (!phrase) return 'Pending Investigation'
+  return phrase
+}
+
+export function conclusionDeficiencyCited(result: string): boolean {
+  const o = normalizeIrConclusion(result).toLowerCase()
+  return o.includes('deficient practice or condition cited') && !o.includes('no current')
 }

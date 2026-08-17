@@ -8,7 +8,7 @@ export type WorkflowStep = 'workspace' | 'review' | 'report'
 const STEPS: { id: WorkflowStep; label: string; hint: string }[] = [
   { id: 'workspace', label: 'Intake', hint: 'Complaint + approved WACs' },
   { id: 'review', label: 'Compare', hint: 'Allegation lines per code' },
-  { id: 'report', label: 'Report', hint: 'Edit, save, export DOCX' },
+  { id: 'report', label: 'Documents', hint: 'IR + SOD sister drafts, save, export' },
 ]
 
 export type StepperContext = {

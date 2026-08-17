@@ -751,7 +751,7 @@ export function ReviewStep({
               <span>
                 Optional research — stronger WAC/RCW fits?
                 <span className="mt-0.5 block text-xs font-normal text-ink-400">
-                  Same Strong / Moderate / Weak / None scale as approved codes above. Not authorization.
+                  Same duty-overlap ranking and strength scale as approved codes above. Not authorization.
                 </span>
               </span>
               <span className="text-xs text-ink-400 group-open:hidden">Show</span>

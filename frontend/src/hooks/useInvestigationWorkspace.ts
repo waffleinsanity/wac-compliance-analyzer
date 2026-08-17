@@ -308,6 +308,9 @@ export function useInvestigationWorkspace(opts: {
       investigation_date?: string
       facility_address?: string
       credential_number?: string
+      subtitle?: string
+      state_licensing_priority?: string
+      federal_certification_priority?: string
     },
   ) => {
     const codes = overrides?.selected_wacs ?? selectedCodes
@@ -328,9 +331,19 @@ export function useInvestigationWorkspace(opts: {
         facility_address: overrides?.facility_address ?? (facilityAddress || undefined),
         credential_number: overrides?.credential_number ?? (credentialNumber || undefined),
       })
-      // New drafts require Compare confirmation again.
+      // New drafts require Compare confirmation again. Demo shell fields seed the blank IR.
       const drafted = applyReport({
         ...res,
+        subtitle: overrides?.subtitle ?? res.subtitle ?? '',
+        facility_info: {
+          ...res.facility_info,
+          ...(overrides?.state_licensing_priority != null
+            ? { state_licensing_priority: overrides.state_licensing_priority }
+            : {}),
+          ...(overrides?.federal_certification_priority != null
+            ? { federal_certification_priority: overrides.federal_certification_priority }
+            : {}),
+        },
         compare_cites_confirmed: false,
         confirmed_allegation_codes: [],
       })
@@ -484,6 +497,9 @@ export function useInvestigationWorkspace(opts: {
         investigation_date: d.investigation_date,
         facility_address: d.facility_address,
         credential_number: d.credential_number,
+        subtitle: d.investigation_type,
+        state_licensing_priority: d.state_licensing_priority,
+        federal_certification_priority: d.federal_certification_priority,
       })
     }, 0)
   }

@@ -8,7 +8,10 @@ export type ApplicationStrengthSource = 'ir_match' | 'research'
 export const IR_WEAK_SCORE = 0.3
 export const IR_STRONG_SCORE = 0.5
 
-/** Corpus blend scores are typically lower than IR subsection scores. */
+/**
+ * Legacy corpus-blend cutoffs (pre IR-preview research).
+ * Prefer score_basis === 'ir_leaf' → IR bands.
+ */
 export const RESEARCH_WEAK_SCORE = 0.06
 export const RESEARCH_STRONG_SCORE = 0.16
 
@@ -45,7 +48,7 @@ function bandFromScore(
 }
 
 /**
- * Map IR compare match fields (or research corpus scores) to application strength.
+ * Map IR compare match fields (or research preview scores) to application strength.
  * Quote integrity stays separate — this is complaint-to-code fit only.
  */
 export function applicationStrengthFromMatch(input: {
@@ -53,10 +56,19 @@ export function applicationStrengthFromMatch(input: {
   reason?: string | null
   lowConfidence?: boolean | null
   source?: ApplicationStrengthSource
+  /** When research returns IR leaf scores, use Compare bands. */
+  scoreBasis?: string | null
 }): ApplicationStrength {
   const reason = (input.reason || '').toLowerCase()
   const source = input.source || 'ir_match'
   const score = typeof input.score === 'number' && Number.isFinite(input.score) ? input.score : null
+  const useIrBands =
+    source === 'ir_match' ||
+    input.scoreBasis === 'ir_leaf' ||
+    reason === 'lexical_overlap' ||
+    reason === 'explicit_cite' ||
+    reason === 'structural_anchor' ||
+    reason === 'code_fallback'
 
   if (reason === 'explicit_cite') return 'strong'
   if (reason === 'structural_anchor') return 'moderate'
@@ -70,7 +82,7 @@ export function applicationStrengthFromMatch(input: {
     return 'none'
   }
 
-  if (source === 'research') {
+  if (source === 'research' && !useIrBands) {
     return bandFromScore(score, RESEARCH_WEAK_SCORE, RESEARCH_STRONG_SCORE)
   }
 

@@ -2,8 +2,11 @@
 
 Reads data/examples/local_demo_catalog.json (mirror of frontend demos) and asserts:
 - Each non-weak demo produces at least one 'having failed to' allegation
-- Drafted lines keep ≤ 2 labeled duty clauses by default
-- Infection demo keeps list-intro + leaf language for 246-337-060 (infinitive opener)
+- Drafted lines keep <= 2 labeled duty clauses by default
+- Never emit the forbidden '; see also' cite-list shortcut
+- Infection demo keeps list-intro + leaf language for 246-337-060
+- Grievance demo surfaces 0605 retaliation compose (Employee of the agency)
+- Shell fields (investigation_type, priorities) are present on each scenario
 """
 
 from __future__ import annotations
@@ -54,7 +57,7 @@ def main() -> int:
     catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
     scenarios = catalog.get("scenarios") or []
     if len(scenarios) < 10:
-        raise SystemExit(f"Expected ≥10 demos, found {len(scenarios)}")
+        raise SystemExit(f"Expected >=10 demos, found {len(scenarios)}")
 
     failures: list[str] = []
     for sc in scenarios:
@@ -62,12 +65,24 @@ def main() -> int:
         complaint = sc["complaint"]
         codes = [c.replace("WAC ", "").replace("RCW ", "").strip() for c in sc["selected_wacs"]]
         print(f"\n=== {sid} ({len(codes)} codes) ===")
+
+        for field in (
+            "investigation_type",
+            "state_licensing_priority",
+            "federal_certification_priority",
+        ):
+            if not str(sc.get(field) or "").strip():
+                failures.append(f"{sid}: missing blank-IR shell field {field}")
+
         drafted_any = False
         for code in codes:
             draft = draft_allegation_from_source(code, code, complaint)
             clauses = _clauses_after_failed_to(draft.text)
             print(f"  {code}: {len(clauses)} clause(s), {len(draft.duty_options)} options")
             print(f"    {draft.text[:160]}{'…' if len(draft.text) > 160 else ''}")
+
+            if "see also" in draft.text.lower():
+                failures.append(f"{sid}/{code}: forbidden see-also shortcut in draft")
 
             if sid == "weak_overlap":
                 if len(clauses) > 2:
@@ -92,15 +107,25 @@ def main() -> int:
 
             if sid == "infection_environment" and code == "246-337-060":
                 low = draft.text.lower()
-                if "develop written policies and procedures for" not in low:
+                if (
+                    "develop written policies and procedures for" not in low
+                    and "developing written policies and procedures for" not in low
+                ):
                     failures.append(
-                        f"{sid}/{code}: expected infinitive list-intro lead-in: {draft.text}"
+                        f"{sid}/{code}: expected list-intro lead-in (develop/developing): {draft.text}"
                     )
                 if not any(
                     "written policies and procedures for" in (o.get("duty_phrase") or "").lower()
                     for o in draft.duty_options
                 ):
                     failures.append(f"{sid}/{code}: duty_options missing list-intro phrases")
+
+            if sid == "grievance_rights" and code == "246-341-0605":
+                low = draft.text.lower()
+                if "not retaliate" not in low or "employee of the agency" not in low:
+                    failures.append(
+                        f"{sid}/{code}: expected retaliation compose with Employee leaf: {draft.text}"
+                    )
 
         if sid != "weak_overlap" and not drafted_any:
             failures.append(f"{sid}: no code produced a 'having failed to' allegation line")
@@ -110,7 +135,7 @@ def main() -> int:
         for f in failures:
             print(" -", f)
         return 1
-    print(f"\nOK — {len(scenarios)} demos verified against exact-WAC / top-2 drafting.")
+    print(f"\nOK — {len(scenarios)} demos verified (exact-WAC, top-2, shell fields, no see-also).")
     return 0
 
 

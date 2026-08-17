@@ -409,6 +409,10 @@ class StatuteHit(BaseModel):
     reason: str
     text: str
     excerpt: str
+    # ir_leaf = same Compare/IR subsection score bands; corpus = raw RAG blend.
+    score_basis: str = "ir_leaf"
+    # Best overlapping duty label under this code (research preview), e.g. "(2)(e)".
+    duty_label: str = ""
 
 
 class StatuteSearchResponse(BaseModel):
@@ -436,9 +440,70 @@ class InvestigationConclusion(BaseModel):
     deficiency_details: str = ""
 
 
+class SodFinding(BaseModel):
+    """One evidence row under Findings included:."""
+
+    method: str = ""  # observation | interview | record review | …
+    text: str = ""
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class SodDeficiencyItem(BaseModel):
+    """Optional Item #n split under one regulation."""
+
+    number: int = 1
+    title: str = ""
+    findings: list[SodFinding] = Field(default_factory=list)
+
+
+class SodDeficiency(BaseModel):
+    """One SOD citation block: Cite → Based on → Failure to → Findings."""
+
+    id: str = ""
+    regulation_cite: str = ""
+    regulation_text: str = ""
+    based_on: str = ""
+    failure_to: str = ""
+    reference: str = ""
+    items: list[SodDeficiencyItem] = Field(default_factory=list)
+    findings: list[SodFinding] = Field(default_factory=list)
+    # Phase 2 advisory
+    scope: str = ""
+    severity: str = ""
+    recommended_outcomes: list[str] = Field(default_factory=list)
+    dpoc_actions: list[str] = Field(default_factory=list)
+    revisit_required: bool = False
+
+
+class SodIdentifierEntry(BaseModel):
+    kind: str = "Patient"  # Patient | Staff | Surveyor | Investigator
+    code: str = ""  # #1 | A | …
+    description: str = ""  # internal only
+
+
+class StatementOfDeficiency(BaseModel):
+    """Sister SOD draft created with the IR after Compare."""
+
+    title: str = "Statement of Deficiency"
+    facility_name: str = ""
+    facility_address: str = ""
+    case_id: str = ""
+    credential_number: str = ""
+    administrator: str = ""
+    inspection_type: str = "Investigation"
+    investigator_number: str = ""
+    investigation_dates: str = ""
+    deficiencies: list[SodDeficiency] = Field(default_factory=list)
+    identifier_key: list[SodIdentifierEntry] = Field(default_factory=list)
+    poc_due_days: int = 14
+    is_rtf: bool = False
+    notes: str = ""
+
+
 class InvestigationReport(BaseModel):
     title: str = "Investigative Report"
-    subtitle: str = "State Investigation"
+    # Blank IR content-control: investigation type (On-site State Investigation, …). Empty = Choose an item.
+    subtitle: str = ""
     investigation_date: str
     case_id: str | None = None
     facility_info: FacilityInfo
@@ -484,6 +549,8 @@ class InvestigationReport(BaseModel):
     # Compare step: investigator confirmed allegation cites before opening Report
     compare_cites_confirmed: bool = False
     confirmed_allegation_codes: list[str] = Field(default_factory=list)
+    # Sister SOD draft (facility-facing); created with the IR after Compare
+    sod: StatementOfDeficiency | None = None
 
 
 class ValidateReportRequest(BaseModel):

@@ -175,6 +175,10 @@ export type StatuteHit = {
   reason: string
   text: string
   excerpt: string
+  /** ir_leaf = Compare/IR score bands; corpus = raw RAG blend (legacy). */
+  score_basis?: 'ir_leaf' | 'corpus' | string
+  /** Best overlapping duty label under this code, e.g. "(2)(e)". */
+  duty_label?: string
 }
 
 export type InvestigationConclusion = {
@@ -183,6 +187,110 @@ export type InvestigationConclusion = {
   result: string
   deficiency_cited: boolean
   deficiency_details: string
+}
+
+/** IR Guidance conclusion options (normalize desk-manual typo citied → cited). */
+export const IR_CONCLUSION_OPTIONS = [
+  'Substantiated with deficient practice or condition cited',
+  'Substantiated with no current deficient practice or condition cited',
+  'Not Substantiated',
+  'Pending Investigation',
+] as const
+
+export type SodFinding = {
+  method?: string
+  text?: string
+  evidence_ids?: string[]
+}
+
+export type SodDeficiencyItem = {
+  number?: number
+  title?: string
+  findings?: SodFinding[]
+}
+
+export type SodDeficiency = {
+  id?: string
+  regulation_cite?: string
+  regulation_text?: string
+  based_on?: string
+  failure_to?: string
+  reference?: string
+  items?: SodDeficiencyItem[]
+  findings?: SodFinding[]
+  scope?: string
+  severity?: string
+  recommended_outcomes?: string[]
+  dpoc_actions?: string[]
+  revisit_required?: boolean
+}
+
+export type SodIdentifierEntry = {
+  kind?: string
+  code?: string
+  description?: string
+}
+
+export type StatementOfDeficiency = {
+  title?: string
+  facility_name?: string
+  facility_address?: string
+  case_id?: string
+  credential_number?: string
+  administrator?: string
+  inspection_type?: string
+  investigator_number?: string
+  investigation_dates?: string
+  deficiencies?: SodDeficiency[]
+  identifier_key?: SodIdentifierEntry[]
+  poc_due_days?: number
+  is_rtf?: boolean
+  notes?: string
+}
+
+export const SOD_SCOPE_OPTIONS = ['isolated', 'pattern', 'widespread'] as const
+export const SOD_SEVERITY_OPTIONS = [
+  'no_actual_harm_minimal',
+  'no_actual_harm_more_than_minimal_not_ij',
+  'actual_harm_not_ij',
+  'immediate_jeopardy',
+] as const
+export const DPOC_ACTION_OPTIONS = [
+  'Hire department-approved consultant',
+  'Documented routine quality reviews',
+  'Revise/develop individual service plans for all clients',
+  'Change organizational structure / supervision of direct care staff',
+] as const
+
+/** Advisory Enforcement Tool cells (Phase 2) — mirrors backend; never auto-issues letters. */
+export function recommendEnforcementOutcomes(
+  scope: string | null | undefined,
+  severity: string | null | undefined,
+  isRtf = false,
+): string[] {
+  const s = (scope || '').trim().toLowerCase()
+  const v = (severity || '').trim().toLowerCase()
+  if (!s || !v) return []
+  if (v === 'immediate_jeopardy') {
+    return ['ij_notice', 'sod_cmt_referral', 'cmt_emergency_actions']
+  }
+  if (v === 'actual_harm_not_ij') {
+    const out = ['sod_poc_revisit', 'sod_cmt_referral']
+    if (isRtf) out.splice(1, 0, 'sod_dpoc_rtf')
+    return out
+  }
+  if (v === 'no_actual_harm_more_than_minimal_not_ij') {
+    const out = ['sod_poc_revisit']
+    if (isRtf) out.push('sod_dpoc_rtf')
+    if (s === 'widespread') out.push('sod_cmt_referral')
+    return out
+  }
+  if (v === 'no_actual_harm_minimal') {
+    if (s === 'isolated') return ['no_citation']
+    if (s === 'pattern') return ['sod_poc_no_revisit']
+    return ['sod_poc_revisit']
+  }
+  return []
 }
 
 export type InvestigationReport = {
@@ -229,6 +337,8 @@ export type InvestigationReport = {
   /** Investigator confirmed Compare cites before Report */
   compare_cites_confirmed?: boolean
   confirmed_allegation_codes?: string[]
+  /** Sister SOD draft created with the IR after Compare */
+  sod?: StatementOfDeficiency | null
 }
 
 export type UserRole = 'admin' | 'editor' | 'viewer'
@@ -518,7 +628,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       /* ignore */
     }
-    throw new ApiError(formatApiErrorDetail(detail, res.statusText), res.status)
+    let message = formatApiErrorDetail(detail, res.statusText)
+    // Vite proxy often surfaces API restarts mid-request as a bare 500 "Internal Server Error".
+    if (
+      (res.status === 500 || res.status === 502 || res.status === 503) &&
+      (!message || /^internal server error$/i.test(message.trim()))
+    ) {
+      message =
+        'API connection dropped (often during a local stack restart). Wait a moment and retry drafting.'
+    }
+    throw new ApiError(message, res.status)
   }
   if (res.status === 204) return undefined as T
   return res.json()
@@ -798,6 +917,24 @@ export const api = {
   exportCaseDocx: async (id: number, acknowledge_gaps = false) => {
     const token = getToken()
     const res = await fetch(`/api/cases/${id}/export/docx?acknowledge_gaps=${acknowledge_gaps}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      let detail: unknown = res.statusText
+      try {
+        const data = await res.json()
+        detail = data.detail ?? data
+      } catch {
+        /* ignore */
+      }
+      throw new Error(formatApiErrorDetail(detail, res.statusText))
+    }
+    return res.blob()
+  },
+  exportCaseSod: async (id: number, acknowledge_gaps = false) => {
+    const token = getToken()
+    const res = await fetch(`/api/cases/${id}/export/sod?acknowledge_gaps=${acknowledge_gaps}`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })

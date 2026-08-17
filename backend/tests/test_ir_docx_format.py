@@ -22,7 +22,7 @@ from app.services.ir_format import build_report_plain_text
 def _sample_report() -> InvestigationReport:
     return InvestigationReport(
         title="Investigative Report",
-        subtitle="State Investigation",
+        subtitle="On-site State Investigation",
         investigation_date="07/23/2026",
         case_id="2025-11777",
         facility_info=FacilityInfo(
@@ -88,7 +88,8 @@ def test_plain_text_matches_blank_shell():
     assert "1. Allegation: Potential violation of WAC 246-341-0410" in text
     assert "Pre-investigation Activity:" in text
     assert "Investigation Activity:" in text
-    assert "1. Allegation: The investigator found the facility Choose an item. with" in text
+    assert "1. Allegation: Concerning Administrator key responsibilities" in text
+    assert "Pending Investigation" in text
     assert "Choose an item.\nChoose an item." in text
     assert "Regulatory Framework" not in text
     assert "246-341-0410: Pending Investigation" not in text
@@ -107,13 +108,14 @@ def test_docx_export_uses_blank_styles_not_heading2_or_bullets():
 
     joined = "\n".join(t for _, t in texts)
     assert "Facility Information" not in joined
-    assert "State Investigation" not in joined
+    assert "On-site State Investigation" in joined
     assert "Working draft" not in joined
     assert "Regulatory Framework" not in joined
     assert any(st == "Header" and t.startswith("Facility Address:") for st, t in texts)
     assert any(t.startswith("1. Allegation: Potential violation") for _, t in texts)
     assert any("Pre-investigation Activity" in t for _, t in texts)
-    assert any("found the facility Choose an item." in t for _, t in texts)
+    assert any("Concerning Administrator key responsibilities" in t for _, t in texts)
+    assert any("Pending Investigation" in t for _, t in texts)
     alleg = next(p for p in doc.paragraphs if (p.text or "").strip().startswith("1. Allegation:"))
     assert alleg.paragraph_format.left_indent is not None
     assert alleg.paragraph_format.left_indent.inches == pytest.approx(0.5, abs=0.01)
