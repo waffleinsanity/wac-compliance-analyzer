@@ -56,12 +56,13 @@ export function unpackProcessFields(lines: string[] | null | undefined): Process
     if (startLabel < 0) return ''
     const from = startLabel + 1
     const to = endLabel >= 0 ? endLabel : src.length
+    // Preserve empty and whitespace-only lines as user content.
+    // We only strip label lines, not blanks (otherwise a typed single space snaps back).
     return src
       .slice(from, to)
       .filter((l) => {
         const n = normLabel(l)
         return (
-          n &&
           n !== normLabel(PROCESS_LABELS.investigationActivity) &&
           n !== normLabel(PROCESS_LABELS.observations) &&
           n !== normLabel(PROCESS_LABELS.interviews) &&
@@ -70,17 +71,24 @@ export function unpackProcessFields(lines: string[] | null | undefined): Process
         )
       })
       .join('\n')
-      .trim()
   }
 
   // Structured shell present
   if (idx.pre >= 0 || idx.obs >= 0 || idx.interviews >= 0 || idx.docs >= 0) {
     const preEnd = idx.activity >= 0 ? idx.activity : idx.obs >= 0 ? idx.obs : src.length
+    const preHasAnyBody = idx.pre >= 0 && preEnd > idx.pre + 1
+    const obsEnd = idx.interviews >= 0 ? idx.interviews : idx.docs
+    const obsHasAnyBody = idx.obs >= 0 && obsEnd > idx.obs + 1
+    const intHasAnyBody = idx.interviews >= 0 && idx.docs > idx.interviews + 1
+    const docsHasAnyBody = idx.docs >= 0 && src.length > idx.docs + 1
     return {
-      preInvestigation: sliceBody(idx.pre, preEnd) || DEFAULT_PROCESS_FIELDS.preInvestigation,
-      observations: sliceBody(idx.obs, idx.interviews >= 0 ? idx.interviews : idx.docs) || DEFAULT_PROCESS_FIELDS.observations,
-      interviews: sliceBody(idx.interviews, idx.docs) || DEFAULT_PROCESS_FIELDS.interviews,
-      documentReview: sliceBody(idx.docs, -1) || DEFAULT_PROCESS_FIELDS.documentReview,
+      // Only fall back to defaults when the labeled block is missing entirely.
+      preInvestigation: preHasAnyBody ? sliceBody(idx.pre, preEnd) : DEFAULT_PROCESS_FIELDS.preInvestigation,
+      observations: obsHasAnyBody
+        ? sliceBody(idx.obs, idx.interviews >= 0 ? idx.interviews : idx.docs)
+        : DEFAULT_PROCESS_FIELDS.observations,
+      interviews: intHasAnyBody ? sliceBody(idx.interviews, idx.docs) : DEFAULT_PROCESS_FIELDS.interviews,
+      documentReview: docsHasAnyBody ? sliceBody(idx.docs, -1) : DEFAULT_PROCESS_FIELDS.documentReview,
     }
   }
 
