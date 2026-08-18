@@ -136,3 +136,14 @@ export function parseStatuteOutline(text: string): StatuteOutline {
   items[items.length - 1].body = body.slice(lastEnd).trim()
   return { lead, items }
 }
+
+/** Cumulative cite label for a nested outline row, e.g. (3)(a)(i). */
+export function outlineItemFullLabel(items: StatuteOutlineItem[], index: number): string {
+  const stack: string[] = []
+  for (let i = 0; i <= index; i++) {
+    const { label, depth } = items[i]
+    stack.length = depth
+    stack[depth] = label
+  }
+  return stack.join('')
+}

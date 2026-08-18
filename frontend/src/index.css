@@ -60,6 +60,10 @@
     border-color: hsl(var(--border));
   }
 
+  html {
+    scroll-padding-top: 3.5rem;
+  }
+
   html,
   body,
   #root {
@@ -242,12 +246,24 @@
   .statute-outline-row {
     @apply mb-2.5 flex gap-2 last:mb-0;
   }
+  .statute-outline-row-selected {
+    @apply rounded-sm bg-tide-600/5 dark:bg-tide-400/10;
+  }
+  .statute-outline-hint {
+    @apply mb-2 font-sans text-xs leading-relaxed text-ink-500 dark:text-ink-400;
+  }
+  .statute-outline-action {
+    @apply ml-auto flex shrink-0 items-center gap-1 self-start rounded border border-ink-300 bg-white px-2 py-1 font-sans text-[11px] font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-50 dark:border-ink-600 dark:bg-ink-900 dark:text-ink-200 dark:hover:bg-ink-800;
+  }
+  .statute-outline-action-selected {
+    @apply border-tide-600/40 bg-tide-600/10 dark:border-tide-400/30 dark:bg-tide-400/10;
+  }
   .statute-outline-label {
     @apply w-12 shrink-0 pt-0.5 font-mono text-[11px] font-semibold leading-relaxed;
   }
   .statute-outline-body {
     font-family: Newsreader, Georgia, serif;
-    @apply min-w-0 text-sm leading-relaxed text-ink-700 dark:text-ink-200;
+    @apply min-w-0 flex-1 text-sm leading-relaxed text-ink-700 dark:text-ink-200;
   }
 
   /* Letter-style IR preview desk */

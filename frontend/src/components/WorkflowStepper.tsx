@@ -71,6 +71,8 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
                   disabled={!canGo}
                   onClick={() => canGo && onStepChange(s.id)}
                   title={s.hint}
+                  aria-label={`${s.label}: ${s.hint}`}
+                  aria-current={active ? 'step' : undefined}
                   className={clsx(
                     'group flex items-baseline gap-1.5 px-0.5 py-1 text-left transition',
                     canGo ? 'hover:opacity-90' : 'cursor-not-allowed opacity-40',

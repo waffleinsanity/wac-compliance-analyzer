@@ -131,11 +131,14 @@ export function BugReportDialog({ open, onClose, appContext }: Props) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4 backdrop-blur-sm"
       data-bug-report-overlay="1"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="bug-report-title"
     >
       <div className="panel max-h-[90vh] w-full max-w-lg animate-rise overflow-y-auto p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="flex items-center gap-2 font-display text-2xl">
+            <h2 id="bug-report-title" className="flex items-center gap-2 font-display text-2xl">
               <Bug className="h-5 w-5 text-tide-600" />
               Report a bug
             </h2>
@@ -221,7 +224,11 @@ export function BugReportDialog({ open, onClose, appContext }: Props) {
               {diagnostics ? 'Refresh diagnostics' : 'Attach diagnostics'}
             </button>
           </div>
-          {error && <p className="text-sm text-rose-600">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">
+              {error}
+            </p>
+          )}
           {info && <p className="text-sm text-tide-700 dark:text-tide-300">{info}</p>}
           <button type="submit" className="btn-primary" disabled={busy || capturing || description.trim().length < 10}>
             {busy ? 'Submitting…' : 'Submit bug report'}

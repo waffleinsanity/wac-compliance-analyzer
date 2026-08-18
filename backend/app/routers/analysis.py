@@ -8,6 +8,8 @@ from app.auth import get_admin_user, get_current_user, get_editor_user
 from app.database import User, get_db
 from app.rag.store import wac_store
 from app.schemas import (
+    AllegationDutyOption,
+    DutyOptionFromLabelRequest,
     InvestigationReport,
     InvestigationRequest,
     QuoteIntegrityOut,
@@ -27,7 +29,7 @@ from app.services.research_suggest import (
     chapters_for_selection,
     rank_research_suggestions,
 )
-from app.services.wac_scope import cite_prefix
+from app.services.wac_scope import build_duty_option_from_label, cite_prefix
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -162,6 +164,28 @@ async def investigate(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/investigate/duty-option", response_model=AllegationDutyOption)
+async def resolve_duty_option_from_label(
+    payload: DutyOptionFromLabelRequest,
+    user: User = Depends(get_editor_user),
+):
+    """Resolve a PDF-backed duty phrase for a subsection picked from full code text."""
+    _ = user
+    code = payload.code.replace("WAC ", "").replace("RCW ", "").strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="WAC/RCW code is required")
+    label = (payload.label or "").strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="Subsection label is required")
+    option = build_duty_option_from_label(code, label)
+    if not option:
+        raise HTTPException(
+            status_code=404,
+            detail="Subsection not found in approved PDF store or has no draftable duty text",
+        )
+    return AllegationDutyOption(**option)
 
 
 @router.post("/investigate/validate", response_model=ValidateReportResponse)

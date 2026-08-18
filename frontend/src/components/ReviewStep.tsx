@@ -9,6 +9,7 @@ import type {
   StatuteHit,
   WACComparison,
 } from '../api'
+import { api } from '../api'
 import { quoteFailureLabel } from '../investigatorLabels'
 import { composeAllegationFromDuties, allegationHasShortcut, normalizeAllegationLine } from '../allegationFormat'
 import { applicationStrengthFromMatch } from '../applicationStrength'
@@ -16,6 +17,29 @@ import { ApplicationStrengthBadge } from './ApplicationStrengthBadge'
 import { IrTemplatePicker } from './IrTemplatePicker'
 import { StatuteOutline } from './StatuteOutline'
 import { StatuteSearchPanel } from './StatuteSearchPanel'
+
+function dutyLabelFromCite(cite: string, code: string): string {
+  const bare = code.replace(/^WAC\s+/i, '').replace(/^RCW\s+/i, '').trim()
+  const idx = cite.indexOf(bare)
+  if (idx >= 0) return cite.slice(idx + bare.length)
+  const m = cite.match(/((?:\([^)]+\))+)$/)
+  return m ? m[1] : ''
+}
+
+function sortedDutyOptions(
+  opts: AllegationDutyOption[],
+  selectedCites: string[],
+): AllegationDutyOption[] {
+  const selected = new Set(selectedCites)
+  return [...opts].sort((a, b) => {
+    const aSel = selected.has(a.cite) ? 0 : 1
+    const bSel = selected.has(b.cite) ? 0 : 1
+    if (aSel !== bSel) return aSel - bSel
+    if (a.picked_from_outline && !b.picked_from_outline) return 1
+    if (!a.picked_from_outline && b.picked_from_outline) return -1
+    return (b.score || 0) - (a.score || 0)
+  })
+}
 
 type Props = {
   comparisons: WACComparison[]
@@ -54,6 +78,10 @@ function autoConfirmable(c: WACComparison): boolean {
       lowConfidence: c.low_confidence,
     }) !== 'none'
   )
+}
+
+function needsManualReview(c: WACComparison): boolean {
+  return !autoConfirmable(c)
 }
 
 function AccuracyNote({ comparison }: { comparison: WACComparison }) {
@@ -128,10 +156,18 @@ export function ReviewStep({
   const [activeIdx, setActiveIdx] = useState(0)
   const [showPdf, setShowPdf] = useState(false)
   const [showFullCode, setShowFullCode] = useState(false)
+  const [outlineBusy, setOutlineBusy] = useState(false)
+  const [pendingOutlineLabel, setPendingOutlineLabel] = useState<string | null>(null)
   const total = comparisons.length
   const active = comparisons[activeIdx] || null
 
   const codeKey = (c: WACComparison) => c.wac_id || c.code
+
+  const dutyOptsFor = (c: WACComparison): AllegationDutyOption[] => {
+    if (!report) return c.duty_options || []
+    const row = report.comparisons.find((r) => (r.wac_id || r.code) === (c.wac_id || c.code))
+    return row?.duty_options?.length ? row.duty_options : c.duty_options || []
+  }
 
   const [confirmed, setConfirmed] = useState<Set<string>>(() => {
     const prior = report?.confirmed_allegation_codes || []
@@ -222,25 +258,39 @@ export function ReviewStep({
     }
   }, [comparisons, report, onReportChange, dutiesSyncedKey])
 
-  const applyDutySelection = (comparison: WACComparison, cites: string[]) => {
+  const applyDutySelection = (
+    comparison: WACComparison,
+    cites: string[],
+    opts?: AllegationDutyOption[],
+  ) => {
     if (!report || !onReportChange) return
-    const opts = comparison.duty_options || []
-    // Preserve option order (strong→moderate) among selected cites
-    const chosen: AllegationDutyOption[] = opts.filter((o) => cites.includes(o.cite))
+    const dutyOpts = opts || dutyOptsFor(comparison)
+    const chosen: AllegationDutyOption[] = dutyOpts.filter((o) => cites.includes(o.cite))
     const line = composeAllegationFromDuties(
       comparison.code,
       comparison.title,
       chosen.map((o) => ({ label: o.label, duty_phrase: o.duty_phrase })),
     )
     const matched = chosen.map((o) => o.cite)
+    const key = comparison.wac_id || comparison.code
     const nextComparisons = report.comparisons.map((c) =>
-      (c.wac_id || c.code) === (comparison.wac_id || comparison.code)
-        ? { ...c, allegation_draft: line, matched_subsections: matched.length ? matched : c.matched_subsections }
+      (c.wac_id || c.code) === key
+        ? {
+            ...c,
+            allegation_draft: line,
+            matched_subsections: matched.length ? matched : c.matched_subsections,
+            duty_options: dutyOpts.length ? dutyOpts : c.duty_options,
+          }
         : c,
     )
     const nextAllegations = (report.allegations || []).map((a) =>
       a.wac_code === comparison.code
-        ? { ...a, allegation_text: line, matched_subsections: matched.length ? matched : a.matched_subsections }
+        ? {
+            ...a,
+            allegation_text: line,
+            matched_subsections: matched.length ? matched : a.matched_subsections,
+            duty_options: dutyOpts.length ? dutyOpts : a.duty_options,
+          }
         : a,
     )
     const nextConclusions = (report.conclusions || []).map((c) =>
@@ -262,7 +312,7 @@ export function ReviewStep({
 
   const toggleDuty = (comparison: WACComparison, cite: string) => {
     const key = comparison.wac_id || comparison.code
-    const opts = comparison.duty_options || []
+    const opts = dutyOptsFor(comparison)
     setSelectedDuties((prev) => {
       const current = new Set(prev[key] || starterCitesFor(comparison))
       if (current.has(cite)) {
@@ -272,9 +322,54 @@ export function ReviewStep({
         current.add(cite)
       }
       const ordered = opts.map((o) => o.cite).filter((c) => current.has(c))
-      applyDutySelection(comparison, ordered)
+      for (const c of current) {
+        if (!ordered.includes(c)) ordered.push(c)
+      }
+      applyDutySelection(comparison, ordered, opts)
       return { ...prev, [key]: ordered }
     })
+  }
+
+  const toggleOutlineDuty = async (comparison: WACComparison, fullLabel: string) => {
+    if (!report || !onReportChange || outlineBusy) return
+    const key = codeKey(comparison)
+    let opts = dutyOptsFor(comparison)
+    const existing = opts.find((o) => o.label === fullLabel)
+    const current = selectedDuties[key] || starterCitesFor(comparison)
+
+    if (existing && current.includes(existing.cite)) {
+      if (current.length <= 1) return
+      const ordered = current.filter((c) => c !== existing.cite)
+      setSelectedDuties((prev) => ({ ...prev, [key]: ordered }))
+      applyDutySelection(comparison, ordered, opts)
+      return
+    }
+
+    let opt = existing
+    if (!opt) {
+      setOutlineBusy(true)
+      setPendingOutlineLabel(fullLabel)
+      try {
+        opt = await api.resolveDutyOption({ code: comparison.code, label: fullLabel })
+      } catch {
+        return
+      } finally {
+        setOutlineBusy(false)
+        setPendingOutlineLabel(null)
+      }
+      if (!opts.some((o) => o.label === opt!.label)) {
+        opts = [...opts, opt!]
+      }
+    }
+
+    const nextSet = new Set(current)
+    nextSet.add(opt.cite)
+    const ordered = opts.map((o) => o.cite).filter((c) => nextSet.has(c))
+    for (const c of nextSet) {
+      if (!ordered.includes(c)) ordered.push(c)
+    }
+    setSelectedDuties((prev) => ({ ...prev, [key]: ordered }))
+    applyDutySelection(comparison, ordered, opts)
   }
 
   useEffect(() => {
@@ -295,6 +390,11 @@ export function ReviewStep({
   }, [comparisons, report?.compare_cites_confirmed, report?.confirmed_allegation_codes])
 
   const allConfirmed = total > 0 && comparisons.every((c) => confirmed.has(codeKey(c)))
+  const manualReviewCodes = useMemo(
+    () => comparisons.filter(needsManualReview),
+    [comparisons],
+  )
+  const unconfirmedManualCount = manualReviewCodes.filter((c) => !confirmed.has(codeKey(c))).length
 
   const toggleConfirmActive = () => {
     if (!active) return
@@ -384,6 +484,22 @@ export function ReviewStep({
 
   const allegationLen = active?.allegation_draft?.length ?? 0
 
+  const activeDutyOpts = active ? dutyOptsFor(active) : []
+  const activeSelectedCites = useMemo(() => {
+    if (!active) return [] as string[]
+    return selectedDuties[codeKey(active)] || starterCitesFor(active)
+  }, [active, selectedDuties])
+
+  const selectedOutlineLabels = useMemo(() => {
+    if (!active) return new Set<string>()
+    const labels = new Set<string>()
+    for (const cite of activeSelectedCites) {
+      const opt = activeDutyOpts.find((o) => o.cite === cite)
+      labels.add(opt?.label || dutyLabelFromCite(cite, active.code))
+    }
+    return labels
+  }, [active, activeSelectedCites, activeDutyOpts])
+
   if (!comparisons.length) {
     return (
       <div className="animate-rise border border-dashed border-ink-300 px-6 py-12 text-center font-sans text-sm text-ink-500 dark:border-ink-600">
@@ -415,8 +531,13 @@ export function ReviewStep({
             className="btn-secondary"
             disabled={busy || allConfirmed}
             onClick={confirmAll}
+            title={
+              manualReviewCodes.length
+                ? 'Confirms matched cites only — codes with no clear application need individual review'
+                : 'Confirm all allegation cites at once'
+            }
           >
-            Confirm all cites
+            Confirm all matched cites
           </button>
           <button
             type="button"
@@ -431,10 +552,26 @@ export function ReviewStep({
       </div>
 
       {!allConfirmed && (
-        <p className="border-l-2 border-amber-600/70 bg-amber-500/[0.06] px-3 py-2 font-sans text-sm text-ink-700 dark:text-ink-200">
-          Confirm allegation cites before Report ({confirmed.size}/{total} confirmed). Rebuilds clear
-          confirmation so dropped cites are reviewed again.
-        </p>
+        <div
+          role="status"
+          className="border-l-2 border-amber-600 bg-amber-50/90 px-3 py-2.5 font-sans text-sm text-amber-950 dark:bg-amber-950/35 dark:text-amber-100"
+        >
+          <p>
+            Confirm each allegation cite before opening Report ({confirmed.size}/{total} confirmed).
+          </p>
+          {unconfirmedManualCount > 0 && (
+            <p className="mt-1 text-xs opacity-90">
+              {unconfirmedManualCount === 1
+                ? '1 code has no clear application'
+                : `${unconfirmedManualCount} codes have no clear application`}{' '}
+              — open it, review the allegation line, then check the confirm box. Confirm all matched
+              cites skips these.
+            </p>
+          )}
+          <p className="mt-1 text-xs opacity-80">
+            Rebuilding the draft clears confirmation so dropped cites are reviewed again.
+          </p>
+        </div>
       )}
 
       <IrTemplatePicker
@@ -518,7 +655,11 @@ export function ReviewStep({
                           )}
                         >
                           <div className="font-mono text-xs font-semibold tracking-tight">
-                            {confirmed.has(codeKey(c)) ? '✓ ' : ''}
+                            {confirmed.has(codeKey(c))
+                              ? '✓ '
+                              : needsManualReview(c)
+                                ? '! '
+                                : ''}
                             {c.code}
                           </div>
                           <div className="mt-0.5 line-clamp-2 font-sans text-[11px] leading-snug text-ink-500">
@@ -595,6 +736,16 @@ export function ReviewStep({
                       codes with stronger application.
                     </p>
                   )}
+                  {needsManualReview(active) && (
+                    <p
+                      role="note"
+                      className="mt-2 border-l-2 border-amber-600 bg-amber-50/80 px-2.5 py-2 font-sans text-xs leading-relaxed text-amber-950 dark:bg-amber-950/30 dark:text-amber-100"
+                    >
+                      {!hasMatchedDuties(active)
+                        ? 'No duty phrases matched this complaint. Review the allegation line, adjust subsections if needed, then confirm below — or remove this code from approved WACs on Intake.'
+                        : 'No clear application to this complaint. Confirm you still want this cite in the report, or go back and adjust approved WACs.'}
+                    </p>
+                  )}
                 </header>
 
                 <article className="compare-allegation-body">
@@ -609,27 +760,24 @@ export function ReviewStep({
                   )}
                 </article>
 
-                {!!(active.duty_options?.length || active.matched_subsections?.length) && (
+                {!!(activeDutyOpts.length || active.matched_subsections?.length) && (
                   <div className="border-t border-ink-200 px-5 py-3 dark:border-ink-700">
-                    <p className="compare-meta mb-1.5">Duties in this allegation</p>
-                    {(active.duty_options?.length ?? 0) === 0 ? (
+                    <p className="compare-meta mb-1.5">Adjust subsections in this allegation</p>
+                    {activeDutyOpts.length === 0 ? (
                       <p className="font-sans text-sm text-amber-800 dark:text-amber-300">
-                        No exact duty phrases were matched for this code yet. Rebuild the draft from
-                        Intake so allegations use full WAC wording — never abbreviated cite lists.
+                        No exact duty phrases were matched for this code yet. Pick subsections from
+                        the full code text below, or rebuild the draft from Intake.
                       </p>
                     ) : (
                       <>
                         <p className="mb-2 font-sans text-xs leading-relaxed text-ink-500">
-                          Starts with the two strongest fits. Check additional subsections below if
-                          the line needs more coverage.
+                          Check subsections to include in the allegation line. Add any others from
+                          the full code outline below.
                         </p>
                         <ul className="space-y-2">
-                          {active.duty_options!.map((opt, idx) => {
+                          {sortedDutyOptions(activeDutyOpts, activeSelectedCites).map((opt) => {
                             const key = codeKey(active)
-                            const checked = (selectedDuties[key] || starterCitesFor(active)).includes(
-                              opt.cite,
-                            )
-                            const isStarter = idx < 2
+                            const checked = activeSelectedCites.includes(opt.cite)
                             return (
                               <li key={opt.cite}>
                                 <label className="flex cursor-pointer items-start gap-2.5 font-sans text-sm text-ink-700 dark:text-ink-200">
@@ -639,8 +787,8 @@ export function ReviewStep({
                                     checked={checked}
                                     disabled={
                                       busy ||
-                                      (checked &&
-                                        (selectedDuties[key] || starterCitesFor(active)).length <= 1)
+                                      outlineBusy ||
+                                      (checked && activeSelectedCites.length <= 1)
                                     }
                                     onChange={() => toggleDuty(active, opt.cite)}
                                   />
@@ -648,7 +796,8 @@ export function ReviewStep({
                                     <span className="compare-cite font-semibold">{opt.cite}</span>
                                     <span className="ml-2 text-[11px] uppercase tracking-wide text-ink-400">
                                       {opt.band}
-                                      {isStarter && opt.included_by_default ? ' · starting' : ''}
+                                      {opt.included_by_default ? ' · starting' : ''}
+                                      {opt.picked_from_outline ? ' · from full code' : ''}
                                     </span>
                                     <span className="mt-0.5 block font-serif text-[13px] leading-snug text-ink-600 dark:text-ink-300">
                                       {opt.duty_phrase}
@@ -664,7 +813,18 @@ export function ReviewStep({
                   </div>
                 )}
 
-                <div className="border-t border-ink-200 px-5 py-3 dark:border-ink-700">
+                {!hasMatchedDuties(active) && (
+                  <div className="border-t border-ink-200 px-5 py-3 dark:border-ink-700">
+                    <p className="compare-meta mb-1.5">Subsections</p>
+                    <p className="font-sans text-sm text-amber-800 dark:text-amber-300">
+                      No duty phrases matched. Expand Exact PDF subsection text below to pick
+                      subsections from the full code, or rebuild from Intake.
+                    </p>
+                  </div>
+                )}
+
+                <div className="border-t border-ink-200 bg-ink-50/50 px-5 py-3 dark:border-ink-700 dark:bg-ink-900/25">
+                  <p className="compare-meta mb-2">Gate to Report</p>
                   <label className="flex cursor-pointer items-start gap-2.5 font-sans text-sm text-ink-700 dark:text-ink-200">
                     <input
                       type="checkbox"
@@ -673,7 +833,9 @@ export function ReviewStep({
                       onChange={toggleConfirmActive}
                     />
                     <span>
-                      Cite confirmed for this code
+                      {needsManualReview(active)
+                        ? 'I reviewed this cite — confirm for Report'
+                        : 'Cite confirmed for this code'}
                       {confirmed.has(codeKey(active))
                         ? ' — included for Report'
                         : ' — required before opening Report'}
@@ -757,7 +919,13 @@ export function ReviewStep({
                     {showFullCode ? 'Hide full code text' : 'Show full selected code text'}
                   </button>
                   {showFullCode && (
-                    <StatuteOutline text={active.wac_text || active.wac_summary || ''} />
+                    <StatuteOutline
+                      text={active.wac_text || active.wac_summary || ''}
+                      selectedLabels={selectedOutlineLabels}
+                      onToggleDuty={(label) => void toggleOutlineDuty(active, label)}
+                      busy={busy || outlineBusy}
+                      pendingLabel={pendingOutlineLabel}
+                    />
                   )}
                 </div>
               )}

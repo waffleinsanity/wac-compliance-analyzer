@@ -1950,6 +1950,36 @@ def allegation_has_shortcut(text: str) -> bool:
     return bool(re.search(r"\bsee also\b", body, flags=re.IGNORECASE))
 
 
+def build_duty_option_from_label(code: str, label: str) -> dict[str, Any] | None:
+    """PDF-backed duty option for a user-picked subsection (Compare full-code outline)."""
+    code = code.replace("WAC ", "").replace("RCW ", "").strip()
+    label = sanitize_subsection_label((label or "").strip())
+    if not label:
+        return None
+    sub = validate_subsection_cite(code, f"{code}{label}")
+    if not sub:
+        return None
+    phrase = _duty_phrase_for_option(sub)
+    if not phrase:
+        phrase = duty_phrase_from_subsection(sub, max_chars=DUTY_MAX_CHARS)
+    if not phrase:
+        own = own_clause_text(sub.text)
+        if own and len(own.strip()) >= 8:
+            phrase = own.strip().rstrip(" ;,")
+    if not phrase or len(phrase.strip()) < 8:
+        return None
+    prefix = cite_prefix(code)
+    return {
+        "cite": f"{prefix} {code}{label}",
+        "label": label,
+        "duty_phrase": phrase,
+        "score": 0.0,
+        "band": "moderate",
+        "included_by_default": False,
+        "picked_from_outline": True,
+    }
+
+
 def build_allegation_duty_options(
     code: str,
     selection: list[ScopedSubsection],

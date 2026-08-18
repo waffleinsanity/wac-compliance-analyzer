@@ -31,6 +31,20 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.08.17.5',
+    buildTag: '2026.08.17.5',
+    date: '2026-08-17',
+    title: 'Pick any subsection from full code text',
+    summary:
+      'Compare investigators can add any PDF-backed subsection from the full code outline to the allegation duties and line — not only complaint-ranked suggestions.',
+    highlights: [
+      'Full code outline rows include Add / In allegation controls.',
+      'Custom picks resolve exact duty phrases from the PDF store and persist on the case.',
+      'Duty checkboxes show which subsections came from the full code picker.',
+    ],
+    areas: ['investigation'],
+  },
+  {
     id: '2026.08.17.4',
     buildTag: '2026.08.17.4',
     date: '2026-08-17',

@@ -346,6 +346,12 @@ class AllegationDutyOption(BaseModel):
     score: float = 0.0
     band: str = "moderate"  # strong | moderate | weak
     included_by_default: bool = False
+    picked_from_outline: bool = False
+
+
+class DutyOptionFromLabelRequest(BaseModel):
+    code: str
+    label: str
 
 
 class WACComparison(BaseModel):

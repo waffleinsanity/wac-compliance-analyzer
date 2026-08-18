@@ -252,6 +252,7 @@ export default function App() {
               className="btn-ghost btn-sm hidden sm:inline-flex"
               onClick={() => setFeedbackOpen(true)}
               title="Send feedback"
+              aria-label="Send feedback"
             >
               <MessageSquare className="h-4 w-4" />
               <span className="ml-1.5 hidden lg:inline">Feedback</span>
@@ -261,11 +262,18 @@ export default function App() {
               className="btn-ghost btn-sm hidden sm:inline-flex"
               onClick={() => setBugOpen(true)}
               title="Report a bug"
+              aria-label="Report a bug"
             >
               <Bug className="h-4 w-4" />
               <span className="ml-1.5 hidden lg:inline">Bug</span>
             </button>
-            <button type="button" className="btn-ghost btn-sm" onClick={cycleTheme} title={`Theme: ${theme}`}>
+            <button
+              type="button"
+              className="btn-ghost btn-sm"
+              onClick={cycleTheme}
+              title={`Theme: ${theme}`}
+              aria-label={`Theme: ${theme}. Click to cycle.`}
+            >
               {resolved === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
             {user && userCanAdmin && (
@@ -382,7 +390,12 @@ export default function App() {
                   <h2 className="font-display text-base">Approved WACs</h2>
                   <p className="text-xs text-muted-foreground">Required for every case report</p>
                 </div>
-                <button type="button" className="btn-ghost btn-sm" onClick={() => setShowMobileMenu(false)}>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  onClick={() => setShowMobileMenu(false)}
+                  aria-label="Close approved WAC panel"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -491,7 +504,7 @@ export default function App() {
                   className={
                     step === 'report'
                       ? 'min-h-0 flex-1 overflow-hidden'
-                      : 'min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5'
+                      : 'min-h-0 flex-1 overflow-y-auto p-3 pb-20 sm:p-4 lg:p-5 lg:pb-5'
                   }
                 >
                   {step === 'workspace' && (
@@ -729,7 +742,7 @@ export default function App() {
             <div className="fixed right-0 top-0 flex h-full w-80 flex-col border-l bg-card">
               <div className="flex items-center justify-between border-b p-3">
                 <h2 className="font-display text-base">Cases</h2>
-                <button type="button" className="btn-ghost btn-sm" onClick={() => setShowCasesDrawer(false)}>
+                <button type="button" className="btn-ghost btn-sm" onClick={() => setShowCasesDrawer(false)} aria-label="Close cases panel">
                   <X className="h-4 w-4" />
                 </button>
               </div>

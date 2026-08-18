@@ -200,6 +200,7 @@ export function ComplaintStep({
               className="btn-ghost !px-2.5 !py-1 text-xs"
               disabled={busy || !canEdit}
               onClick={() => fileRef.current?.click()}
+              aria-label="Upload complaint file"
             >
               <FileUp className="h-3.5 w-3.5" /> Upload
             </button>
@@ -208,6 +209,7 @@ export function ComplaintStep({
               className={clsx('btn-ghost !px-2.5 !py-1 text-xs', listening && 'text-rose-600')}
               disabled={busy || !canEdit}
               onClick={toggleVoiceNotes}
+              aria-label={listening ? 'Stop voice dictation' : 'Start voice dictation'}
               title="Dictate notes into the complaint field (you still edit before drafting)"
             >
               {listening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
@@ -218,6 +220,7 @@ export function ComplaintStep({
               className="btn-ghost !px-2.5 !py-1 text-xs"
               disabled={!canEdit}
               onClick={() => onTextChange('')}
+              aria-label="Clear complaint text"
             >
               <Trash2 className="h-3.5 w-3.5" /> Clear
             </button>
@@ -344,16 +347,32 @@ export function ComplaintStep({
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-200/60 pt-3 dark:border-ink-700">
-            <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1">
               <span className="font-mono text-xs text-ink-400">{text.length.toLocaleString()} chars</span>
-              {selectedCount === 0 && canEdit && (
-                <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-                  Select approved WACs in the left rail before drafting.
-                </p>
-              )}
-              {!text.trim() && selectedCount > 0 && canEdit && (
-                <p className="mt-1 text-xs text-ink-500">Add complaint text to enable drafting.</p>
-              )}
+              <span
+                className={clsx(
+                  'inline-flex items-center gap-1.5 text-xs',
+                  text.trim() ? 'text-tide-800 dark:text-tide-300' : 'text-amber-800 dark:text-amber-300',
+                )}
+              >
+                <span aria-hidden>{text.trim() ? '✓' : '○'}</span>
+                Complaint text
+              </span>
+              <span
+                className={clsx(
+                  'inline-flex items-center gap-1.5 text-xs',
+                  selectedCount > 0
+                    ? 'text-tide-800 dark:text-tide-300'
+                    : 'text-amber-800 dark:text-amber-300',
+                )}
+              >
+                <span aria-hidden>{selectedCount > 0 ? '✓' : '○'}</span>
+                {selectedCount === 0
+                  ? 'No approved WACs'
+                  : selectedCount === 1
+                    ? '1 approved WAC'
+                    : `${selectedCount} approved WACs`}
+              </span>
             </div>
             <button
               type="button"

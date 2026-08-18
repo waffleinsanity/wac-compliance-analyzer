@@ -111,6 +111,7 @@ export type AllegationDutyOption = {
   score: number
   band: 'strong' | 'moderate' | 'weak' | string
   included_by_default: boolean
+  picked_from_outline?: boolean
 }
 
 export type WACComparison = {
@@ -820,6 +821,11 @@ export const api = {
     credential_number?: string
   }) =>
     request<InvestigationReport>('/api/investigate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  resolveDutyOption: (payload: { code: string; label: string }) =>
+    request<AllegationDutyOption>('/api/investigate/duty-option', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

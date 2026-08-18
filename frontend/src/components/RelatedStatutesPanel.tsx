@@ -59,6 +59,7 @@ export function RelatedStatutesPanel({
         type="button"
         className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/30"
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
       >
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
