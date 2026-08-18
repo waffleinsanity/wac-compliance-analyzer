@@ -38,7 +38,7 @@ from app.services.template_corpus import (
     format_intake_narrative,
     load_template_corpus,
 )
-from app.services.guidance_corpus import categorical_allegation_text, load_guidance_corpus
+from app.services.guidance_corpus import load_guidance_corpus
 from app.services.ir_learning import learned_preamble, preferred_connector_for
 from app.services.sod_draft import attach_sod_to_report
 from app.services.wac_scope import (
@@ -427,9 +427,11 @@ def build_investigation_report(
             relevant=selected,
             preferred_connector=connector,
         )
-        # Compare / SOD: cite-first exact-WAC line. IR Allegation/s: categorical (IR Guidance).
+        # Keep a single PDF-backed allegation line across Compare/API/Report payloads.
+        # Categorical helper text remains available for guidance, but the allegation field
+        # must carry the Baseline "Potential violation..." duty line.
         cite_allegation = normalize_allegation_line(draft.text)
-        ir_allegation = categorical_allegation_text(node.code, node.title or node.code)
+        ir_allegation = cite_allegation
         cites = draft.cites
         # Compare / chips follow allegation selection only — never fall back to weak leaves.
         closest = selected

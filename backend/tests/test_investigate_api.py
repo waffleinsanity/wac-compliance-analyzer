@@ -37,10 +37,8 @@ def test_investigate_assault_structure(client):
     assert data.get("quote_integrity", {}).get("ok") is True, data.get("quote_integrity")
 
     for a in data["allegations"]:
-        # IR allegations are categorical (cite-first lives on Compare drafts / SOD).
-        assert not a["allegation_text"].lower().startswith(
-            ("a potential violation", "potential violation")
-        )
+        # Allegation line must stay in Baseline cite-first Potential violation form.
+        assert a["allegation_text"].lower().startswith("potential violation")
         assert "investigator review" not in a["allegation_text"].lower()
         assert "see also" not in a["allegation_text"].lower()
         assert a.get("matched_subsections")
@@ -106,8 +104,8 @@ def test_investigate_confidentiality_includes_rcw(client):
     data = res.json()
     assert any(e["instrument"] == "RCW" for e in data["regulatory_framework"])
     for a in data["allegations"]:
-        # IR: categorical topics (no cite-first Potential violation…)
-        assert not a["allegation_text"].startswith("Potential violation")
+        # Allegation line remains Baseline cite-first in API output.
+        assert a["allegation_text"].startswith("Potential violation")
         assert '"' not in a["allegation_text"]
     for c in data.get("comparisons") or []:
         draft = c.get("allegation_draft") or ""

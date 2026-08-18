@@ -503,7 +503,7 @@ export default function App() {
                 <div
                   className={
                     step === 'report'
-                      ? 'min-h-0 flex-1 overflow-hidden'
+                      ? 'min-h-0 flex-1 overflow-y-auto'
                       : 'min-h-0 flex-1 overflow-y-auto p-3 pb-20 sm:p-4 lg:p-5 lg:pb-5'
                   }
                 >
@@ -526,6 +526,7 @@ export default function App() {
                         onCredentialNumberChange={setCredentialNumber}
                         onExtractFile={extractFile}
                         onAnalyze={() => void generateReport()}
+                        hasPreviousDraft={Boolean(report)}
                         selectedCount={selectedCodes.length}
                         busy={busy}
                         canEdit={userCanEdit}
@@ -633,7 +634,7 @@ export default function App() {
                             const detail = await ensureCaseSaved(reportPayload)
                             return detail.id
                           }}
-                          onBack={() => setStep('review')}
+                          onBack={() => setStep('workspace')}
                           canEdit={userCanEdit}
                           canExport={userCanExport}
                         />

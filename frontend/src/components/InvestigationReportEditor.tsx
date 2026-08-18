@@ -913,10 +913,10 @@ export function InvestigationReportEditor({
               type="button"
               className="btn-ghost !h-8 !px-2.5 text-xs"
               onClick={onBack}
-              title="Back to Compare"
+              title="Back to Intake"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Compare
+              Intake
             </button>
             {canEdit && (
               <button

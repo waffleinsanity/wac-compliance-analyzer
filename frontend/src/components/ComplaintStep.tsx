@@ -18,6 +18,7 @@ type Props = {
   onCredentialNumberChange: (v: string) => void
   onExtractFile: (file: File) => Promise<void>
   onAnalyze: () => void
+  hasPreviousDraft?: boolean
   selectedCount: number
   busy: boolean
   canEdit?: boolean
@@ -45,6 +46,7 @@ export function ComplaintStep({
   onCredentialNumberChange,
   onExtractFile,
   onAnalyze,
+  hasPreviousDraft = false,
   selectedCount,
   busy,
   canEdit = true,
@@ -384,11 +386,17 @@ export function ComplaintStep({
                   ? 'Your account cannot draft reports'
                   : selectedCount === 0
                     ? 'Select officially approved WACs for this case first'
-                    : 'Draft report using only the approved WACs you selected'
+                    : hasPreviousDraft
+                      ? 'Build a new draft from current Intake values and replace the previous draft'
+                      : 'Draft report using only the approved WACs you selected'
               }
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {busy ? 'Building report…' : 'Draft report from approved WACs'}
+              {busy
+                ? 'Building report…'
+                : hasPreviousDraft
+                  ? 'Rebuild draft from approved WACs'
+                  : 'Draft report from approved WACs'}
             </button>
           </div>
         </div>
