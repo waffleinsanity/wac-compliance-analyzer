@@ -1,4 +1,4 @@
-/** Fixed DOH Investigative Process shell — labels are template structure, not deletable rows. */
+/** Fixed DOH Investigative Process shell, labels are template structure, not deletable rows. */
 
 export type ProcessFields = {
   preInvestigation: string
@@ -92,7 +92,7 @@ export function unpackProcessFields(lines: string[] | null | undefined): Process
     }
   }
 
-  // Legacy flat list — keep as pre-investigation body so content isn't lost
+  // Legacy flat list, keep as pre-investigation body so content isn't lost
   return {
     ...DEFAULT_PROCESS_FIELDS,
     preInvestigation: src.join('\n').trim() || DEFAULT_PROCESS_FIELDS.preInvestigation,
