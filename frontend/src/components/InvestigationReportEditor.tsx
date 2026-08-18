@@ -80,6 +80,11 @@ function wacCodeFromFailure(f: QuoteFailure): string | null {
   return null
 }
 
+function naIfEmpty(value: string | null | undefined): string {
+  const s = (value ?? '').toString()
+  return s.trim().length ? s : 'N/A'
+}
+
 function jumpToAllegation(wacCode: string) {
   const el = document.getElementById(allegationAnchorId(wacCode))
   if (!el) return
@@ -1149,7 +1154,7 @@ export function InvestigationReportEditor({
                   <label className="label">{label}</label>
                   <input
                     className="input"
-                    value={report.facility_info[key] || ''}
+                    value={naIfEmpty(report.facility_info[key])}
                     onChange={(e) => updateFacility(key, e.target.value)}
                   />
                 </div>
@@ -1203,7 +1208,7 @@ export function InvestigationReportEditor({
             </p>
             <textarea
               className="input min-h-[140px] font-serif leading-relaxed"
-              value={report.intake_details}
+              value={naIfEmpty(report.intake_details)}
               onChange={(e) => setReport((p) => ({ ...p, intake_details: e.target.value }))}
             />
           </section>
@@ -1346,7 +1351,7 @@ export function InvestigationReportEditor({
                   <li key={i}>
                     <textarea
                       className="input min-h-[64px] w-full font-serif text-sm"
-                      value={ex}
+                      value={naIfEmpty(ex)}
                       onChange={(e) => {
                         const value = e.target.value
                         setReport((prev) => {
@@ -1378,7 +1383,7 @@ export function InvestigationReportEditor({
                 </p>
                 <textarea
                   className="input min-h-[110px] font-serif text-sm leading-relaxed"
-                  value={processFields.preInvestigation}
+                  value={naIfEmpty(processFields.preInvestigation)}
                   onChange={(e) => updateProcessFields({ preInvestigation: e.target.value })}
                 />
               </div>
@@ -1393,7 +1398,7 @@ export function InvestigationReportEditor({
                     </p>
                     <textarea
                       className="input min-h-[72px] font-serif text-sm leading-relaxed"
-                      value={processFields.observations}
+                      value={naIfEmpty(processFields.observations)}
                       onChange={(e) => updateProcessFields({ observations: e.target.value })}
                     />
                   </div>
@@ -1403,7 +1408,7 @@ export function InvestigationReportEditor({
                     </p>
                     <textarea
                       className="input min-h-[72px] font-serif text-sm leading-relaxed"
-                      value={processFields.interviews}
+                      value={naIfEmpty(processFields.interviews)}
                       onChange={(e) => updateProcessFields({ interviews: e.target.value })}
                     />
                   </div>
@@ -1413,7 +1418,7 @@ export function InvestigationReportEditor({
                     </p>
                     <textarea
                       className="input min-h-[72px] font-serif text-sm leading-relaxed"
-                      value={processFields.documentReview}
+                      value={naIfEmpty(processFields.documentReview)}
                       onChange={(e) => updateProcessFields({ documentReview: e.target.value })}
                     />
                   </div>
@@ -1491,7 +1496,7 @@ export function InvestigationReportEditor({
 
             <textarea
               className="input min-h-[200px] font-serif leading-relaxed"
-              value={report.summary_of_findings}
+              value={naIfEmpty(report.summary_of_findings)}
               onChange={(e) => setReport((p) => ({ ...p, summary_of_findings: e.target.value }))}
             />
           </section>
@@ -1566,7 +1571,7 @@ export function InvestigationReportEditor({
                               <label className="label">Deficiency details (IR narrative)</label>
                               <input
                                 className="input"
-                                value={conclusion?.deficiency_details || ''}
+                                value={naIfEmpty(conclusion?.deficiency_details)}
                                 placeholder="Optional note — full cite language lives in SOD"
                                 onChange={(e) =>
                                   updateConclusion(idx, {
