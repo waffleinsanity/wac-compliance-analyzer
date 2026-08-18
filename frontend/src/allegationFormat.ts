@@ -50,10 +50,12 @@ const STATUTE_VERB_STARTERS = new Set([
   'govern',
   'have',
   'implement',
+  'improve',
   'keep',
   'make',
   'maintain',
   'manage',
+  'meet',
   'monitor',
   'notify',
   'obtain',
@@ -70,19 +72,69 @@ const STATUTE_VERB_STARTERS = new Set([
   'use',
 ])
 
+const LEADING_ADVERBS = new Set([
+  'continuously',
+  'promptly',
+  'immediately',
+  'adequately',
+  'annually',
+  'periodically',
+  'timely',
+])
+
+/** Repair PDF glyph swaps in subsection labels (@→g) and missing roman parens. */
+export function sanitizeSubsectionLabel(label: string): string {
+  let raw = (label || '').trim().replace(/@/g, 'g')
+  if (!raw) return ''
+  raw = raw.replace(/\)([ivxlcdmIVXLCDM]+)\)/g, ')($1)')
+  const parts = [...raw.matchAll(/\(([^)]*)\)/g)].map((m) => m[1])
+  if (!parts.length) return raw
+  const cleaned: string[] = []
+  for (const part of parts) {
+    const token = part.replace(/\s+/g, '').replace(/[^A-Za-z0-9ivxlcdmIVXLCDM]/g, '')
+    if (token) cleaned.push(`(${token})`)
+  }
+  return cleaned.join('') || raw
+}
+
+function finiteVerbToInfinitive(word: string): string | null {
+  const lower = (word || '').replace(/[.,;:()[\]"']+/g, '').toLowerCase()
+  if (!lower) return null
+  const candidates = new Set<string>([lower])
+  if (lower.endsWith('ies') && lower.length > 4) candidates.add(`${lower.slice(0, -3)}y`)
+  if (lower.endsWith('es') && lower.length > 3) candidates.add(lower.slice(0, -2))
+  if (lower.endsWith('s') && lower.length > 2) candidates.add(lower.slice(0, -1))
+  for (const cand of candidates) {
+    if (STATUTE_VERB_STARTERS.has(cand)) return cand
+  }
+  return null
+}
+
 /** Developing → develop so "failed to …" reads as a sentence; rest stays exact WAC text. */
 export function gerundOpenerToInfinitive(phrase: string): string {
-  const body = (phrase || '').trim()
+  const body = (phrase || '').replace(/\u00a0/g, ' ').trim()
   const m = body.match(/^([A-Za-z][A-Za-z-]*)ing\b(.*)$/)
-  if (!m) return body
-  const stem = m[1].toLowerCase()
-  const rest = m[2]
-  const candidates = [stem, `${stem}e`]
-  if (stem.length >= 2 && stem[stem.length - 1] === stem[stem.length - 2]) {
-    candidates.push(stem.slice(0, -1))
+  if (m) {
+    const stem = m[1].toLowerCase()
+    const rest = m[2]
+    const candidates = [stem, `${stem}e`]
+    if (stem.length >= 2 && stem[stem.length - 1] === stem[stem.length - 2]) {
+      candidates.push(stem.slice(0, -1))
+    }
+    for (const cand of candidates) {
+      if (STATUTE_VERB_STARTERS.has(cand)) return `${cand}${rest}`
+    }
+    return body
   }
-  for (const cand of candidates) {
-    if (STATUTE_VERB_STARTERS.has(cand)) return `${cand}${rest}`
+  const words = body.split(/\s+/)
+  let verbIdx = 0
+  if (words.length > 1 && LEADING_ADVERBS.has(words[0].toLowerCase().replace(/[.,;:()[\]"']+/g, ''))) {
+    verbIdx = 1
+  }
+  const folded = finiteVerbToInfinitive(words[verbIdx] || '')
+  if (folded) {
+    words[verbIdx] = folded
+    return words.join(' ')
   }
   return body
 }
@@ -100,17 +152,21 @@ export function composeAllegationFromDuties(
 ): string {
   const bare = code.replace(/^WAC\s+/i, '').replace(/^RCW\s+/i, '').trim()
   const prefix = bare.startsWith('71.') ? 'RCW' : 'WAC'
-  let cleanTitle = (title || '').replace(/[—–]/g, ' - ').trim()
+  let cleanTitle = (title || '').trim()
   if (cleanTitle.length > 80) cleanTitle = `${cleanTitle.slice(0, 77).trimEnd()}…`
   const opener = `Potential violation of ${prefix} ${bare}, ${cleanTitle}`
+  const ordered = [...duties].sort((a, b) => (a.label || '').localeCompare(b.label || ''))
   const parts: string[] = []
-  for (const d of duties) {
+  for (const d of ordered) {
     // Exact duty_phrase from the store; fold only the leading gerund → infinitive
     // so "by having failed to …" matches backend compose_allegation_from_duties.
     let phrase = (d.duty_phrase || '').trim().replace(/[ ;:,.]+$/g, '')
     if (!phrase) continue
     phrase = gerundOpenerToInfinitive(phrase)
-    const label = (d.label || '').trim()
+    if (phrase && !(phrase.length >= 2 && phrase[0] === phrase[0].toUpperCase() && phrase[1] === phrase[1].toUpperCase())) {
+      phrase = phrase.charAt(0).toLowerCase() + phrase.slice(1)
+    }
+    const label = sanitizeSubsectionLabel(d.label || '').trim()
     const frag = `${label ? `${label} ` : ''}${phrase}`.trim()
     parts.push(parts.length ? `and ${frag}` : frag)
   }

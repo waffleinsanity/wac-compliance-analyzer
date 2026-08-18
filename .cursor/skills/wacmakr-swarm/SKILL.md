@@ -85,7 +85,7 @@ Workers: IR Drafting → Eval (serial). Deep skill: `wacmakr-ir-drafting`.
 **“Chroma empty / ranking wrong after ingest”**  
 Workers: Corpus → Eval. Deep skill: `wacmakr-statute-corpus`.
 
-**“PII gate blocks draft then Gemini still sees raw text”**  
+**“PII gate blocks draft then Groq still sees raw text”**  
 Workers: Privacy (+ Investigator LLM if prompt path). Deep skill: `wacmakr-privacy-pii`.
 
 **“Full stack won’t start / debugpy error”**  

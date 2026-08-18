@@ -413,7 +413,10 @@ def build_investigation_report(
         # (up to MAX_ALLEGATION_CLAUSES) — draft LINE uses top MAX_ALLEGATION_DRAFT_CLAUSES.
         ranked = score_relevant_subsections(complaint_text, node.code, max_items=14)
         selected = select_for_allegation(
-            ranked, max_items=MAX_ALLEGATION_CLAUSES, complaint=complaint_text
+            ranked,
+            max_items=MAX_ALLEGATION_CLAUSES,
+            complaint=complaint_text,
+            code=node.code,
         )
         connector = preferred_connector_for(db, node.code, complaint_themes)
         draft = draft_allegation_from_source(

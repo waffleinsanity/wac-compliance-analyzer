@@ -21,6 +21,7 @@ function reasonLabel(reason: string): string {
   const r = (reason || '').toLowerCase()
   if (r === 'explicit_cite') return 'Cited in complaint'
   if (r === 'structural_anchor') return 'Structural duty'
+  if (r === 'catch_all_primary') return 'Primary catch-all'
   if (r === 'lexical_overlap') return 'Duty overlap'
   if (r === 'code_fallback') return 'Weak match'
   return reason || 'Matched'

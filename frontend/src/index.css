@@ -134,9 +134,35 @@
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
     border-color: hsl(var(--input));
     background-color: hsl(var(--card));
+    box-sizing: border-box;
   }
   .input::placeholder {
     color: hsl(var(--muted-foreground));
+  }
+
+  /* Login column: Google, fields, and primary action share one width. */
+  .login-stack {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .login-stack .input,
+  .login-stack .btn-primary {
+    width: 100% !important;
+    max-width: none;
+    box-sizing: border-box;
+  }
+  .google-signin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    align-self: stretch;
+    cursor: pointer;
+    font: inherit;
+    text-decoration: none;
+    color: hsl(var(--card-foreground));
   }
 
   /* Flat work surfaces — borders for structure, no soft SaaS shadows */

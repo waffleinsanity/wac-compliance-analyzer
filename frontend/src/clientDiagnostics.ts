@@ -295,3 +295,65 @@ export async function fileToDataUrl(file: File): Promise<string> {
     reader.readAsDataURL(file)
   })
 }
+
+const OVERLAY_ATTR = 'data-bug-report-overlay'
+const MAX_SCREENSHOT_CHARS = 5_500_000
+
+function isOverlayNode(node: Node): boolean {
+  if (!(node instanceof HTMLElement)) return false
+  return node.hasAttribute(OVERLAY_ATTR) || Boolean(node.closest(`[${OVERLAY_ATTR}]`))
+}
+
+async function nextPaint(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
+/**
+ * Capture the visible application (not the bug-report dialog) as a JPEG data URL.
+ * Hides `[data-bug-report-overlay]` for one paint so the screenshot matches what
+ * the investigator was looking at.
+ */
+export async function captureAppScreenshot(): Promise<string> {
+  const { toJpeg } = await import('html-to-image')
+  const root = (document.getElementById('root') as HTMLElement | null) || document.body
+  const overlays = Array.from(document.querySelectorAll<HTMLElement>(`[${OVERLAY_ATTR}]`))
+  const previous = overlays.map((el) => ({
+    el,
+    visibility: el.style.visibility,
+    pointerEvents: el.style.pointerEvents,
+  }))
+  for (const el of overlays) {
+    el.style.visibility = 'hidden'
+    el.style.pointerEvents = 'none'
+  }
+  await nextPaint()
+  try {
+    const dataUrl = await toJpeg(root, {
+      quality: 0.82,
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5),
+      cacheBust: true,
+      filter: (node) => !isOverlayNode(node),
+    })
+    if (!dataUrl.startsWith('data:image/')) {
+      throw new Error('Screenshot capture returned an empty image')
+    }
+    if (dataUrl.length > MAX_SCREENSHOT_CHARS) {
+      throw new Error('Screenshot is too large — try uploading a cropped image instead')
+    }
+    return dataUrl
+  } catch (err) {
+    if (err instanceof Error && /too large/i.test(err.message)) throw err
+    throw new Error(
+      err instanceof Error && err.message
+        ? `Could not capture the current screen (${err.message})`
+        : 'Could not capture the current screen',
+    )
+  } finally {
+    for (const { el, visibility, pointerEvents } of previous) {
+      el.style.visibility = visibility
+      el.style.pointerEvents = pointerEvents
+    }
+  }
+}

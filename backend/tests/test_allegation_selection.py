@@ -7,6 +7,7 @@ from app.services.wac_scope import (
     MODERATE_SCORE,
     ScopedSubsection,
     draft_allegation_from_source,
+    expand_ranking_query,
     score_relevant_subsections,
     select_for_allegation,
 )
@@ -95,7 +96,7 @@ def test_select_drops_weak_floor_without_overlap():
         _sub("(1)(a)", 0.05, text="Unrelated cafeteria and parking lot duties."),
     ]
     selected = select_for_allegation(ranked, max_items=10, complaint=complaint)
-    assert selected == []
+    assert [s.label for s in selected if s.label != "(1)"] == []
     assert "gambling" not in " ".join(s.text for s in selected).lower()
 
 
@@ -118,8 +119,8 @@ def test_select_floor_keeps_moderate_overlap_passes():
         _sub("(9)", 0.12, text="Unrelated cafeteria menu and parking lot duties."),
     ]
     selected = select_for_allegation(ranked, max_items=10, complaint=complaint)
-    assert [s.label for s in selected] == ["(2)(e)", "(1)"]
-    assert all(s.score >= MODERATE_SCORE for s in selected)
+    assert {s.label for s in selected} == {"(2)(e)", "(1)"}
+    assert all(s.score >= MODERATE_SCORE for s in selected if s.reason != "catch_all_primary")
 
 
 def test_select_respects_cap():
@@ -144,8 +145,36 @@ def test_0410_structural_anchors_include_1a(store_ready):
     assert "(1)(c)" in [s.label for s in selected]
 
 
+def test_compare_includes_primary_catch_all_when_draftable(store_ready):
+    """Compare should offer (1) as a catch-all whenever that PDF node is a draftable duty."""
+    complaint = (
+        "The administrator failed to follow agency policies after a critical incident "
+        "and did not protect patient safety."
+    )
+    for code, title in (
+        ("246-341-0410", "Administrator key responsibilities"),
+        ("246-341-0600", "Individual rights"),
+        ("246-337-060", "Infection control"),
+        ("246-337-045", "Governance"),
+    ):
+        ranked = score_relevant_subsections(complaint, code, max_items=14)
+        selected = select_for_allegation(
+            ranked, max_items=10, complaint=complaint, code=code
+        )
+        assert "(1)" in [s.label for s in selected], (code, [s.label for s in selected])
+        draft = draft_allegation_from_source(code, title, complaint)
+        opts = draft.duty_options or []
+        labels = {o.get("label") for o in opts}
+        assert "(1)" in labels, (code, opts)
+        included = {o.get("label") for o in opts if o.get("included_by_default")}
+        assert "(1)" in included, (code, included)
+        body = draft.text.split("by having failed to", 1)[-1]
+        assert "(1)" in body, draft.text
+        assert "All administrative matters" not in draft.text
+
+
 def test_0410_anchors_not_forced_on_meds_only_complaint(store_ready):
-    """Narrow medication facts must not force 0410(1)(a–c) umbrella cites alone."""
+    """Narrow medication facts must not force 0410(1)(a–c) umbrellas; (1) catch-all may still apply."""
     complaint = (
         "The complaint alleged repeated medication errors, including missed evening doses "
         "and administration of the wrong dose of a psychiatric medication. Staff failed to "
@@ -154,7 +183,9 @@ def test_0410_anchors_not_forced_on_meds_only_complaint(store_ready):
     ranked = score_relevant_subsections(complaint, "246-341-0410", max_items=14)
     selected = select_for_allegation(ranked, max_items=10, complaint=complaint)
     labels = [s.label for s in selected]
-    # Umbrella admin anchors should not appear without admin/governance complaint substance.
+    # Parent (1) is the Compare catch-all whenever 0410 is selected.
+    assert "(1)" in labels
+    # Nested umbrella (1)(a–c) still require admin/governance complaint substance.
     assert "(1)(a)" not in labels
     assert "(1)(b)" not in labels
     assert "(1)(c)" not in labels
@@ -193,3 +224,52 @@ def test_medication_complaint_0515_excludes_gambling_and_generic_supervision(sto
         assert "(4)" not in cite
         assert not cite.endswith("(2)")
     assert draft.low_confidence or not draft.cites
+
+
+def test_sexual_contact_expands_to_abuse_exploitation_tokens():
+    """Ranking-only alias: sexual contact must reach PDF abuse/exploitation wording."""
+    expanded = expand_ranking_query(
+        "There are allegedly incidents of staff engaging in sexual contact with patients."
+    ).lower()
+    assert "abuse" in expanded
+    assert "exploitation" in expanded
+    assert "sexual" in expanded
+
+
+def test_0420_sexual_contact_selects_abuse_reporting_duties(store_ready):
+    """Staff sexual-contact facts must surface 0420(8) and (12)(a), not the generic fallback."""
+    complaint = (
+        "There are allegedly incidents of staff at respondent facility engaging in "
+        "sexual contact with patients."
+    )
+    ranked = score_relevant_subsections(complaint, "246-341-0420", max_items=14)
+    selected = select_for_allegation(ranked, max_items=10, complaint=complaint)
+    labels = {s.label for s in selected}
+    assert "(8)" in labels, (
+        f"expected 0420(8) abuse-reporting duty, got "
+        f"{[(s.label, round(s.score, 3), s.reason) for s in selected]}"
+    )
+    assert "(12)(a)" in labels, (
+        f"expected 0420(12)(a) critical-incident abuse allegation, got "
+        f"{[(s.label, round(s.score, 3), s.reason) for s in selected]}"
+    )
+    # Reporter's (14)(a) is evacuation in the PDF; background checks are (17)(a).
+    assert "(14)" not in labels
+    assert "(14)(a)" not in labels
+    blob = " ".join(f"{s.label} {s.title} {s.text}" for s in selected).lower()
+    assert "abuse" in blob
+    assert "exploitation" in blob or "neglect" in blob
+
+    draft = draft_allegation_from_source(
+        "246-341-0420",
+        "Agency policies and procedures",
+        complaint,
+        max_subs=10,
+        relevant=selected,
+    )
+    assert "as applied to the reported concern" not in draft.text.lower()
+    assert "by having failed to" in draft.text.lower()
+    assert any("(8)" in c for c in draft.cites)
+    assert any("(12)(a)" in c for c in draft.cites)
+    assert not draft.low_confidence
+

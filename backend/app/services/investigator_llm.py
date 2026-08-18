@@ -84,7 +84,7 @@ def llm_available(*, force: bool = False) -> bool:
     if not base:
         _LLM_AVAIL_CACHE = (now, False)
         return False
-    # Cloud providers (Gemini / OpenAI) need a key — skip dead localhost probes.
+    # Cloud providers (Groq / Gemini / OpenAI) need a key — skip dead localhost probes.
     is_local = "127.0.0.1" in base or "localhost" in base
     if not is_local and not (settings.llm_api_key or "").strip():
         _LLM_AVAIL_CACHE = (now, False)
@@ -109,18 +109,55 @@ def llm_available(*, force: bool = False) -> bool:
     return ok
 
 
+def _model_candidates(chat_url: str, configured: str) -> list[str]:
+    """Try the configured model, then provider-specific free-tier fallbacks on 403/404."""
+    models = [configured]
+    extra: tuple[str, ...] = ()
+    if "api.groq.com" in chat_url:
+        extra = ("openai/gpt-oss-120b", "openai/gpt-oss-20b")
+    elif "generativelanguage.googleapis.com" in chat_url:
+        extra = ("gemini-3.5-flash", "gemini-flash-latest")
+    elif "api.cerebras.ai" in chat_url:
+        extra = ("gpt-oss-120b", "llama3.1-8b")
+    for name in extra:
+        if name not in models:
+            models.append(name)
+    return models
+
+
+def _llm_unavailable_message() -> str:
+    model = settings.llm_model
+    base = settings.llm_base_url or ""
+    if not settings.llm_enabled:
+        return "LLM disabled (LLM_ENABLED=false). Using scoped local investigator."
+    if "api.groq.com" in base:
+        return (
+            f"Groq not configured (model={model}). "
+            "Set LLM_API_KEY in backend/.env from https://console.groq.com/keys, then restart the API."
+        )
+    if "generativelanguage.googleapis.com" in base:
+        return (
+            f"Gemini not configured (model={model}). "
+            "Set LLM_API_KEY in backend/.env from https://aistudio.google.com/apikey, then restart the API."
+        )
+    if "127.0.0.1" in base or "localhost" in base:
+        return (
+            f"LLM not reachable at {base} (model={model}). "
+            "Start Ollama or set LLM_API_KEY / LLM_BASE_URL."
+        )
+    return (
+        f"LLM not reachable at {base} (model={model}). "
+        "Using scoped local investigator. Start Ollama or set LLM_API_KEY / LLM_BASE_URL."
+    )
+
+
 def _chat_completion(messages: list[dict[str, str]], *, temperature: float = 0.2) -> str:
     url = settings.llm_base_url.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
     if settings.llm_api_key:
         headers["Authorization"] = f"Bearer {settings.llm_api_key}"
 
-    # Gemini retires Flash ids for new keys; try configured model then free-tier fallbacks.
-    models = [settings.llm_model]
-    if "generativelanguage.googleapis.com" in url:
-        for fallback in ("gemini-3.5-flash", "gemini-flash-latest"):
-            if fallback not in models:
-                models.append(fallback)
+    models = _model_candidates(url, settings.llm_model)
 
     last_error: Exception | None = None
     with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
@@ -144,7 +181,7 @@ def _chat_completion(messages: list[dict[str, str]], *, temperature: float = 0.2
                 last_error = RuntimeError(f"Empty LLM content for model={model}")
                 continue
             body = (resp.text or "").lower()
-            # Gemini often returns 403/404 for retired or project-gated model ids — try next.
+            # Retired / project-gated model ids (Gemini Flash churn, Groq Llama sunset) — try next.
             retryable = resp.status_code in (403, 404) or (
                 resp.status_code == 429 and "limit: 0" in body
             )
@@ -670,18 +707,7 @@ def run_investigator(
     result = _local_investigate(draft_complaint, selected)
     result.complaint_redacted_for_llm = redacted
     if want_llm and not llm_available():
-        if not settings.llm_enabled:
-            result.llm_error = "LLM disabled (LLM_ENABLED=false). Using scoped local investigator."
-        elif "generativelanguage.googleapis.com" in (settings.llm_base_url or ""):
-            result.llm_error = (
-                f"Gemini not configured (model={settings.llm_model}). "
-                "Set LLM_API_KEY in backend/.env from https://aistudio.google.com/apikey, then restart the API."
-            )
-        else:
-            result.llm_error = (
-                f"LLM not reachable at {settings.llm_base_url} (model={settings.llm_model}). "
-                "Using scoped local investigator. Start Ollama or set LLM_API_KEY / LLM_BASE_URL."
-            )
+        result.llm_error = _llm_unavailable_message()
 
     # Summary collaborator assist: LLM when available even if full investigate LLM is off
     return run_summary_assist(draft_complaint, selected, result)

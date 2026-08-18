@@ -68,10 +68,11 @@ export function applicationStrengthFromMatch(input: {
     reason === 'lexical_overlap' ||
     reason === 'explicit_cite' ||
     reason === 'structural_anchor' ||
+    reason === 'catch_all_primary' ||
     reason === 'code_fallback'
 
   if (reason === 'explicit_cite') return 'strong'
-  if (reason === 'structural_anchor') return 'moderate'
+  if (reason === 'structural_anchor' || reason === 'catch_all_primary') return 'moderate'
   if (reason === 'code_fallback') {
     if (score != null && score >= IR_STRONG_SCORE) return 'moderate'
     return score != null && score > 0 ? 'weak' : 'none'

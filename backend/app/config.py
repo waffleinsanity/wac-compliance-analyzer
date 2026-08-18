@@ -51,13 +51,13 @@ class Settings(BaseSettings):
     official_341_url: str = "https://app.leg.wa.gov/WAC/default.aspx?cite=246-341&full=true"
     official_337_url: str = "https://app.leg.wa.gov/WAC/default.aspx?cite=246-337&full=true"
 
-    # OpenAI-compatible investigator LLM (Gemini free tier by default; also Ollama/OpenAI)
+    # OpenAI-compatible investigator LLM (Groq free tier by default; also Ollama/Cerebras/Gemini)
     llm_enabled: bool = True
-    llm_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    llm_api_key: str = ""  # Gemini API key from https://aistudio.google.com/apikey
-    llm_model: str = "gemini-3.5-flash"
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+    llm_api_key: str = ""  # Groq key from https://console.groq.com/keys
+    llm_model: str = "openai/gpt-oss-120b"
     llm_timeout_seconds: float = 90.0
-    # IR draft is PDF-driven; keep Gemini off the critical path unless explicitly enabled.
+    # IR draft is PDF-driven; keep the LLM off the critical path unless explicitly enabled.
     llm_for_investigate: bool = False
 
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"]

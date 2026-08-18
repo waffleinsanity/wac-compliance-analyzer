@@ -107,7 +107,9 @@ def _preview_best_leaf(complaint: str, code: str):
     if not ranked:
         return None
     # Prefer what Compare would actually surface if this code were approved.
-    selected = select_for_allegation(ranked, max_items=2, complaint=complaint)
+    selected = select_for_allegation(
+        ranked, max_items=2, complaint=complaint, include_primary_catch_all=False
+    )
     if selected:
         return selected[0]
     # Otherwise take the strongest overlap-passing leaf above noise.

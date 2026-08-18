@@ -23,7 +23,7 @@ def band_research(score: float, *, score_basis: str = "ir_leaf", reason: str = "
     reason = (reason or "").lower()
     if reason == "explicit_cite":
         return "strong"
-    if reason == "structural_anchor":
+    if reason in {"structural_anchor", "catch_all_primary"}:
         return "moderate"
     if reason == "code_fallback":
         if score >= 0.5:

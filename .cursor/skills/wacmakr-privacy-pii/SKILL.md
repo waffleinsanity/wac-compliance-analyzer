@@ -20,7 +20,7 @@ Master conflict order still applies: sole-source PDF / IR-primary win over UX; p
 |----------|----------------|
 | `backend/app/services/pii_gate.py` | Case store / cases router (Case Review) |
 | `backend/app/routers/privacy.py` | Allegation quotes, IR shell, DOCX (IR Drafting) |
-| `frontend/src/components/PrivacyGate.tsx` | Gemini/Ollama prompts & config (Investigator LLM) |
+| `frontend/src/components/PrivacyGate.tsx` | Groq/Ollama prompts & config (Investigator LLM) |
 | Warn → acknowledge/redact API↔UI contracts | Auth, roles, admin audit surfaces (Identity) |
 | Assistive copy & recovery paths | Stepper chrome / WAC select (Intake UX) |
 

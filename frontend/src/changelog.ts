@@ -31,6 +31,48 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.08.17.3',
+    buildTag: '2026.08.17.3',
+    date: '2026-08-17',
+    title: 'Compare catch-all (1) and full-width Google sign-in',
+    summary:
+      'Compare drafts include each selected WAC’s PDF-backed (1) catch-all beside compact exact-duty leaves. Login Google and password fields share one width.',
+    highlights: [
+      'Allegation lines use nearest-parent + leaf WAC wording, sanitized cites, and up to three specific duties plus (1).',
+      'Patrol/background-check false friends drop unless the complaint mentions them.',
+      'Sign in with Google uses the same full-width control as Username and Sign in.',
+    ],
+    areas: ['investigation', 'auth'],
+  },
+  {
+    id: '2026.08.17.2',
+    buildTag: '2026.08.17.2',
+    date: '2026-08-17',
+    title: 'Groq as the default optional investigator LLM',
+    summary:
+      'Optional collaborator notes default to Groq openai/gpt-oss-120b instead of unpaid Gemini. IR cites stay PDF-backed; LLM_FOR_INVESTIGATE remains off. Ollama stays the on-box privacy path.',
+    highlights: [
+      'Default LLM_BASE_URL is api.groq.com with openai/gpt-oss-120b (gpt-oss-20b fallback).',
+      'Unpaid Gemini remains documented but is not recommended for complaint text (training on prompts).',
+      'Ollama and Cerebras stay as drop-in OpenAI-compatible alternatives.',
+    ],
+    areas: ['investigation', 'platform', 'security'],
+  },
+  {
+    id: '2026.08.17.1',
+    buildTag: '2026.08.17.1',
+    date: '2026-08-17',
+    title: 'Bug report screenshots from the live app',
+    summary:
+      'Report a bug can capture the current Investigation screen in one click, or attach an uploaded image, so Inbox reports include what the investigator actually saw.',
+    highlights: [
+      'Take screenshot hides the report dialog and captures the live application view.',
+      'Upload image remains available for cropped or external pictures.',
+      'Preview and remove before submit; existing Inbox screenshot viewer is unchanged.',
+    ],
+    areas: ['admin', 'platform'],
+  },
+  {
     id: '2026.07.31.1',
     buildTag: '2026.07.31.1',
     date: '2026-07-31',

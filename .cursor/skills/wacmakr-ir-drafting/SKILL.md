@@ -30,7 +30,7 @@ Draft DOH-style Investigation Report allegations and shell text from **approved*
 | Domain | Owner |
 |--------|--------|
 | PDF parse, Chroma, ingest, ranking fixtures | Statute Corpus |
-| Gemini/Ollama prompts & model config | Investigator LLM |
+| Groq/Ollama prompts & model config | Investigator LLM |
 | Cases save/resume, review status, export pack UI | Case Review |
 | Complaint/WAC stepper, statute panels, App rails | Intake UX |
 | Category 3/4 detect/redact | Privacy & PII |

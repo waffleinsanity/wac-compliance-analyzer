@@ -1,5 +1,5 @@
 ---
-description: Investigator LLM & Prompts worker — optional Gemini/Ollama enrichment only; never sole-source
+description: Investigator LLM & Prompts worker — optional Groq/Ollama enrichment only; never sole-source
 globs: backend/app/services/investigator_llm.py,backend/app/services/investigator_prompt.py,backend/app/config.py,backend/.env.example
 alwaysApply: false
 ---
@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## Goal (Master-aligned)
 
-Own **optional** Gemini/Ollama enrichment, prompts, and LLM config. IR drafting stays PDF-backed; LLM is never required for a valid Investigate → Report path.
+Own **optional** Groq/Ollama enrichment, prompts, and LLM config. IR drafting stays PDF-backed; LLM is never required for a valid Investigate → Report path.
 
 ## Role boundary
 

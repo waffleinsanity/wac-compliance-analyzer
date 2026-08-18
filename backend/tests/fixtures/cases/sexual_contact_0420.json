@@ -1,0 +1,22 @@
+{
+  "id": "sexual_contact_0420",
+  "complaint": "There are allegedly incidents of staff at respondent facility engaging in sexual contact with patients.",
+  "selected_wacs": [
+    "WAC 246-341-0420"
+  ],
+  "expected_cite_prefixes": ["246-341-0420"],
+  "expected_top_labels": {
+    "246-341-0420": ["(8)", "(12)(a)"]
+  },
+  "expected_selected_labels": {
+    "246-341-0420": ["(8)", "(12)(a)"]
+  },
+  "require_any_selected_token": {
+    "246-341-0420": ["abuse", "exploitation", "neglect"]
+  },
+  "forbid_selected_labels": {
+    "246-341-0420": ["(14)", "(14)(a)"]
+  },
+  "must_quote_statute": true,
+  "notes": "Staff sexual-contact facts must rank 0420(8) and (12)(a) abuse-reporting duties. PDF (14)(a) is evacuation, not background checks."
+}

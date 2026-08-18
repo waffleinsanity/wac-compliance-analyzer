@@ -94,31 +94,39 @@ Smoke-check drafting against the local PDF store:
 backend\.venv\Scripts\python.exe scripts\verify_local_demos.py
 ```
 
-### 3. Investigator LLM (Google Gemini free tier)
+### 3. Investigator LLM (Groq free tier, optional)
 
-Copy `backend/.env.example` to `backend/.env` and set a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey):
+Copy `backend/.env.example` to `backend/.env` and set a Groq API key from [console.groq.com/keys](https://console.groq.com/keys). The model is **enrichment only** — Investigation Report cites still come from local PDFs. Keep `LLM_FOR_INVESTIGATE=false` unless you explicitly want the LLM on the Investigate path.
 
 ```
 LLM_ENABLED=true
-LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-LLM_API_KEY=your-gemini-api-key
-LLM_MODEL=gemini-3.5-flash
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_API_KEY=gsk_your-groq-key
+LLM_MODEL=openai/gpt-oss-120b
+LLM_FOR_INVESTIGATE=false
 ```
 
-`gemini-3.5-flash` is the current free-tier Flash model (rate-limited). Older ids like `gemini-2.5-flash` are blocked for new keys. Restart the API after editing `.env`.
+`openai/gpt-oss-120b` is the current Groq free-tier quality default (JSON mode, does not train on API prompts). Use `openai/gpt-oss-20b` if you hit daily quota. Restart the API after editing `.env`.
 
-**Optional — Ollama (local):**
+**Optional — Ollama (local; nothing leaves the machine):**
 ```
 LLM_BASE_URL=http://127.0.0.1:11434/v1
 LLM_API_KEY=
 LLM_MODEL=llama3.2
 ```
 
-**Optional — OpenAI:**
+**Optional — Cerebras (free volume):**
 ```
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_API_KEY=sk-...
-LLM_MODEL=gpt-4o-mini
+LLM_BASE_URL=https://api.cerebras.ai/v1
+LLM_API_KEY=your-cerebras-key
+LLM_MODEL=gpt-oss-120b
+```
+
+**Optional — Google Gemini unpaid** (prompts may be used to improve Google products — not recommended for complaint text):
+```
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_API_KEY=your-gemini-api-key
+LLM_MODEL=gemini-3.5-flash
 ```
 
 If no LLM is reachable, the app uses a scoped local investigator that still only cites subsections of the WACs you selected.

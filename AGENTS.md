@@ -13,7 +13,7 @@ WACMAKR helps investigators draft DOH-style **Investigation Report (IR)** and si
 1. Local PDFs under `data/source/` are the **sole authority** for subsection choice and statute quote text.
 2. Policy guidance under `data/examples/policy_guidance/` (`guidance_corpus`) shapes **structure, voice, and validation only** — never legal authority. Peer IR DOCX examples remain phrasing shells via `template_corpus`.
 3. User flow is **Intake → Compare → Documents** (IR | SOD sister drafts). Legacy compliance-analyzer UX is secondary.
-4. LLM (Gemini/Ollama) stays **off the critical cite path** unless explicitly enriching scoped context (`LLM_FOR_INVESTIGATE` defaults false).
+4. LLM (Groq/Ollama) stays **off the critical cite path** unless explicitly enriching scoped context (`LLM_FOR_INVESTIGATE` defaults false).
 5. Never invent statute text. SOD identifier key is internal-only (never facility export). Never commit secrets / `backend/.env`.
 
 ## Master agent
@@ -73,7 +73,7 @@ Deep skills (high blast radius): `wacmakr-ir-drafting`, `wacmakr-statute-corpus`
 |---------------------|-------------------|
 | allegation, quote, IR sections, DOCX wording | IR Drafting (+ Eval) |
 | ingest, Chroma, PDF parse, ranking wrong | Corpus (+ Eval) |
-| Gemini, Ollama, prompts, model 403/404 | Investigator LLM |
+| Groq, Ollama, prompts, model 403/404 | Investigator LLM |
 | cases save/resume, review status, export pack | Case Review |
 | stepper, WAC select, Compare UI, rails | Intake UX |
 | PII, redact, Category 3/4 | Privacy |

@@ -11,6 +11,7 @@ import type {
 } from '../api'
 import { quoteFailureLabel } from '../investigatorLabels'
 import { composeAllegationFromDuties, allegationHasShortcut, normalizeAllegationLine } from '../allegationFormat'
+import { applicationStrengthFromMatch } from '../applicationStrength'
 import { ApplicationStrengthBadge } from './ApplicationStrengthBadge'
 import { IrTemplatePicker } from './IrTemplatePicker'
 import { StatuteSearchPanel } from './StatuteSearchPanel'
@@ -33,6 +34,25 @@ type Props = {
   caseId?: number | null
   caseDetail?: CaseDetail | null
   onCaseRefresh?: () => void | Promise<void>
+}
+
+function hasMatchedDuties(c: WACComparison): boolean {
+  return Boolean(
+    (c.duty_options && c.duty_options.length > 0) ||
+      (c.matched_subsections && c.matched_subsections.length > 0),
+  )
+}
+
+/** Codes with no matched duties / none application must not be auto-confirmed. */
+function autoConfirmable(c: WACComparison): boolean {
+  if (!hasMatchedDuties(c)) return false
+  return (
+    applicationStrengthFromMatch({
+      score: c.match_score,
+      reason: c.match_reason,
+      lowConfidence: c.low_confidence,
+    }) !== 'none'
+  )
 }
 
 function AccuracyNote({ comparison }: { comparison: WACComparison }) {
@@ -114,8 +134,11 @@ export function ReviewStep({
 
   const [confirmed, setConfirmed] = useState<Set<string>>(() => {
     const prior = report?.confirmed_allegation_codes || []
-    if (report?.compare_cites_confirmed && prior.length) return new Set(prior)
-    return new Set()
+    if (!(report?.compare_cites_confirmed && prior.length)) return new Set()
+    const allowed = new Set(
+      comparisons.filter(autoConfirmable).map((c) => c.wac_id || c.code),
+    )
+    return new Set(prior.filter((k) => allowed.has(k)))
   })
 
   /** Per-comparison selected duty cites (start with included_by_default). */
@@ -256,9 +279,9 @@ export function ReviewStep({
   useEffect(() => {
     const keys = comparisons.map((c) => c.wac_id || c.code).join('|')
     setConfirmed((prev) => {
+      const confirmable = new Set(comparisons.filter(autoConfirmable).map((c) => c.wac_id || c.code))
       if (report?.compare_cites_confirmed && (report.confirmed_allegation_codes || []).length) {
-        const allowed = new Set(comparisons.map((c) => c.wac_id || c.code))
-        return new Set((report.confirmed_allegation_codes || []).filter((k) => allowed.has(k)))
+        return new Set((report.confirmed_allegation_codes || []).filter((k) => confirmable.has(k)))
       }
       const allowedList = comparisons.map((c) => c.wac_id || c.code)
       const next = new Set<string>()
@@ -284,7 +307,7 @@ export function ReviewStep({
   }
 
   const confirmAll = () => {
-    setConfirmed(new Set(comparisons.map(codeKey)))
+    setConfirmed(new Set(comparisons.filter(autoConfirmable).map(codeKey)))
   }
 
   const goTo = (idx: number, opts?: { openPdf?: boolean }) => {

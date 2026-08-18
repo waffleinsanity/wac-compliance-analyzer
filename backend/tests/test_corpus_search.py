@@ -14,6 +14,7 @@ def test_corpus_search_blends_and_excludes(store_ready):
     expanded = expand_ranking_query(complaint)
     assert "sexual" in expanded.lower() or "assault" in expanded.lower()
     assert "protect" in expanded.lower() or "safety" in expanded.lower()
+    assert "abuse" in expanded.lower() or "exploitation" in expanded.lower()
 
     hits = wac_store.corpus_search(complaint, top_k=20)
     assert hits, "expected research hits from local PDF corpus"

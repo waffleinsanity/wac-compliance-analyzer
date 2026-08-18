@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react'
-import { Bug, Stethoscope } from 'lucide-react'
+import { useRef, useState, type FormEvent } from 'react'
+import { Bug, Camera, Stethoscope, Upload, X } from 'lucide-react'
 import { api } from '../api'
 import {
+  captureAppScreenshot,
   captureBugDiagnostics,
   diagnosticsToJson,
   fileToDataUrl,
@@ -20,10 +21,13 @@ export function BugReportDialog({ open, onClose, appContext }: Props) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [screenshot, setScreenshot] = useState<string | null>(null)
+  const [screenshotSource, setScreenshotSource] = useState<'capture' | 'upload' | null>(null)
+  const [capturing, setCapturing] = useState(false)
   const [diagnostics, setDiagnostics] = useState<BugDiagnosticsSnapshot | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   if (!open) return null
 
@@ -31,10 +35,13 @@ export function BugReportDialog({ open, onClose, appContext }: Props) {
     setTitle('')
     setDescription('')
     setScreenshot(null)
+    setScreenshotSource(null)
+    setCapturing(false)
     setDiagnostics(null)
     setBusy(false)
     setError('')
     setInfo('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const close = () => {
@@ -48,22 +55,43 @@ export function BugReportDialog({ open, onClose, appContext }: Props) {
     setInfo(`Diagnostics attached — ${summarizeDiagnostics(snap)}`)
   }
 
-  const onFile = async (file: File | null) => {
-    if (!file) {
-      setScreenshot(null)
-      return
+  const takeScreenshot = async () => {
+    setCapturing(true)
+    setError('')
+    setInfo('')
+    try {
+      const dataUrl = await captureAppScreenshot()
+      setScreenshot(dataUrl)
+      setScreenshotSource('capture')
+      setInfo('Screenshot of the current screen attached')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not capture the current screen')
+    } finally {
+      setCapturing(false)
     }
+  }
+
+  const onFile = async (file: File | null) => {
+    if (!file) return
     if (!file.type.startsWith('image/')) {
-      setError('Screenshot must be an image file')
+      setError('Upload must be an image file')
       return
     }
     if (file.size > 6_000_000) {
-      setError('Screenshot must be under 6MB')
+      setError('Image must be under 6MB')
       return
     }
     setError('')
     setScreenshot(await fileToDataUrl(file))
-    setInfo('Screenshot attached')
+    setScreenshotSource('upload')
+    setInfo('Image attached')
+  }
+
+  const clearScreenshot = () => {
+    setScreenshot(null)
+    setScreenshotSource(null)
+    setInfo('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const submit = async (e: FormEvent) => {
@@ -100,8 +128,11 @@ export function BugReportDialog({ open, onClose, appContext }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4 backdrop-blur-sm">
-      <div className="panel max-h-[90vh] w-full max-w-lg animate-rise overflow-y-auto p-6" data-bug-report-overlay="1">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4 backdrop-blur-sm"
+      data-bug-report-overlay="1"
+    >
+      <div className="panel max-h-[90vh] w-full max-w-lg animate-rise overflow-y-auto p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 font-display text-2xl">
@@ -135,13 +166,54 @@ export function BugReportDialog({ open, onClose, appContext }: Props) {
           </div>
           <div>
             <label className="label">Screenshot (optional)</label>
-            <input
-              className="input"
-              type="file"
-              accept="image/*"
-              onChange={(e) => void onFile(e.target.files?.[0] || null)}
-            />
-            {screenshot && <p className="mt-1 text-xs text-ink-500">Image attached.</p>}
+            <p className="mb-2 text-xs text-ink-500">
+              Capture the Investigation screen as it looks now, or upload an image.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-outline btn-sm"
+                disabled={capturing || busy}
+                onClick={() => void takeScreenshot()}
+              >
+                <Camera className="mr-1.5 h-4 w-4" />
+                {capturing ? 'Capturing…' : 'Take screenshot'}
+              </button>
+              <button
+                type="button"
+                className="btn-outline btn-sm"
+                disabled={capturing || busy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="mr-1.5 h-4 w-4" />
+                Upload image
+              </button>
+              <input
+                ref={fileInputRef}
+                className="sr-only"
+                type="file"
+                accept="image/*"
+                onChange={(e) => void onFile(e.target.files?.[0] || null)}
+              />
+            </div>
+            {screenshot && (
+              <div className="mt-3 overflow-hidden rounded-md border border-ink-200 dark:border-ink-700">
+                <div className="flex items-center justify-between gap-2 border-b border-ink-200 px-2 py-1.5 dark:border-ink-700">
+                  <p className="text-xs text-ink-500">
+                    {screenshotSource === 'capture' ? 'Current screen attached' : 'Image attached'}
+                  </p>
+                  <button type="button" className="btn-ghost btn-sm !px-2" onClick={clearScreenshot}>
+                    <X className="mr-1 h-3.5 w-3.5" />
+                    Remove
+                  </button>
+                </div>
+                <img
+                  src={screenshot}
+                  alt="Bug report screenshot preview"
+                  className="max-h-48 w-full bg-ink-950/40 object-contain"
+                />
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn-ghost btn-sm" onClick={attachDiagnostics}>
@@ -151,7 +223,7 @@ export function BugReportDialog({ open, onClose, appContext }: Props) {
           </div>
           {error && <p className="text-sm text-rose-600">{error}</p>}
           {info && <p className="text-sm text-tide-700 dark:text-tide-300">{info}</p>}
-          <button type="submit" className="btn-primary" disabled={busy || description.trim().length < 10}>
+          <button type="submit" className="btn-primary" disabled={busy || capturing || description.trim().length < 10}>
             {busy ? 'Submitting…' : 'Submit bug report'}
           </button>
         </form>

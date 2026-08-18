@@ -46,11 +46,11 @@ def test_investigate_assault_structure(client):
         assert a.get("matched_subsections")
         assert a.get("match_reason")
         assert "low_confidence" in a
-        # Starting line uses ≤2 duties; optional pool may list more for Compare checkboxes.
+        # Starting line uses ≤MAX duties; optional pool may list more for Compare checkboxes.
         opts = a.get("duty_options") or []
         if opts:
             included = [o for o in opts if o.get("included_by_default")]
-            assert 1 <= len(included) <= 2
+            assert 1 <= len(included) <= 4
             assert len(opts) >= len(included)
 
     for c in data.get("comparisons") or []:

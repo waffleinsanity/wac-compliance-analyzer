@@ -16,6 +16,7 @@ from app.services.wac_scope import (
     ALLEGATION_TARGET_CHARS,
     MAX_ALLEGATION_DRAFT_CLAUSES,
     draft_allegation_from_source,
+    sanitize_subsection_label,
 )
 
 CASES = Path(__file__).parent / "fixtures" / "cases"
@@ -98,6 +99,12 @@ def test_allegation_stays_concise(store_ready):
 
 
 
+def test_sanitize_subsection_label_repairs_pdf_glyphs():
+    assert sanitize_subsection_label("(4)(@)(iii)(C)") == "(4)(g)(iii)(C)"
+    assert sanitize_subsection_label("(4)(@)ii)(C)") == "(4)(g)(ii)(C)"
+    assert sanitize_subsection_label("(1)(c)") == "(1)(c)"
+
+
 def test_0410_picks_leaf_duties_not_parent_dump(store_ready):
     draft = draft_allegation_from_source(
         "246-341-0410",
@@ -134,6 +141,50 @@ def test_0410_no_list_intro_stub_or_double_punct(store_ready):
     assert "(4)(g)(iii) Cultural" not in draft.text
 
 
+_ADMIN_POLICY_INCIDENT_COMPLAINT = (
+    "The administrator failed to meet applicable rules, policies, and ethical standards. "
+    "Administrative, personnel, and clinical policies and procedures were not adhered to. "
+    "After critical incidents and substantiated complaints, the agency did not maintain "
+    "a quality management plan that improved care."
+)
+
+
+def test_0410_admin_policy_incident_draft_picks_companion_leaves(store_ready):
+    """Compare draft for 0410 must cite policy/ethics/quality leaves, not WSP checks or parent dumps."""
+    draft = draft_allegation_from_source(
+        "246-341-0410",
+        "Agency administration—Administrator key responsibilities",
+        _ADMIN_POLICY_INCIDENT_COMPLAINT,
+    )
+    text = draft.text
+    assert text.startswith("Potential violation of WAC 246-341-0410")
+    assert "—" in text or "Administrator key responsibilities" in text
+    assert "@" not in text
+    assert "must ensure:" not in text.lower()
+    assert "the following:" not in text.lower()
+    assert "human resources plan" not in text.lower()
+    assert "awritten" not in text.lower()
+    assert "(4)(f)" not in text
+    assert "patrol" not in text.lower()
+    assert "background check" not in text.lower()
+    assert "meet all applicable rules" in text.lower()
+    labels = {m.group(0) for m in re.finditer(r"(?:\([0-9a-z]+\))+", text.split("by having failed to", 1)[-1])}
+    assert "(1)(c)" in labels, text
+    assert "(4)(a)" in labels or any("(4)(g)" in lab for lab in labels), text
+    # Compact quality leaf — not the full nested (4)(g) dump
+    if any(lab.startswith("(4)(g)") for lab in labels):
+        assert "in response to critical incidents" in text.lower()
+        assert "substantiated complaints" in text.lower()
+    included = [o for o in (draft.duty_options or []) if o.get("included_by_default")]
+    included_labels = {o.get("label") for o in included}
+    assert "(1)" in included_labels, draft.duty_options
+    assert "(4)(f)" not in included_labels
+    for o in included:
+        phrase = (o.get("duty_phrase") or "").lower()
+        assert "human resources plan" not in phrase
+        assert "must ensure:" not in phrase
+
+
 # --- POC demo asserts: 246-337-045 governance + 246-337-060 infection ---
 
 _GOVERNANCE_COMPLAINT = (
@@ -149,8 +200,8 @@ _INFECTION_COMPLAINT = (
 )
 
 
-def test_duty_options_start_with_two_strongest(store_ready):
-    """Draft starts with ≤2 included duties; optional pool may list more for Compare."""
+def test_duty_options_start_with_strongest(store_ready):
+    """Draft starts with ≤MAX included duties; optional pool may list more for Compare."""
     draft = draft_allegation_from_source(
         "246-341-0600",
         "Individual rights",
@@ -160,12 +211,12 @@ def test_duty_options_start_with_two_strongest(store_ready):
     opts = draft.duty_options or []
     assert opts, "expected duty_options for Compare checkboxes"
     included = [o for o in opts if o.get("included_by_default")]
-    assert 1 <= len(included) <= 2
-    # Options are ordered strong→moderate (scores non-increasing among included-first pool)
-    scores = [float(o["score"]) for o in opts]
-    assert scores == sorted(scores, reverse=True)
+    assert 1 <= len(included) <= MAX_ALLEGATION_DRAFT_CLAUSES + 1
+    # Catch-all (1) is first when present; remaining options stay strong→moderate.
+    other_scores = [float(o["score"]) for o in opts if o.get("label") != "(1)"]
+    assert other_scores == sorted(other_scores, reverse=True)
     clauses = _clauses_after_failed_to(draft.text)
-    assert len(clauses) <= MAX_ALLEGATION_DRAFT_CLAUSES
+    assert len(clauses) <= MAX_ALLEGATION_DRAFT_CLAUSES + 1
 
 
 def test_246_337_045_governance_draft_is_two_clause_and_short(store_ready):
@@ -176,11 +227,11 @@ def test_246_337_045_governance_draft_is_two_clause_and_short(store_ready):
     assert "by having failed to" in draft.text.lower()
     assert draft.text.startswith("Potential violation of")
     assert '"' not in draft.text
-    # POC-ready length: two exact duties can exceed the old 480 soft target.
-    assert len(draft.text) <= 560, f"line too long ({len(draft.text)}): {draft.text}"
+    # Three exact duties can exceed the old two-clause 560 cap.
+    assert len(draft.text) <= 800, f"line too long ({len(draft.text)}): {draft.text}"
     clauses = _clauses_after_failed_to(draft.text)
-    assert 1 <= len(clauses) <= MAX_ALLEGATION_DRAFT_CLAUSES, (
-        f"expected ≤{MAX_ALLEGATION_DRAFT_CLAUSES} labeled duty clauses in the line, got "
+    assert 1 <= len(clauses) <= MAX_ALLEGATION_DRAFT_CLAUSES + 1, (
+        f"expected ≤{MAX_ALLEGATION_DRAFT_CLAUSES + 1} labeled duty clauses in the line, got "
         f"{len(clauses)}: {clauses}"
     )
     assert "system whose Staff" not in draft.text
@@ -202,7 +253,7 @@ def test_246_337_060_infection_no_bare_noun_after_failed_to(store_ready):
     )
     assert "by having failed to" in draft.text.lower()
     assert '"' not in draft.text
-    assert len(draft.text) <= 560, f"line too long ({len(draft.text)}): {draft.text}"
+    assert len(draft.text) <= 800, f"line too long ({len(draft.text)}): {draft.text}"
 
     clauses = _clauses_after_failed_to(draft.text)
     assert clauses, f"no duty clauses parsed from: {draft.text}"
@@ -291,11 +342,11 @@ def test_246_337_060_infection_quote_verify_passes(store_ready):
 
 
 def test_246_337_045_matched_subsections_keep_wider_selection(store_ready):
-    """Draft LINE stays at ≤2 clauses but matched chips may keep the wider selection."""
+    """Draft LINE stays at ≤MAX clauses but matched chips may keep the wider selection."""
     draft = draft_allegation_from_source(
         "246-337-045", "Governance and administration", _GOVERNANCE_COMPLAINT
     )
-    assert len(_clauses_after_failed_to(draft.text)) <= MAX_ALLEGATION_DRAFT_CLAUSES
+    assert len(_clauses_after_failed_to(draft.text)) <= MAX_ALLEGATION_DRAFT_CLAUSES + 1
     # Chips typically surface additional complaint-aligned leaves for pruning; when
     # ranking only agrees on two strong leaves that's OK, but never fewer than the
     # drafted clauses.

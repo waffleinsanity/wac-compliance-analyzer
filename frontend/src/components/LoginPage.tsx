@@ -161,24 +161,23 @@ export function LoginPage() {
                 : 'Sign in with your username and password.'}
           </p>
 
-          {mode !== 'forgot' && googleEnabled && (
-            <div className="mt-6 space-y-4">
-              <GoogleSignInButton
-                disabled={busy}
-                buttonText="signin_with"
-                onError={setError}
-              />
-              <div className="flex items-center gap-3 text-xs text-ink-400">
-                <span className="h-px flex-1 bg-ink-200 dark:bg-ink-700" />
-                or with password
-                <span className="h-px flex-1 bg-ink-200 dark:bg-ink-700" />
-              </div>
-            </div>
-          )}
-
-          <form className="mt-4 space-y-3" onSubmit={submit}>
+          <form className="login-stack mt-6" onSubmit={submit}>
+            {mode !== 'forgot' && googleEnabled && (
+              <>
+                <GoogleSignInButton
+                  disabled={busy}
+                  buttonText="signin_with"
+                  onError={setError}
+                />
+                <div className="flex w-full items-center gap-3 text-xs text-ink-400">
+                  <span className="h-px min-w-0 flex-1 bg-ink-200 dark:bg-ink-700" />
+                  or with password
+                  <span className="h-px min-w-0 flex-1 bg-ink-200 dark:bg-ink-700" />
+                </div>
+              </>
+            )}
             {mode !== 'forgot' && (
-              <div>
+              <div className="w-full">
                 <label className="label" htmlFor="login-username">
                   Username
                 </label>
@@ -193,7 +192,7 @@ export function LoginPage() {
               </div>
             )}
             {(mode === 'register' || mode === 'forgot') && (
-              <div>
+              <div className="w-full">
                 <label className="label" htmlFor="login-email">
                   Email
                 </label>
@@ -209,7 +208,7 @@ export function LoginPage() {
               </div>
             )}
             {mode !== 'forgot' && (
-              <div>
+              <div className="w-full">
                 <label className="label" htmlFor="login-password">
                   Password
                 </label>
@@ -229,7 +228,7 @@ export function LoginPage() {
               </div>
             )}
             {mode === 'register' && (
-              <div>
+              <div className="w-full">
                 <label className="label" htmlFor="login-invite">
                   Invite code {publicRegister ? '(optional)' : '(required)'}
                 </label>

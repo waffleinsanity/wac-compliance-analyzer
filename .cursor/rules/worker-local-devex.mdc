@@ -28,7 +28,7 @@ Keep the dual-process local stack healthy so investigators can run **Intake → 
 
 - debugpy-first or Python-extension-required default launch
 - Single-process “API serves UI” as the primary local path
-- Hardcoding credentials, SMTP, or Gemini keys into launch files
+- Hardcoding credentials, SMTP, or Groq/Gemini keys into launch files
 - Optimizing for legacy analyzer dashboards over IR workflow startup
 
 ## Success criteria
@@ -42,7 +42,7 @@ Keep the dual-process local stack healthy so investigators can run **Intake → 
 | Symptom | Escalate to |
 |---------|-------------|
 | Login / OAuth / redirect / roles | Identity Admin |
-| `.env` shape, Gemini/Ollama 403/404 | Investigator LLM |
+| `.env` shape, Groq/Ollama 403/404 | Investigator LLM |
 | App loads but stepper/WAC UI broken | Intake UX |
 | Cases/export after login | Case Review |
 | Accuracy scripts / pytest runners only | Accuracy & Eval |

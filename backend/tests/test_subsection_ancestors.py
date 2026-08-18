@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from app.services.wac_scope import (
+    _compose_list_intro_leaf_duty,
+    _duty_phrase_for_option,
     own_clause_text,
     parent_subsection_labels,
     subsection_ancestor_context,
@@ -51,3 +53,21 @@ def test_0410_leaf_display_includes_parent_intro(store_ready):
     assert "clinical supervision" in display.lower()
     # Exact leaf text alone still excludes parent intro (quote-verify field)
     assert "quality management" not in leaf.text.lower()
+
+
+def test_0410_quality_leaf_duty_is_compact_nearest_parent(store_ready):
+    """Allegation duty for (4)(g)(iii)(C) joins nearest hanging intro + leaf, not the (4) dump."""
+    leaf = validate_subsection_cite("246-341-0410", "246-341-0410(4)(g)(iii)(C)")
+    assert leaf is not None
+    phrase = _compose_list_intro_leaf_duty(leaf) or _duty_phrase_for_option(leaf)
+    assert phrase
+    low = phrase.lower()
+    assert "critical incidents" in low
+    assert "substantiated complaints" in low
+    assert "must ensure:" not in low
+    assert "human resources plan" not in low
+    assert "the following" not in low
+    assert "@" not in phrase
+    # Display pane may still include the full ancestor chain.
+    display = subsection_display_text(leaf).lower()
+    assert "quality management" in display

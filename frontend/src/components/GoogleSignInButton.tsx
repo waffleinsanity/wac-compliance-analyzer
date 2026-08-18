@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 type Props = {
   disabled?: boolean
   buttonText?: 'signin_with' | 'continue_with' | 'signup_with'
-  width?: number | string
   onError?: (message: string) => void
 }
 
@@ -49,7 +48,6 @@ export const isGoogleSignInEnabled = import.meta.env.VITE_GOOGLE_SIGNIN !== 'fal
 export function GoogleSignInButton({
   disabled,
   buttonText = 'continue_with',
-  width = '100%',
   onError,
 }: Props) {
   const [ready, setReady] = useState(import.meta.env.VITE_GOOGLE_SIGNIN === 'true')
@@ -70,27 +68,21 @@ export function GoogleSignInButton({
   }
 
   return (
-    <a
-      href={googleStartHref()}
-      aria-disabled={disabled || undefined}
-      onClick={(e) => {
-        if (disabled) {
-          e.preventDefault()
-          return
-        }
-        e.preventDefault()
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => {
         try {
           window.location.assign(googleStartHref())
         } catch (err) {
           onError?.(err instanceof Error ? err.message : 'Google sign-in failed')
         }
       }}
-      className="inline-flex h-10 w-full items-center justify-center gap-3 rounded-md border border-ink-200 bg-white px-4 text-sm font-medium text-ink-800 shadow-sm transition hover:bg-ink-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:border-ink-600 dark:bg-ink-900 dark:text-ink-50 dark:hover:bg-ink-800"
-      style={{ width, maxWidth: '100%' }}
+      className="input google-signin"
     >
       <GoogleGlyph />
       {LABEL[buttonText]}
-    </a>
+    </button>
   )
 }
 
