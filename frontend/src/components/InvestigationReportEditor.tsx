@@ -1293,13 +1293,27 @@ export function InvestigationReportEditor({
                         </div>
                         <textarea
                           className="input min-h-[88px] font-serif text-sm leading-relaxed"
-                          value={normalizeAllegationLine(a.allegation_text)}
+                          value={a.allegation_text || ''}
                           onChange={(e) => {
-                            const value = normalizeAllegationLine(e.target.value)
+                            // Preserve whitespace while typing so the spacebar/backspace behave normally.
+                            // We still strip forbidden legacy quotes immediately.
+                            const value = e.target.value.replace(/["“”„]/g, '')
                             setReport((prev) => {
                               const allegations = prev.allegations.map((item) =>
                                 item.wac_code === a.wac_code && item.case_category === a.case_category
                                   ? { ...item, allegation_text: value }
+                                  : item,
+                              )
+                              return { ...prev, allegations }
+                            })
+                          }}
+                          onBlur={(e) => {
+                            // Enforce canonical allegation formatting only after the user leaves the field.
+                            const normalized = normalizeAllegationLine(e.target.value)
+                            setReport((prev) => {
+                              const allegations = prev.allegations.map((item) =>
+                                item.wac_code === a.wac_code && item.case_category === a.case_category
+                                  ? { ...item, allegation_text: normalized }
                                   : item,
                               )
                               return { ...prev, allegations }

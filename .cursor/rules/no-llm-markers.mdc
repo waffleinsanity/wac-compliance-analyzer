@@ -1,0 +1,71 @@
+---
+description: Ban em dashes and common LLM markers from all generated text in this repo
+alwaysApply: true
+---
+
+# No em dashes or LLM markers
+
+## Rule (non-negotiable, applies everywhere)
+
+All text generated for or by this application must never use:
+
+### Banned characters
+- Em dash (`---` U+2014) in any form. Use a comma, period, semicolon, colon, or parentheses instead.
+- En dash (`--` U+2013) outside of date ranges. Prefer "to" for ranges in prose.
+
+### Banned LLM phrases and patterns
+Never use any of these in generated documentation, UI copy, code comments, commit messages, admin notes, changelog entries, allegation text, IR sections, collaborator notes, or any other output:
+
+- "It's important to note that..."
+- "It's worth noting that..."
+- "It should be noted that..."
+- "Importantly, ..."
+- "Notably, ..."
+- "In conclusion, ..."
+- "Overall, ..."
+- "Furthermore, ..."
+- "Moreover, ..."
+- "Additionally, ..."
+- "In summary, ..."
+- "As mentioned earlier..."
+- "As previously stated..."
+- "Let's delve into..."
+- "Let's dive into..."
+- "This is a testament to..."
+- "It is imperative that..."
+- "Harnessing the power of..."
+- "Leveraging..."
+- "Cutting-edge..."
+- "Game-changer..."
+- "Paradigm shift..."
+- "Synergy..."
+- "Holistic approach..."
+- "Streamline..."
+- "Facilitate..."
+- "Utilize" (use "use" instead)
+- "Employ" when "use" works
+- "Landscape" (as metaphor for "situation" or "field")
+- "Realm" (as metaphor)
+- "Crucial" (prefer "important" or be specific)
+- "Robust" (unless describing actual fault tolerance)
+- "Comprehensive" (be specific about what is covered)
+- "Delve"
+- "Tapestry"
+- "Multifaceted"
+- "Underscore"
+- "Navigating..." (as metaphor)
+- "Pivotal"
+- "Embark"
+
+### What to do instead
+- Write plain, direct sentences.
+- Use commas, colons, semicolons, or parentheses where an em dash would go.
+- State facts without filler hedges or grandiose adjectives.
+- Prefer short declarative sentences over compound constructions joined by em dashes.
+
+### Scope
+This rule applies to:
+- All agent-generated text (UI copy, code comments, commit messages, changelogs, admin notes)
+- LLM system/user prompts and their outputs (investigator collaborator notes, summary assist)
+- DOCX export text, allegation lines, IR sections
+- README, skill files, rule files, and any documentation

@@ -1,9 +1,9 @@
-"""Source-document authority for WAC/RCW subsection selection.
+﻿"""Source-document authority for WAC/RCW subsection selection.
 
 SOLE SOURCE RULE
 ---------------
 Which subsections apply is determined ONLY from the locally ingested PDFs
-(WAC 246-341 / 246-337 and RCW 71.05 / 71.24 / 71.34) in WACStore — never from
+(WAC 246-341 / 246-337 and RCW 71.05 / 71.24 / 71.34) in WACStore, never from
 example DOCX templates, external browsing, or free-form LLM invention.
 
 Statute language in allegations and Regulatory Framework must be EXACT text
@@ -1759,15 +1759,16 @@ def _strip_list_edge_punct(text: str) -> str:
 def normalize_allegation_line(text: str) -> str:
     """Baseline IR allegation shape: no quotation marks; clean clause punctuation.
 
-    Also strips the forbidden legacy "; see also (labels)" shortcut trailer — that
+    Also strips the forbidden legacy "; see also (labels)" shortcut trailer, that
     path must never survive into Compare/Report.
     """
     out = (text or "").replace('"', "").replace("“", "").replace("”", "").replace("„", "")
+    out = out.replace("\u2014", ", ").replace("\u2013", "-")
     out = re.sub(r"\s+", " ", out).strip()
     # Forbidden shortcut: cite-only leftovers after a truncated first duty
     out = _SEE_ALSO_SHORTCUT_RE.sub("", out).strip()
     out = re.sub(r"\bsee also\b.*$", "", out, flags=re.IGNORECASE).strip()
-    # Legacy drafts used "A potential violation…" — Baseline / blank IR omit the leading A.
+    # Legacy drafts used "A potential violation…" , Baseline / blank IR omit the leading A.
     out = re.sub(r"^A\s+potential\s+violation\b", "Potential violation", out, flags=re.IGNORECASE)
     # Collapse doubled / mixed list punctuation from PDF list items + allegation joiners
     out = re.sub(r";{2,}", ";", out)

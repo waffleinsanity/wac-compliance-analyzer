@@ -1,4 +1,4 @@
-/** Baseline IR allegation shape: no quotation marks; opener is "Potential violation…".
+﻿/** Baseline IR allegation shape: no quotation marks; opener is "Potential violation…".
  *
  * Duty phrases must stay exact WAC wording from the PDF store (ceremonial
  * subject/modal strip happens server-side). Never truncate, paraphrase, or
@@ -9,9 +9,11 @@
 export function normalizeAllegationLine(text: string | null | undefined): string {
   let out = (text || '')
     .replace(/["“”„]/g, '')
+    .replace(/\u2014/g, ', ')
+    .replace(/\u2013/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
-  // Forbidden legacy shortcut — never keep cite-only leftovers
+  // Forbidden legacy shortcut, never keep cite-only leftovers
   out = out.replace(/;\s*see also\b.*$/i, '').trim()
   out = out.replace(/\bsee also\b.*$/i, '').trim()
   out = out.replace(/^A\s+potential\s+violation\b/i, 'Potential violation')

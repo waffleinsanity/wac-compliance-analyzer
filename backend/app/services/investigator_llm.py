@@ -60,7 +60,12 @@ class InvestigatorResult:
 
 
 def _clean(text: str) -> str:
-    return re.sub(r"[ \t]+", " ", (text or "").replace("\ufffd", "-").replace("�", "-")).strip()
+    s = (text or "").replace("\ufffd", "-").replace("�", "-")
+    # Ban em dash and en dash from all generated output.
+    s = s.replace("\u2014", ", ").replace("\u2013", "-")
+    # Avoid literal "..." placeholders in generated Summary of Findings.
+    s = re.sub(r"\.{3,}", ".", s)
+    return re.sub(r"[ \t]+", " ", s).strip()
 
 
 _LLM_AVAIL_CACHE: tuple[float, bool] | None = None
