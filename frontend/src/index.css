@@ -232,6 +232,23 @@
   .compare-cite {
     @apply font-mono text-[11px] text-ink-600 dark:text-ink-300;
   }
+  .statute-outline {
+    @apply max-h-[28rem] overflow-y-auto rounded-md border border-ink-200 bg-ink-50/70 px-3 py-3 dark:border-ink-700 dark:bg-ink-900/40;
+  }
+  .statute-outline-lead {
+    font-family: Newsreader, Georgia, serif;
+    @apply mb-3 text-sm leading-relaxed text-ink-700 dark:text-ink-200;
+  }
+  .statute-outline-row {
+    @apply mb-2.5 flex gap-2 last:mb-0;
+  }
+  .statute-outline-label {
+    @apply w-12 shrink-0 pt-0.5 font-mono text-[11px] font-semibold leading-relaxed;
+  }
+  .statute-outline-body {
+    font-family: Newsreader, Georgia, serif;
+    @apply min-w-0 text-sm leading-relaxed text-ink-700 dark:text-ink-200;
+  }
 
   /* Letter-style IR preview desk */
   .ir-doc-desk {

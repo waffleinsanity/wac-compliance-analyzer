@@ -31,6 +31,19 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.08.17.4',
+    buildTag: '2026.08.17.4',
+    date: '2026-08-17',
+    title: 'Readable full-code outline on Compare',
+    summary:
+      'Show full selected code text now breaks numbered and nested WAC/RCW list items into an indented outline. Statute wording stays PDF-exact; cross-references stay inline.',
+    highlights: [
+      'Compare full-code pane uses hanging (1)/(a)/(i)/(A) labels instead of one paragraph.',
+      'Phrases like “subsection (3) of this section” are not treated as new list items.',
+    ],
+    areas: ['investigation'],
+  },
+  {
     id: '2026.08.17.3',
     buildTag: '2026.08.17.3',
     date: '2026-08-17',

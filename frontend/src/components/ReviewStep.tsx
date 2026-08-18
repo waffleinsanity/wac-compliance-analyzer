@@ -14,6 +14,7 @@ import { composeAllegationFromDuties, allegationHasShortcut, normalizeAllegation
 import { applicationStrengthFromMatch } from '../applicationStrength'
 import { ApplicationStrengthBadge } from './ApplicationStrengthBadge'
 import { IrTemplatePicker } from './IrTemplatePicker'
+import { StatuteOutline } from './StatuteOutline'
 import { StatuteSearchPanel } from './StatuteSearchPanel'
 
 type Props = {
@@ -756,9 +757,7 @@ export function ReviewStep({
                     {showFullCode ? 'Hide full code text' : 'Show full selected code text'}
                   </button>
                   {showFullCode && (
-                    <p className="max-h-64 overflow-y-auto whitespace-pre-wrap font-serif text-sm leading-relaxed text-ink-600 dark:text-ink-300">
-                      {active.wac_text || active.wac_summary || 'Full approved code text is not available for this selection.'}
-                    </p>
+                    <StatuteOutline text={active.wac_text || active.wac_summary || ''} />
                   )}
                 </div>
               )}
