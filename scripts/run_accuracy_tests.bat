@@ -24,7 +24,9 @@ call .venv\Scripts\python.exe -m pytest -q --tb=short ^
   tests/test_investigate_api.py ^
   tests/test_application_strength_bands.py ^
   tests/test_ir_docx_format.py ^
-  tests/test_privacy_gate.py
+  tests/test_privacy_gate.py ^
+  tests/test_guidance_corpus.py ^
+  tests/test_sod_draft.py
 set ERR=%ERRORLEVEL%
 popd
 if %ERR% NEQ 0 (

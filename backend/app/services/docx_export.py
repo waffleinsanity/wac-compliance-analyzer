@@ -24,6 +24,12 @@ from app.services.ir_blank import (
     compose_actions_text,
     parse_actions_fields,
 )
+from app.services.ir_format import (
+    allegation_export_line,
+    conclusion_export_lines,
+    facility_header_lines,
+    sync_report_text,
+)
 from app.services.sod_blank import (
     DISCLAIMER,
     HEADER_LABELS,
