@@ -24,6 +24,8 @@ from app.services.guidance_corpus import (
     load_guidance_corpus,
     recommend_enforcement_outcomes,
 )
+from app.services.sod_blank import TITLE as SOD_TITLE
+from app.services.sod_writing import default_evidence_phrase
 from app.services.wac_scope import (
     cite_prefix,
     normalize_statute_text,
@@ -56,16 +58,17 @@ def _regulation_blob(code: str, cite: str) -> tuple[str, str]:
     return full, ""
 
 
-def _based_on_seed(duty_phrase: str, evidence_hint: str = "interview and record review") -> str:
+def _based_on_seed(duty_phrase: str, evidence_hint: str | None = None) -> str:
+    """Based-on seed: two or more evidence types plus WAC duty language.
+
+    Findings included stay empty (investigator-owned). Do not invent Patient #n here.
+    """
     phrase = re.sub(r"\s+", " ", (duty_phrase or "").strip()).rstrip(" .;")
     if not phrase:
         phrase = "comply with the cited requirements"
-    # Prefer infinitive after "failed to"
     opener = phrase[0].lower() + phrase[1:] if phrase else phrase
-    return (
-        f"Based on {evidence_hint}, the agency failed to {opener} "
-        f"for patients reviewed (Patient identifiers pending)."
-    )
+    hint = (evidence_hint or "").strip() or default_evidence_phrase(phrase)
+    return f"Based on {hint}, the agency failed to {opener}."
 
 
 def deficiency_from_duty(
@@ -129,7 +132,7 @@ def build_sod_from_comparisons(
                 deficiency_from_duty(code, comp.title or code, opt, is_rtf=rtf)
             )
     return StatementOfDeficiency(
-        title="Statement of Deficiency",
+        title=SOD_TITLE,
         facility_name="",
         facility_address=facility_address or "",
         case_id=case_id or "",
@@ -138,6 +141,7 @@ def build_sod_from_comparisons(
         inspection_type="Investigation",
         investigator_number="",
         investigation_dates=investigation_dates or "",
+        agency_services_type="",
         deficiencies=deficiencies,
         identifier_key=[],
         poc_due_days=DEFAULT_POC_DUE_DAYS,
@@ -185,6 +189,8 @@ def attach_sod_to_report(report: InvestigationReport) -> InvestigationReport:
         sod.facility_name = report.sod.facility_name or sod.facility_name
         sod.administrator = report.sod.administrator or ""
         sod.investigator_number = report.sod.investigator_number or ""
+        sod.agency_services_type = report.sod.agency_services_type or ""
+        sod.inspection_type = report.sod.inspection_type or sod.inspection_type
     report.sod = sod
     return report
 

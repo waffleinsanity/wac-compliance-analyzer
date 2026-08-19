@@ -24,6 +24,10 @@ Draft DOH-style Investigation Report allegations and shell text from **approved*
 - `backend/app/services/template_corpus.py`
 - `backend/app/services/defensibility.py`
 - `backend/app/services/docx_export.py`
+- `backend/app/services/sod_draft.py`
+- `backend/app/services/sod_validate.py`
+- `backend/app/services/sod_blank.py`
+- `backend/app/services/sod_writing.py`
 
 ### Does not own
 

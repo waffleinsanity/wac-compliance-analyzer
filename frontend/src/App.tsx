@@ -41,9 +41,12 @@ import { ResizeHandle } from './components/ResizeHandle'
 import { SodEditor } from './components/SodEditor'
 import { LOCAL_DEMO_SCENARIOS } from './fixtures/localQuickDraft'
 import { ReviewStep } from './components/ReviewStep'
+import { EvidenceStep } from './components/EvidenceStep'
 import { StatuteSearchPanel } from './components/StatuteSearchPanel'
 import { WACSelectionPanel } from './components/WACSelectionPanel'
 import { WorkflowStepper } from './components/WorkflowStepper'
+import { DraftRecallMenu } from './components/DraftRecallMenu'
+import { formatSavedClock } from './draftBackup'
 import { PrivacyScreenBanner } from './components/PrivacyScreenBanner'
 import { useResizableWidth } from './hooks/useResizableWidth'
 import { useInvestigationWorkspace } from './hooks/useInvestigationWorkspace'
@@ -70,6 +73,7 @@ export default function App() {
   const ws = useInvestigationWorkspace({
     userRole: user?.role,
     isAdmin: user?.is_admin,
+    userId: user?.id,
   })
   const {
     step,
@@ -126,9 +130,16 @@ export default function App() {
     loadLocalDemoAndDraft,
     rebuildCaseDraft,
     confirmCompareAndContinue,
+    confirmEvidenceAndContinue,
     clearReportToWorkspace,
     scanPrivacy,
     clearPrivacyHints,
+    saveStatus,
+    recoverOffer,
+    applyRecoveredDraft,
+    dismissRecoveredDraft,
+    restoreSnapshot,
+    restoreEpoch,
   } = ws
 
   const signOut = () => {
@@ -199,6 +210,18 @@ export default function App() {
   const userCanEdit = canEdit(user?.role, user?.is_admin)
   const userCanExport = canExport(user?.role, user?.is_admin)
   const userCanAdmin = canAccessAdmin(user?.role, user?.is_admin)
+  const saveLabel =
+    saveStatus.state === 'saving'
+      ? 'Saving…'
+      : saveStatus.state === 'offline'
+        ? 'Kept on this device'
+        : saveStatus.state === 'saved' && saveStatus.at
+          ? `Saved ${formatSavedClock(saveStatus.at)}`
+          : saveStatus.state === 'error'
+            ? 'Save failed'
+            : ''
+  const saveTone =
+    saveStatus.state === 'offline' || saveStatus.state === 'error' ? 'warn' : saveStatus.state === 'saved' ? 'ready' : 'neutral'
 
   const casesPanel = (
     <CasesPanel
@@ -479,6 +502,26 @@ export default function App() {
               {privacyInfo}
             </div>
           )}
+          {recoverOffer && (
+            <div
+              className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-2 border-l-2 border-cedar-600 bg-cedar-50/80 px-3 py-2 text-sm text-ink-800 dark:bg-cedar-950/30 dark:text-ink-100"
+              role="status"
+            >
+              <p>
+                This device has a newer draft
+                {recoverOffer.savedAt ? ` from ${formatSavedClock(recoverOffer.savedAt)}` : ''}.
+                Restore it after an error or dropped connection?
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="btn-primary !h-8 !px-3 text-xs" onClick={applyRecoveredDraft}>
+                  Restore
+                </button>
+                <button type="button" className="btn-ghost !h-8 !px-3 text-xs" onClick={dismissRecoveredDraft}>
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
           {progress && (
             <div className="mx-4 mt-2 text-xs text-muted-foreground" aria-live="polite">
               {progress}
@@ -497,6 +540,8 @@ export default function App() {
                       approvedWacCount: selectedCodes.length,
                       quoteIssueCount: report?.quote_integrity?.failures?.length ?? 0,
                       caseStatus: caseDetail?.status ?? null,
+                      saveLabel: saveLabel || undefined,
+                      saveTone,
                     }}
                   />
                 </div>
@@ -594,32 +639,65 @@ export default function App() {
                       onCaseRefresh={refreshCaseDetail}
                     />
                   )}
+                  {step === 'evidence' && report && (
+                    <EvidenceStep
+                      report={report}
+                      caseDetail={caseDetail}
+                      caseId={activeCaseId}
+                      busy={busy}
+                      canEdit={userCanEdit}
+                      onReportChange={setReport}
+                      onCaseRefresh={refreshCaseDetail}
+                      onBack={() => setStep('report')}
+                      onContinue={(next) => void confirmEvidenceAndContinue(next)}
+                    />
+                  )}
                   {step === 'report' && report && (
                     <div className="flex min-h-0 flex-1 flex-col gap-3">
-                      <div className="flex flex-wrap gap-0 border-b border-ink-200 dark:border-ink-700">
-                        {(
-                          [
-                            ['ir', 'Investigation Report'],
-                            ['sod', 'Statement of Deficiencies'],
-                          ] as const
-                        ).map(([id, label]) => (
-                          <button
-                            key={id}
-                            type="button"
-                            className={clsx(
-                              'nav-pill',
-                              docSurface === id ? 'nav-pill-active' : 'nav-pill-idle',
-                            )}
-                            onClick={() => setDocSurface(id)}
-                          >
-                            {label}
-                            {id === 'sod' && (report.sod?.deficiencies?.length ?? 0) > 0 && (
-                              <span className="ml-1 font-mono text-[10px] text-ink-400">
-                                {report.sod!.deficiencies!.length}
-                              </span>
-                            )}
-                          </button>
-                        ))}
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-200 dark:border-ink-700">
+                        <div className="flex flex-wrap gap-0">
+                          {(
+                            [
+                              ['ir', 'Investigation Report'],
+                              ['sod', 'Statement of Deficiencies'],
+                            ] as const
+                          ).map(([id, label]) => (
+                            <button
+                              key={id}
+                              type="button"
+                              className={clsx(
+                                'nav-pill',
+                                docSurface === id ? 'nav-pill-active' : 'nav-pill-idle',
+                              )}
+                              onClick={() => setDocSurface(id)}
+                            >
+                              {label}
+                              {id === 'sod' && (report.sod?.deficiencies?.length ?? 0) > 0 && (
+                                <span className="ml-1 font-mono text-[10px] text-ink-400">
+                                  {report.sod!.deficiencies!.length}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                        <button
+                          type="button"
+                          className="btn-ghost !h-8 !px-2.5 text-xs"
+                          onClick={() => setStep('evidence')}
+                          title="Review exhibits against allegation duties (optional)"
+                        >
+                          Evidence
+                        </button>
+                        {userCanEdit && (
+                          <DraftRecallMenu
+                            snapshots={caseDetail?.snapshots || []}
+                            disabled={!userCanEdit || caseDetail?.status === 'final' || caseDetail?.status === 'in_review' || caseDetail?.status === 'archived' || caseDetail?.status === 'trashed'}
+                            busy={busy}
+                            onRestore={(id) => void restoreSnapshot(id)}
+                          />
+                        )}
+                        </div>
                       </div>
                       {docSurface === 'ir' ? (
                         <InvestigationReportEditor
@@ -634,7 +712,9 @@ export default function App() {
                             const detail = await ensureCaseSaved(reportPayload)
                             return detail.id
                           }}
-                          onBack={() => setStep('workspace')}
+                          onBack={() => setStep('review')}
+                          revision={restoreEpoch}
+                          onRestoreSnapshot={(id) => void restoreSnapshot(id)}
                           canEdit={userCanEdit}
                           canExport={userCanExport}
                         />

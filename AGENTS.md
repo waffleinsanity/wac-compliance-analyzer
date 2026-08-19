@@ -11,7 +11,7 @@ WACMAKR helps investigators draft DOH-style **Investigation Report (IR)** and si
 **Invariants (non-negotiable):**
 
 1. Local PDFs under `data/source/` are the **sole authority** for subsection choice and statute quote text.
-2. Policy guidance under `data/examples/policy_guidance/` (`guidance_corpus`) shapes **structure, voice, and validation only** — never legal authority. Peer IR DOCX examples remain phrasing shells via `template_corpus`.
+2. Policy guidance under `data/examples/policy_guidance/` (`guidance_corpus`) and SOD pack labels in `sod_blank.py` shape **structure, voice, and validation only**, never legal authority. **Behavioral Health SOD Writing.pptx** is the SOD writing specification (`sod_writing.py`). Peer IR/SOD DOCX/PDF examples remain phrasing and pack-layout shells via `template_corpus` / `sod_blank`.
 3. User flow is **Intake → Compare → Documents** (IR | SOD sister drafts). Legacy compliance-analyzer UX is secondary.
 4. LLM (Groq/Ollama) stays **off the critical cite path** unless explicitly enriching scoped context (`LLM_FOR_INVESTIGATE` defaults false).
 5. Never invent statute text. SOD identifier key is internal-only (never facility export). Never commit secrets / `backend/.env`.

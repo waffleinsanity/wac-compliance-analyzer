@@ -24,11 +24,14 @@ from app.services.ir_blank import (
     compose_actions_text,
     parse_actions_fields,
 )
-from app.services.ir_format import (
-    allegation_export_line,
-    conclusion_export_lines,
-    facility_header_lines,
-    sync_report_text,
+from app.services.sod_blank import (
+    DISCLAIMER,
+    HEADER_LABELS,
+    TABLE_HEADERS,
+    TITLE as SOD_TITLE,
+    cover_letter_paragraphs,
+    format_findings_column,
+    poc_instruction_paragraphs,
 )
 
 
@@ -328,9 +331,9 @@ def build_deficiency_cite_sheet(report: InvestigationReport | dict[str, Any]) ->
 
 
 def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
-    """Facility-facing Statement of Deficiency DOCX (POC column left blank).
+    """Facility-facing SOD pack: cover letter, POC instructions, report table.
 
-    Identifier key is intentionally omitted — never ship Patient/Staff maps to the facility.
+    Identifier key is intentionally omitted. Plan of Correction column stays blank.
     """
     if isinstance(report, InvestigationReport):
         data = report.model_dump()
@@ -339,6 +342,22 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
     sod = data.get("sod") or {}
     fi = data.get("facility_info") or {}
 
+    facility_name = (sod.get("facility_name") or fi.get("facility_address") or "").strip()
+    facility_address = (sod.get("facility_address") or fi.get("facility_address") or "").strip()
+    administrator = (sod.get("administrator") or "").strip()
+    dates = (
+        sod.get("investigation_dates")
+        or fi.get("investigation_dates")
+        or data.get("investigation_date")
+        or ""
+    )
+    investigator = (sod.get("investigator_number") or "").strip()
+    poc = int(sod.get("poc_due_days") or 14)
+    case_id = sod.get("case_id") or data.get("case_id") or ""
+    license_no = sod.get("credential_number") or fi.get("credential_number") or ""
+    services = (sod.get("agency_services_type") or "").strip()
+    inspection = (sod.get("inspection_type") or "Investigation").strip() or "Investigation"
+
     doc = Document()
     for section in doc.sections:
         section.top_margin = Inches(0.75)
@@ -346,43 +365,85 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
         section.left_margin = Inches(0.75)
         section.right_margin = Inches(0.75)
 
-    title = doc.add_paragraph()
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    tr = title.add_run(sod.get("title") or "Statement of Deficiency")
-    tr.bold = True
-    tr.font.size = Pt(14)
-    tr.font.name = "Arial"
-
-    def _p(text: str, *, bold: bool = False) -> None:
+    def _p(text: str, *, bold: bool = False, size: float = 12.0, center: bool = False) -> None:
         para = doc.add_paragraph()
+        if center:
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = para.add_run(text)
-        run.font.size = Pt(12)
+        run.font.size = Pt(size)
         run.font.name = "Arial"
         run.bold = bold
 
-    _p(f"Case/Intake Number: {sod.get('case_id') or data.get('case_id') or '—'}")
-    _p(f"Facility / Agency: {sod.get('facility_name') or fi.get('facility_address') or '—'}")
-    _p(f"Facility Address: {sod.get('facility_address') or fi.get('facility_address') or '—'}")
-    _p(f"Credential Number: {sod.get('credential_number') or fi.get('credential_number') or '—'}")
-    _p(f"Administrator: {sod.get('administrator') or '—'}")
-    _p(f"Inspection Type: {sod.get('inspection_type') or 'Investigation'}")
-    _p(
-        f"Date(s) of Investigation: "
-        f"{sod.get('investigation_dates') or fi.get('investigation_dates') or data.get('investigation_date') or '—'}"
-    )
-    _p(f"Investigator #: {sod.get('investigator_number') or '—'}")
-    poc = sod.get("poc_due_days") or 14
-    _p(
-        f"A written Plan of Correction is due within {poc} calendar days of receipt of this Statement of Deficiency."
-    )
-    doc.add_paragraph()
+    for line in cover_letter_paragraphs(
+        facility_name=facility_name,
+        facility_address=facility_address,
+        administrator=administrator,
+        completed_on=dates,
+        investigator_number=investigator,
+        poc_due_days=poc,
+        letter_date=dates,
+    ):
+        _p(line, bold=line.startswith("STATE OF WASHINGTON") or line.startswith("DEPARTMENT OF HEALTH"))
 
+    doc.add_paragraph()
+    _p(SOD_TITLE, bold=True, size=14.0, center=True)
+    _p("Department of Health")
+    _p("P.O. Box 47874, Olympia, WA 98504-7874")
+    _p("TEL: 360-236-4732")
+    _p(DISCLAIMER)
+
+    doc.add_paragraph()
+    for line in poc_instruction_paragraphs():
+        heading = line in {
+            "Plan of Correction Instructions",
+            "Introduction",
+            "Descriptive Content",
+            "Completion Dates",
+            "Continued Monitoring",
+            "Checklist:",
+            "Approval of POC",
+            "Questions?",
+        }
+        _p(line, bold=heading)
+
+    doc.add_paragraph()
+    meta = doc.add_table(rows=4, cols=2)
+    meta.style = "Table Grid"
+    meta_rows = [
+        (
+            f"{HEADER_LABELS['agency']}\n{facility_name or 'N/A'}\n{facility_address or 'N/A'}",
+            f"{HEADER_LABELS['administrator']}\n{administrator or 'N/A'}",
+        ),
+        (
+            f"{HEADER_LABELS['inspection_type']}\n{inspection}",
+            f"{HEADER_LABELS['investigation_start']}\n{dates or 'N/A'}",
+        ),
+        (
+            f"{HEADER_LABELS['investigator_number']}\n{investigator or 'N/A'}",
+            f"{HEADER_LABELS['case_number']}\n{case_id or 'N/A'}",
+        ),
+        (
+            f"{HEADER_LABELS['license_number']}\n{license_no or 'N/A'}",
+            f"{HEADER_LABELS['services_type']}\n{services or 'N/A'}",
+        ),
+    ]
+    for i, (left, right) in enumerate(meta_rows):
+        meta.rows[i].cells[0].text = left
+        meta.rows[i].cells[1].text = right
+    for row in meta.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(11)
+                    run.font.name = "Arial"
+
+    doc.add_paragraph()
     table = doc.add_table(rows=1, cols=3)
     table.style = "Table Grid"
     hdr = table.rows[0].cells
-    hdr[0].text = "Deficiency Number and Rule Reference"
-    hdr[1].text = "Findings"
-    hdr[2].text = "Plan of Correction"
+    hdr[0].text = TABLE_HEADERS[0]
+    hdr[1].text = TABLE_HEADERS[1]
+    hdr[2].text = TABLE_HEADERS[2]
     for cell in hdr:
         for paragraph in cell.paragraphs:
             for run in paragraph.runs:
@@ -393,8 +454,10 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
     deficiencies = sod.get("deficiencies") or []
     if not deficiencies:
         row = table.add_row().cells
-        row[0].text = "—"
-        row[1].text = "No deficiency blocks drafted yet. Confirm Compare duties and complete findings."
+        row[0].text = "N/A"
+        row[1].text = (
+            "No deficiency blocks drafted yet. Confirm Compare duties and complete Findings included."
+        )
         row[2].text = ""
     else:
         for idx, d in enumerate(deficiencies, start=1):
@@ -404,31 +467,8 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
                 (d.get("regulation_text") or "").strip(),
             ]
             row[0].text = "\n\n".join(p for p in cite_parts if p)
-            findings_parts = [
-                (d.get("based_on") or "").strip(),
-                (d.get("failure_to") or "").strip(),
-            ]
-            if d.get("reference"):
-                findings_parts.append(f"Reference: {d['reference']}")
-            items = d.get("items") or []
-            if items:
-                for it in items:
-                    findings_parts.append(f"Item #{it.get('number', 1)} – {it.get('title') or ''}")
-                    fins = it.get("findings") or []
-                    if fins:
-                        findings_parts.append("Findings included:")
-                        for n, f in enumerate(fins, start=1):
-                            findings_parts.append(f"{n}. {f.get('text') or ''}")
-            else:
-                fins = d.get("findings") or []
-                if fins:
-                    findings_parts.append("Findings included:")
-                    for n, f in enumerate(fins, start=1):
-                        method = (f.get("method") or "").strip()
-                        body = (f.get("text") or "").strip()
-                        findings_parts.append(f"{n}. {method + ': ' if method else ''}{body}")
-            row[1].text = "\n\n".join(p for p in findings_parts if p)
-            row[2].text = ""  # Facility-owned POC
+            row[1].text = format_findings_column(d)
+            row[2].text = ""
             for cell in row:
                 for paragraph in cell.paragraphs:
                     for run in paragraph.runs:

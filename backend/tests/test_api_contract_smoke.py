@@ -16,10 +16,12 @@ API_TS = PROJECT_ROOT / "frontend" / "src" / "api.ts"
 CRITICAL_PATH_METHODS: tuple[tuple[str, str], ...] = (
     ("post", "/api/cases/{case_id}/trash"),
     ("post", "/api/cases/{case_id}/restore"),
+    ("post", "/api/cases/{case_id}/snapshots/{snapshot_id}/restore"),
     ("post", "/api/cases/{case_id}/status"),
     ("delete", "/api/cases/{case_id}"),
     ("post", "/api/investigate"),
     ("post", "/api/investigate/duty-option"),
+    ("post", "/api/cases/{case_id}/evidence/review"),
 )
 
 # Frontend template var -> OpenAPI path param (context-aware by path prefix).

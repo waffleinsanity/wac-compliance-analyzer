@@ -3,18 +3,21 @@ import { Check } from 'lucide-react'
 import { Fragment } from 'react'
 import { caseStatusLabel } from '../investigatorLabels'
 
-export type WorkflowStep = 'workspace' | 'review' | 'report'
+export type WorkflowStep = 'workspace' | 'review' | 'evidence' | 'report'
 
 const STEPS: { id: WorkflowStep; label: string; hint: string }[] = [
   { id: 'workspace', label: 'Intake', hint: 'Complaint + approved WACs' },
   { id: 'review', label: 'Compare', hint: 'Allegation lines per code' },
   { id: 'report', label: 'Documents', hint: 'IR + SOD sister drafts, save, export' },
+  { id: 'evidence', label: 'Evidence', hint: 'Exhibit excerpts vs allegation duties' },
 ]
 
 export type StepperContext = {
   approvedWacCount?: number
   quoteIssueCount?: number
   caseStatus?: string | null
+  saveLabel?: string
+  saveTone?: 'neutral' | 'ready' | 'warn'
 }
 
 type Props = {
@@ -50,6 +53,13 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
       key: 'status',
       label: caseStatusLabel(context.caseStatus),
       tone: context.caseStatus === 'final' ? 'ready' : 'neutral',
+    })
+  }
+  if (context?.saveLabel) {
+    meta.push({
+      key: 'save',
+      label: context.saveLabel,
+      tone: context.saveTone || 'neutral',
     })
   }
 

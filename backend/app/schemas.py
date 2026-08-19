@@ -354,6 +354,28 @@ class DutyOptionFromLabelRequest(BaseModel):
     label: str
 
 
+class EvidenceReviewHit(BaseModel):
+    """Exhibit excerpt ranked against an allegation / RF duty. Not statute authority."""
+
+    id: str
+    evidence_id: int
+    evidence_title: str
+    cite: str
+    duty_phrase: str = ""
+    excerpt: str
+    score: float = 0.0
+    band: str = "weak"
+    included_by_default: bool = False
+
+
+class EvidenceReviewResponse(BaseModel):
+    hits: list[EvidenceReviewHit] = Field(default_factory=list)
+    evidence_count: int = 0
+    scanned_count: int = 0
+    skipped_images: int = 0
+    message: str = ""
+
+
 class WACComparison(BaseModel):
     wac_id: str
     code: str
@@ -490,7 +512,7 @@ class SodIdentifierEntry(BaseModel):
 class StatementOfDeficiency(BaseModel):
     """Sister SOD draft created with the IR after Compare."""
 
-    title: str = "Statement of Deficiency"
+    title: str = "Statement of Deficiency Report"
     facility_name: str = ""
     facility_address: str = ""
     case_id: str = ""
@@ -499,6 +521,7 @@ class StatementOfDeficiency(BaseModel):
     inspection_type: str = "Investigation"
     investigator_number: str = ""
     investigation_dates: str = ""
+    agency_services_type: str = ""
     deficiencies: list[SodDeficiency] = Field(default_factory=list)
     identifier_key: list[SodIdentifierEntry] = Field(default_factory=list)
     poc_due_days: int = 14
@@ -555,6 +578,8 @@ class InvestigationReport(BaseModel):
     # Compare step: investigator confirmed allegation cites before opening Report
     compare_cites_confirmed: bool = False
     confirmed_allegation_codes: list[str] = Field(default_factory=list)
+    # Exhibit excerpts the investigator selected on the Evidence step (not statute quotes).
+    evidence_review: list[EvidenceReviewHit] = Field(default_factory=list)
     # Sister SOD draft (facility-facing); created with the IR after Compare
     sod: StatementOfDeficiency | None = None
 

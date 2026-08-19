@@ -12,14 +12,16 @@ import { useAuth } from '../auth'
 import { canEdit, canReview } from '../permissions'
 import { caseStatusLabel } from '../investigatorLabels'
 import { PrivacyScreenBanner } from './PrivacyScreenBanner'
+import { DraftRecallMenu } from './DraftRecallMenu'
 
 type Props = {
   caseDetail: CaseDetail
   onRefresh: () => Promise<void>
   onReportApplied?: (detail: CaseDetail) => void
+  onRestoreSnapshot?: (snapshotId: number) => void
 }
 
-export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Props) {
+export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied, onRestoreSnapshot }: Props) {
   const { user } = useAuth()
   const [defensibility, setDefensibility] = useState<DefensibilityResult | null>(null)
   const [comment, setComment] = useState('')
@@ -75,8 +77,8 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
       }
       setInfo(
         list.length === 1
-          ? 'Evidence attached (assist only — not auto-analyzed).'
-          : `${list.length} evidence files attached (assist only — not auto-analyzed).`,
+          ? 'Evidence attached. Open the Evidence step to compare exhibits with allegation duties.'
+          : `${list.length} evidence files attached. Open the Evidence step to compare exhibits with allegation duties.`,
       )
     })
   }
@@ -119,12 +121,22 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied }: Prop
       <div>
         <h3 className="font-display text-lg">Case assists</h3>
         <p className="mt-1 text-xs text-ink-500">
-          Organize evidence and process notes. Nothing here auto-finalizes findings — you stay in control.
+          Organize evidence and process notes. After files are attached, the Evidence step ranks exhibit language against allegation duties for you to select.
         </p>
         <div className="mt-2 font-sans text-xs text-ink-600 dark:text-ink-300">
           Status: <span className="font-semibold">{caseStatusLabel(caseDetail.status)}</span>
           {locked ? ' · locked for editing' : ''}
         </div>
+        {onRestoreSnapshot && (caseDetail.snapshots?.length || 0) > 0 && (
+          <div className="mt-2">
+            <DraftRecallMenu
+              snapshots={caseDetail.snapshots}
+              disabled={locked}
+              busy={busy}
+              onRestore={onRestoreSnapshot}
+            />
+          </div>
+        )}
       </div>
 
       {defensibility && (

@@ -17,6 +17,7 @@ def test_guidance_dir_has_policy_manuals():
     assert root.is_dir(), f"missing guidance dir: {root}"
     names = {p.name.lower() for p in root.iterdir()}
     assert any("investigative report" in n and "guidance" in n for n in names)
+    assert any("sod writing" in n for n in names)
     assert any("formatting standards" in n for n in names)
 
 
@@ -25,6 +26,12 @@ def test_load_guidance_corpus_parses_docx_pptx():
     assert len(corpus.files) >= 4
     kinds = {f.kind for f in corpus.files}
     assert "ir_guidance" in kinds
+    assert "sod_writing" in kinds
+    writing = next(f for f in corpus.files if f.kind == "sod_writing")
+    preview = (writing.text_preview or "").lower()
+    assert "findings included" in preview or writing.char_count > 1000
+    assert corpus.sod_writing_principles
+    assert any("two or more" in p.lower() for p in corpus.sod_writing_principles)
     assert any(f.char_count > 100 for f in corpus.files)
     assert IR_CONCLUSION_OPTIONS[0].endswith("cited")
     assert "citied" not in IR_CONCLUSION_OPTIONS[0]

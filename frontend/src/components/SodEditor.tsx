@@ -27,7 +27,7 @@ type Props = {
 
 function emptySod(report: InvestigationReport): StatementOfDeficiency {
   return {
-    title: 'Statement of Deficiency',
+    title: 'Statement of Deficiency Report',
     facility_address: report.facility_info?.facility_address || '',
     case_id: report.case_id || '',
     credential_number: report.facility_info?.credential_number || '',
@@ -38,6 +38,7 @@ function emptySod(report: InvestigationReport): StatementOfDeficiency {
     poc_due_days: 14,
     is_rtf: false,
     notes: '',
+    agency_services_type: '',
   }
 }
 
@@ -139,8 +140,9 @@ export function SodEditor({
             Statement of Deficiencies
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-ink-500">
-            Driving document for POC and enforcement. Exact WAC/RCW text from the PDF store;
-            findings stay investigator-owned. Identifier key is internal only.
+            Facility-facing pack: cover letter, Plan of Correction instructions, then Cite / Based on /
+            Failure to / Findings included. Regulation text comes from the local PDF store. Findings stay
+            investigator-owned. The identifier key is internal only and is never exported.
           </p>
         </div>
         <button
@@ -198,7 +200,25 @@ export function SodEditor({
             onChange={(e) => patchSod({ poc_due_days: Number(e.target.value) || 14 })}
           />
         </label>
+        <label className="block text-sm sm:col-span-2">
+          <span className="text-ink-500">BHA/RTF agency services type</span>
+          <input
+            className="input mt-1"
+            disabled={!canEdit || busy}
+            value={sod.agency_services_type || ''}
+            onChange={(e) => patchSod({ agency_services_type: e.target.value })}
+          />
+        </label>
       </div>
+
+      <p className="rounded border border-ink-200 bg-ink-50 px-3 py-2 text-sm text-ink-700 dark:border-ink-700 dark:bg-ink-900/40 dark:text-ink-200">
+        SOD Writing standards (core instruction): Based on names two or more of observation,
+        interview, and document review, and must echo the cited WAC duty. Every evidence type named
+        there needs a matching Findings included row. Failure to states the risk if the practice is
+        left uncorrected. Findings use showed for records, stated / stated that for interviews,
+        Patient #n and Staff A/B, past tense, and dates/times on observations and interviews only.
+        Plan of Correction stays blank for the facility.
+      </p>
 
       {!defs.length && (
         <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
@@ -347,6 +367,10 @@ export function SodEditor({
                   <Plus className="h-3.5 w-3.5" /> Add finding
                 </button>
               </div>
+              <p className="mt-1 text-xs text-ink-500">
+                Do not auto-fill this from the complaint. Use showed for records, stated or stated that
+                for interviews, and Patient # / Staff A from the internal key.
+              </p>
               <ul className="mt-2 space-y-2">
                 {(d.findings || []).map((f, fi) => (
                   <li key={fi} className="grid gap-2 sm:grid-cols-[140px_1fr]">

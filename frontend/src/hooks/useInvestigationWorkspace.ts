@@ -1,8 +1,8 @@
 /**
- * Investigation workspace orchestration: Intake → Compare → Report state,
+ * Investigation workspace orchestration: Intake → Compare → Documents → Evidence state,
  * privacy gate, case save/rebuild, and local demos.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   api,
   type CaseDetail,
@@ -15,7 +15,21 @@ import {
 import { normalizeReportAllegations } from '../allegationFormat'
 import { getLocalDemoById, LOCAL_DEMO_SCENARIOS } from '../fixtures/localQuickDraft'
 import type { WorkflowStep } from '../components/WorkflowStepper'
-import { canAccessAdmin } from '../permissions'
+import { canAccessAdmin, canEdit } from '../permissions'
+import {
+  backupIsNewer,
+  backupStorageKey,
+  clearDraftBackup,
+  hasSaveableDraft,
+  LOCAL_BACKUP_MS,
+  PERIODIC_SAVE_MS,
+  PERIODIC_SAVE_NOTE,
+  readDraftBackup,
+  type DraftBackup,
+  type SaveStatus,
+  workspaceFingerprint,
+  writeDraftBackup,
+} from '../draftBackup'
 
 function applyReport(report: InvestigationReport | null): InvestigationReport | null {
   return report ? normalizeReportAllegations(report) : null
@@ -102,16 +116,25 @@ export type InvestigationWorkspace = {
   loadLocalDemoAndDraft: (demoId?: string) => void
   rebuildCaseDraft: () => Promise<void>
   confirmCompareAndContinue: (confirmedCodes: string[]) => Promise<void>
+  confirmEvidenceAndContinue: (nextReport?: InvestigationReport | null) => Promise<void>
   clearReportToWorkspace: () => void
   scanPrivacy: (value: string, opts?: { openModal?: boolean }) => Promise<PrivacyScanResult | null>
   clearPrivacyHints: () => void
+  saveStatus: SaveStatus
+  recoverOffer: DraftBackup | null
+  applyRecoveredDraft: () => void
+  dismissRecoveredDraft: () => void
+  restoreSnapshot: (snapshotId: number) => Promise<void>
+  restoreEpoch: number
 }
 
 export function useInvestigationWorkspace(opts: {
   userRole?: string | null
   isAdmin?: boolean
+  userId?: number | null
 }): InvestigationWorkspace {
-  const { userRole, isAdmin } = opts
+  const { userRole, isAdmin, userId = null } = opts
+  const userCanEdit = canEdit(userRole, isAdmin)
   const [step, setStep] = useState<WorkflowStep>('workspace')
   const [wacs, setWacs] = useState<WACNode[]>([])
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
@@ -139,6 +162,35 @@ export function useInvestigationWorkspace(opts: {
   const [pendingAfterRedact, setPendingAfterRedact] = useState<'draft' | null>(null)
   const [privacyInfo, setPrivacyInfo] = useState('')
   const [localDemoId, setLocalDemoId] = useState(LOCAL_DEMO_SCENARIOS[0]?.id || '')
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({ state: 'idle' })
+  const [recoverOffer, setRecoverOffer] = useState<DraftBackup | null>(null)
+  const [restoreEpoch, setRestoreEpoch] = useState(0)
+
+  const lastSavedFp = useRef('')
+  const saveInFlight = useRef(false)
+  const stepRef = useRef(step)
+  const textRef = useRef(text)
+  const caseIdLabelRef = useRef(caseId)
+  const investigationDateRef = useRef(investigationDate)
+  const facilityAddressRef = useRef(facilityAddress)
+  const credentialNumberRef = useRef(credentialNumber)
+  const selectedCodesRef = useRef(selectedCodes)
+  const reportRef = useRef(report)
+  const activeCaseIdRef = useRef(activeCaseId)
+  const caseDetailRef = useRef(caseDetail)
+  const busyRef = useRef(busy)
+
+  stepRef.current = step
+  textRef.current = text
+  caseIdLabelRef.current = caseId
+  investigationDateRef.current = investigationDate
+  facilityAddressRef.current = facilityAddress
+  credentialNumberRef.current = credentialNumber
+  selectedCodesRef.current = selectedCodes
+  reportRef.current = report
+  activeCaseIdRef.current = activeCaseId
+  caseDetailRef.current = caseDetail
+  busyRef.current = busy
 
   const loadWacs = useCallback(async () => {
     setWacs(await api.listWacs({ level: 'code' }))
@@ -162,6 +214,7 @@ export function useInvestigationWorkspace(opts: {
   const unlocked: Record<WorkflowStep, boolean> = {
     workspace: true,
     review: !!report,
+    evidence: !!report && Boolean(report.compare_cites_confirmed),
     report: !!report && Boolean(report.compare_cites_confirmed),
   }
 
@@ -194,12 +247,44 @@ export function useInvestigationWorkspace(opts: {
       setCredentialNumber(detail.credential_number || '')
       setSelectedCodes(detail.approved_wac_ids || [])
       if (detail.report) {
-        setReport(applyReport(withLegacyCompareConfirmed(detail.report)))
+        const nextReport = applyReport(withLegacyCompareConfirmed(detail.report))
+        setReport(nextReport)
         setStep('report')
+        lastSavedFp.current = workspaceFingerprint({
+          step: 'report',
+          text: detail.complaint_text || '',
+          caseIdLabel: detail.case_id_label || '',
+          investigationDate: detail.investigation_date || '',
+          facilityAddress: detail.facility_address || '',
+          credentialNumber: detail.credential_number || '',
+          selectedCodes: detail.approved_wac_ids || [],
+          report: nextReport,
+        })
       } else {
         setReport(null)
         setStep('workspace')
+        lastSavedFp.current = workspaceFingerprint({
+          step: 'workspace',
+          text: detail.complaint_text || '',
+          caseIdLabel: detail.case_id_label || '',
+          investigationDate: detail.investigation_date || '',
+          facilityAddress: detail.facility_address || '',
+          credentialNumber: detail.credential_number || '',
+          selectedCodes: detail.approved_wac_ids || [],
+          report: null,
+        })
       }
+      const local = readDraftBackup(backupStorageKey(userId, detail.id))
+      if (
+        local &&
+        backupIsNewer(local, detail.updated_at) &&
+        workspaceFingerprint(local) !== lastSavedFp.current
+      ) {
+        setRecoverOffer(local)
+      } else {
+        setRecoverOffer(null)
+      }
+      setSaveStatus({ state: 'saved', at: detail.updated_at || new Date().toISOString() })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to open case')
     } finally {
@@ -208,6 +293,10 @@ export function useInvestigationWorkspace(opts: {
   }
 
   const startNewCase = () => {
+    clearDraftBackup(backupStorageKey(userId, null))
+    setRecoverOffer(null)
+    setSaveStatus({ state: 'idle' })
+    lastSavedFp.current = ''
     setActiveCaseId(null)
     setCaseDetail(null)
     setReport(null)
@@ -222,6 +311,247 @@ export function useInvestigationWorkspace(opts: {
     setPrivacyInfo('')
     setStep('workspace')
   }
+
+  const captureWorkspace = (): DraftBackup => ({
+    savedAt: new Date().toISOString(),
+    caseId: activeCaseIdRef.current,
+    step: stepRef.current,
+    text: textRef.current,
+    caseIdLabel: caseIdLabelRef.current,
+    investigationDate: investigationDateRef.current,
+    facilityAddress: facilityAddressRef.current,
+    credentialNumber: credentialNumberRef.current,
+    selectedCodes: selectedCodesRef.current,
+    report: reportRef.current,
+  })
+
+  const currentFingerprint = () =>
+    workspaceFingerprint({
+      step: stepRef.current,
+      text: textRef.current,
+      caseIdLabel: caseIdLabelRef.current,
+      investigationDate: investigationDateRef.current,
+      facilityAddress: facilityAddressRef.current,
+      credentialNumber: credentialNumberRef.current,
+      selectedCodes: selectedCodesRef.current,
+      report: reportRef.current,
+    })
+
+  const writeLocalBackup = () => {
+    const snap = captureWorkspace()
+    if (
+      !hasSaveableDraft({
+        text: snap.text,
+        selectedCodes: snap.selectedCodes,
+        report: snap.report,
+        caseIdLabel: snap.caseIdLabel,
+      })
+    ) {
+      return
+    }
+    writeDraftBackup(backupStorageKey(userId, snap.caseId), snap)
+  }
+
+  const caseIsEditable = () => {
+    const status = caseDetailRef.current?.status
+    if (!userCanEdit) return false
+    if (!status) return true
+    return status === 'draft' || status === 'reopened'
+  }
+
+  const persistToServer = async (note = PERIODIC_SAVE_NOTE): Promise<boolean> => {
+    const caseNum = activeCaseIdRef.current
+    const currentReport = reportRef.current
+    if (!caseNum || !caseIsEditable() || busyRef.current) return false
+    if (
+      !hasSaveableDraft({
+        text: textRef.current,
+        selectedCodes: selectedCodesRef.current,
+        report: currentReport,
+        caseIdLabel: caseIdLabelRef.current,
+      })
+    ) {
+      return false
+    }
+    if (saveInFlight.current) return false
+    saveInFlight.current = true
+    setSaveStatus((prev) => ({ state: 'saving', at: prev.at }))
+    try {
+      await api.updateCase(caseNum, {
+        case_id_label: caseIdLabelRef.current,
+        title: caseIdLabelRef.current || `Case ${new Date().toISOString().slice(0, 10)}`,
+        complaint_text: textRef.current,
+        investigation_date: investigationDateRef.current,
+        facility_address: facilityAddressRef.current,
+        credential_number: credentialNumberRef.current,
+        approved_wac_ids: selectedCodesRef.current,
+      })
+      let detail: CaseDetail | null = null
+      if (currentReport) {
+        detail = await api.saveCaseDraft(caseNum, currentReport, note)
+      } else {
+        detail = await api.getCase(caseNum)
+      }
+      setCaseDetail(detail)
+      setCasesRefreshKey((k) => k + 1)
+      lastSavedFp.current = currentFingerprint()
+      writeDraftBackup(backupStorageKey(userId, caseNum), {
+        ...captureWorkspace(),
+        savedAt: detail.updated_at || new Date().toISOString(),
+      })
+      setSaveStatus({
+        state: 'saved',
+        at: detail.updated_at || new Date().toISOString(),
+      })
+      return true
+    } catch (e) {
+      writeLocalBackup()
+      const message =
+        e instanceof Error ? e.message : 'Could not reach the server. Draft kept on this device.'
+      setSaveStatus({
+        state: 'offline',
+        at: new Date().toISOString(),
+        message,
+      })
+      return false
+    } finally {
+      saveInFlight.current = false
+    }
+  }
+
+  const applyRecoveredDraft = () => {
+    const local = recoverOffer
+    if (!local) return
+    setText(local.text || '')
+    setCaseId(local.caseIdLabel || '')
+    setInvestigationDate(local.investigationDate || '')
+    setFacilityAddress(local.facilityAddress || '')
+    setCredentialNumber(local.credentialNumber || '')
+    setSelectedCodes(local.selectedCodes || [])
+    setReport(local.report ? applyReport(withLegacyCompareConfirmed(local.report)) : null)
+    if (local.step) setStep(local.step)
+    setRecoverOffer(null)
+    lastSavedFp.current = ''
+    setRestoreEpoch((n) => n + 1)
+    setSaveStatus({ state: 'idle', message: 'Restored from this device. Saving to server…' })
+    window.setTimeout(() => {
+      void persistToServer('Recovered device draft')
+    }, 0)
+  }
+
+  const dismissRecoveredDraft = () => {
+    if (recoverOffer) {
+      clearDraftBackup(backupStorageKey(userId, recoverOffer.caseId))
+    }
+    setRecoverOffer(null)
+  }
+
+  const restoreSnapshot = async (snapshotId: number) => {
+    const caseNum = activeCaseIdRef.current
+    if (!caseNum) return
+    setBusy(true)
+    setError('')
+    try {
+      const detail = await api.restoreCaseSnapshot(caseNum, snapshotId)
+      setCaseDetail(detail)
+      setCasesRefreshKey((k) => k + 1)
+      if (detail.report) {
+        const nextReport = applyReport(withLegacyCompareConfirmed(detail.report))
+        setReport(nextReport)
+        lastSavedFp.current = workspaceFingerprint({
+          step: stepRef.current,
+          text: textRef.current,
+          caseIdLabel: caseIdLabelRef.current,
+          investigationDate: investigationDateRef.current,
+          facilityAddress: facilityAddressRef.current,
+          credentialNumber: credentialNumberRef.current,
+          selectedCodes: selectedCodesRef.current,
+          report: nextReport,
+        })
+      }
+      setSaveStatus({
+        state: 'saved',
+        at: detail.updated_at || new Date().toISOString(),
+        message: 'Restored a server recall point',
+      })
+      setRestoreEpoch((n) => n + 1)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not restore recall point')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    const local = readDraftBackup(backupStorageKey(userId, null))
+    if (
+      local &&
+      hasSaveableDraft(local) &&
+      !activeCaseIdRef.current &&
+      !textRef.current.trim() &&
+      !reportRef.current
+    ) {
+      setRecoverOffer(local)
+    }
+    // One-shot after login identity is known.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const fp = currentFingerprint()
+      if (fp === lastSavedFp.current) return
+      writeLocalBackup()
+    }, LOCAL_BACKUP_MS)
+    return () => window.clearTimeout(timer)
+  }, [
+    step,
+    text,
+    caseId,
+    investigationDate,
+    facilityAddress,
+    credentialNumber,
+    selectedCodes,
+    report,
+    activeCaseId,
+    userId,
+  ])
+
+  useEffect(() => {
+    const tick = () => {
+      if (busyRef.current || !caseIsEditable()) return
+      if (currentFingerprint() === lastSavedFp.current) return
+      if (!activeCaseIdRef.current) {
+        writeLocalBackup()
+        setSaveStatus({
+          state: 'offline',
+          at: new Date().toISOString(),
+          message: 'Draft kept on this device until the case is saved',
+        })
+        return
+      }
+      void persistToServer(PERIODIC_SAVE_NOTE)
+    }
+    const timer = window.setInterval(tick, PERIODIC_SAVE_MS)
+    return () => window.clearInterval(timer)
+  }, [userId, userCanEdit])
+
+  useEffect(() => {
+    const onHide = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') return
+      if (currentFingerprint() === lastSavedFp.current) return
+      writeLocalBackup()
+      if (activeCaseIdRef.current && caseIsEditable() && !busyRef.current) {
+        void persistToServer(PERIODIC_SAVE_NOTE)
+      }
+    }
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', onHide)
+    }
+  }, [userId, userCanEdit])
 
   const ensureCaseSaved = async (
     reportPayload: InvestigationReport,
@@ -249,6 +579,17 @@ export function useInvestigationWorkspace(opts: {
       const detail = await api.saveCaseDraft(activeCaseId, reportPayload, 'Auto-save after draft build')
       setCaseDetail(detail)
       setCasesRefreshKey((k) => k + 1)
+      lastSavedFp.current = workspaceFingerprint({
+        step: stepRef.current,
+        text: complaintText,
+        caseIdLabel: label,
+        investigationDate: payload.investigation_date,
+        facilityAddress: payload.facility_address,
+        credentialNumber: payload.credential_number,
+        selectedCodes: payload.approved_wac_ids,
+        report: applyReport(reportPayload),
+      })
+      setSaveStatus({ state: 'saved', at: detail.updated_at || new Date().toISOString() })
       return detail
     }
     const created = await api.createCase(payload)
@@ -256,6 +597,18 @@ export function useInvestigationWorkspace(opts: {
     const detail = await api.saveCaseDraft(created.id, reportPayload, 'Initial draft save')
     setCaseDetail(detail)
     setCasesRefreshKey((k) => k + 1)
+    clearDraftBackup(backupStorageKey(userId, null))
+    lastSavedFp.current = workspaceFingerprint({
+      step: stepRef.current,
+      text: complaintText,
+      caseIdLabel: label,
+      investigationDate: payload.investigation_date,
+      facilityAddress: payload.facility_address,
+      credentialNumber: payload.credential_number,
+      selectedCodes: payload.approved_wac_ids,
+      report: applyReport(reportPayload),
+    })
+    setSaveStatus({ state: 'saved', at: detail.updated_at || new Date().toISOString() })
     return detail
   }
 
@@ -562,8 +915,46 @@ export function useInvestigationWorkspace(opts: {
         const detail = await api.saveCaseDraft(activeCaseId, next, 'Compare cites confirmed')
         setCaseDetail(detail)
         setCasesRefreshKey((k) => k + 1)
+        lastSavedFp.current = workspaceFingerprint({
+          step: 'report',
+          text: textRef.current,
+          caseIdLabel: caseIdLabelRef.current,
+          investigationDate: investigationDateRef.current,
+          facilityAddress: facilityAddressRef.current,
+          credentialNumber: credentialNumberRef.current,
+          selectedCodes: selectedCodesRef.current,
+          report: next,
+        })
+        setSaveStatus({ state: 'saved', at: detail.updated_at || new Date().toISOString() })
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not save cite confirmation')
+      }
+    }
+  }
+
+  const confirmEvidenceAndContinue = async (nextReport?: InvestigationReport | null) => {
+    const payload = nextReport || report
+    if (!payload) return
+    setReport(payload)
+    setStep('report')
+    if (activeCaseId) {
+      try {
+        const detail = await api.saveCaseDraft(activeCaseId, payload, 'Evidence excerpts selected')
+        setCaseDetail(detail)
+        setCasesRefreshKey((k) => k + 1)
+        lastSavedFp.current = workspaceFingerprint({
+          step: 'report',
+          text: textRef.current,
+          caseIdLabel: caseIdLabelRef.current,
+          investigationDate: investigationDateRef.current,
+          facilityAddress: facilityAddressRef.current,
+          credentialNumber: credentialNumberRef.current,
+          selectedCodes: selectedCodesRef.current,
+          report: payload,
+        })
+        setSaveStatus({ state: 'saved', at: detail.updated_at || new Date().toISOString() })
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not save evidence selections')
       }
     }
   }
@@ -630,8 +1021,15 @@ export function useInvestigationWorkspace(opts: {
     loadLocalDemoAndDraft,
     rebuildCaseDraft,
     confirmCompareAndContinue,
+    confirmEvidenceAndContinue,
     clearReportToWorkspace,
     scanPrivacy,
     clearPrivacyHints,
+    saveStatus,
+    recoverOffer,
+    applyRecoveredDraft,
+    dismissRecoveredDraft,
+    restoreSnapshot,
+    restoreEpoch,
   }
 }

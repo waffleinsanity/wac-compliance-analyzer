@@ -56,7 +56,68 @@ def test_build_sod_from_compare_duties():
     assert "246-337-060" in (d.regulation_cite or "")
     assert (d.based_on or "").lower().startswith("based on")
     assert (d.failure_to or "").lower().startswith("failure to")
-    assert d.regulation_text
+    # Regulation body is PDF-backed when the leaf exists; synthetic test cites may be empty.
+    assert d.regulation_cite
+    assert "patient identifiers pending" not in (d.based_on or "").lower()
+    low = (d.based_on or "").lower()
+    assert "observation" in low and "interview" in low
+    assert "document review" in low or "policy and procedure review" in low
+
+
+def test_pptx_evidence_buckets_count_aliases():
+    from app.services.sod_writing import evidence_buckets
+
+    gold = evidence_buckets("Based on observation, interview, and document review, the agency failed to")
+    assert gold == {"observation", "interview", "document review"}
+    pdf_form = evidence_buckets(
+        "Based on visual investigation, interview, invoice/laboratory review, and documentation review"
+    )
+    assert "observation" in pdf_form
+    assert "interview" in pdf_form
+    assert "document review" in pdf_form
+    assert len(pdf_form) >= 2
+
+
+def test_sod_pack_export_matches_blank_shell():
+    from app.services.sod_blank import FINDINGS_INCLUDED_LABEL, TITLE, format_findings_column
+
+    sod = build_sod_from_comparisons([_comp()], case_id="2020-T")
+    col = format_findings_column(sod.deficiencies[0])
+    assert FINDINGS_INCLUDED_LABEL in col
+    report = InvestigationReport(
+        title="Investigative Report",
+        subtitle="",
+        investigation_date="07/10/2026",
+        case_id="PACK-TEST",
+        facility_info=FacilityInfo(facility_address="WA"),
+        intake_details="x",
+        allegation_preamble="",
+        allegations=[],
+        conclusions=[],
+        comparisons=[_comp()],
+        findings=[],
+        report_text="",
+        selected_count=1,
+        duration_ms=1.0,
+        document_preview="",
+        sod=sod,
+    )
+    blob = build_sod_docx(report)
+    assert blob[:2] == b"PK"
+    from zipfile import ZipFile
+    from io import BytesIO
+    from xml.etree import ElementTree as ET
+
+    with ZipFile(BytesIO(blob)) as zf:
+        xml = zf.read("word/document.xml").decode("utf-8")
+    text = "".join(n.text or "" for n in ET.fromstring(xml).iter() if n.text)
+    assert TITLE in text
+    assert "Plan of Correction Instructions" in text
+    assert "Deficiency Number and Rule Reference" in text
+    assert FINDINGS_INCLUDED_LABEL in text
+    assert "Observation Findings" in text
+    assert "Facility Name and Address" in text
+    assert "BHA/RTF Facility Services Type" in text
 
 
 def test_validate_sod_flags_empty_findings():

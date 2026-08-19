@@ -14,6 +14,7 @@ from app.database import (
     CaseProcessEntry,
     CaseReportSnapshot,
     InvestigationCase,
+    IrLearningSnippet,
     User,
     utcnow,
 )
@@ -92,6 +93,11 @@ def assert_case_editable(case: InvestigationCase, user: User | None = None) -> N
         )
 
 
+PERIODIC_SAVE_NOTE = "Periodic save"
+PERIODIC_SNAPSHOT_SECONDS = 5 * 60
+MAX_PERIODIC_SNAPSHOTS = 20
+
+
 def next_snapshot_version(db: Session, case_id: int) -> int:
     latest = (
         db.query(CaseReportSnapshot)
@@ -102,6 +108,126 @@ def next_snapshot_version(db: Session, case_id: int) -> int:
     return (latest.version + 1) if latest else 1
 
 
+def is_periodic_note(note: str | None) -> bool:
+    return (note or "").strip().lower().startswith(PERIODIC_SAVE_NOTE.lower())
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def latest_snapshot(db: Session, case_id: int) -> CaseReportSnapshot | None:
+    return (
+        db.query(CaseReportSnapshot)
+        .filter(CaseReportSnapshot.case_id == case_id)
+        .order_by(CaseReportSnapshot.version.desc())
+        .first()
+    )
+
+
+def prune_periodic_snapshots(
+    db: Session,
+    case_id: int,
+    keep: int = MAX_PERIODIC_SNAPSHOTS,
+) -> int:
+    """Drop oldest periodic recall points; keep named / manual snapshots."""
+    if keep < 1:
+        return 0
+    rows = (
+        db.query(CaseReportSnapshot)
+        .filter(
+            CaseReportSnapshot.case_id == case_id,
+            CaseReportSnapshot.note.like(f"{PERIODIC_SAVE_NOTE}%"),
+        )
+        .order_by(CaseReportSnapshot.version.desc())
+        .all()
+    )
+    extra = rows[keep:]
+    ids = [row.id for row in extra if row.id is not None]
+    if ids:
+        db.query(IrLearningSnippet).filter(IrLearningSnippet.source_snapshot_id.in_(ids)).update(
+            {IrLearningSnippet.source_snapshot_id: None},
+            synchronize_session=False,
+        )
+    for row in extra:
+        db.delete(row)
+    return len(extra)
+
+
+def _should_write_snapshot(
+    latest: CaseReportSnapshot | None,
+    payload_json: str,
+    note: str,
+    snapshot_mode: str,
+) -> bool:
+    if snapshot_mode == "never":
+        return False
+    if latest and latest.report_json == payload_json:
+        return False
+    if snapshot_mode == "always":
+        return True
+    # auto: named saves always snapshot when content changed; periodic saves
+    # mint a recall point at most every PERIODIC_SNAPSHOT_SECONDS.
+    if not is_periodic_note(note):
+        return True
+    if latest is None:
+        return True
+    created = _aware(latest.created_at)
+    if created is None:
+        return True
+    age = (datetime.now(timezone.utc) - created).total_seconds()
+    return age >= PERIODIC_SNAPSHOT_SECONDS
+
+
+def persist_draft(
+    db: Session,
+    case: InvestigationCase,
+    report: InvestigationReport | dict[str, Any],
+    user: User,
+    note: str = "",
+    *,
+    snapshot_mode: str = "always",
+) -> CaseReportSnapshot | None:
+    """Write current IR/SOD JSON. Optionally add a versioned recall snapshot."""
+    from app.services.ir_format import sync_report_text
+
+    if isinstance(report, dict):
+        report = InvestigationReport.model_validate(report)
+    sync_report_text(report)
+    payload = report.model_dump()
+    payload_json = json.dumps(payload)
+    text = report.report_text or ""
+    note = (note or "")[:512]
+    latest = latest_snapshot(db, case.id)
+    write_snap = _should_write_snapshot(latest, payload_json, note, snapshot_mode)
+    snap: CaseReportSnapshot | None = None
+    if write_snap:
+        snap = CaseReportSnapshot(
+            case_id=case.id,
+            version=next_snapshot_version(db, case.id),
+            report_json=payload_json,
+            report_text=text,
+            note=note,
+            created_by=user.id,
+        )
+        db.add(snap)
+        db.flush()
+        if is_periodic_note(note):
+            prune_periodic_snapshots(db, case.id)
+    case.current_report_json = payload_json
+    case.updated_at = utcnow()
+    db.add(case)
+    db.commit()
+    if snap is not None:
+        db.refresh(snap)
+    db.refresh(case)
+    return snap if snap is not None else latest_snapshot(db, case.id)
+
+
 def save_snapshot(
     db: Session,
     case: InvestigationCase,
@@ -109,28 +235,9 @@ def save_snapshot(
     user: User,
     note: str = "",
 ) -> CaseReportSnapshot:
-    from app.services.ir_format import sync_report_text
-
-    if isinstance(report, dict):
-        report = InvestigationReport.model_validate(report)
-    sync_report_text(report)
-    payload = report.model_dump()
-    text = report.report_text or ""
-    snap = CaseReportSnapshot(
-        case_id=case.id,
-        version=next_snapshot_version(db, case.id),
-        report_json=json.dumps(payload),
-        report_text=text,
-        note=note[:512],
-        created_by=user.id,
-    )
-    case.current_report_json = snap.report_json
-    case.updated_at = utcnow()
-    db.add(snap)
-    db.add(case)
-    db.commit()
-    db.refresh(snap)
-    db.refresh(case)
+    snap = persist_draft(db, case, report, user, note=note, snapshot_mode="always")
+    if snap is None:
+        raise HTTPException(status_code=500, detail="Draft save did not produce a recall point")
     return snap
 
 

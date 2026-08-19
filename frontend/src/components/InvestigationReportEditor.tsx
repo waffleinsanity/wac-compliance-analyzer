@@ -107,6 +107,9 @@ type Props = {
   canEdit?: boolean
   /** Download/copy/export of the finished IR product (editors/admins). */
   canExport?: boolean
+  /** Bump when a recall restore should replace the editor buffer. */
+  revision?: number
+  onRestoreSnapshot?: (snapshotId: number) => void
 }
 
 function AllegationBadge({ a }: { a: InvestigationAllegation }) {
@@ -556,6 +559,8 @@ export function InvestigationReportEditor({
   onEnsureCase,
   canEdit = true,
   canExport = true,
+  revision = 0,
+  onRestoreSnapshot,
 }: Props) {
   const [report, setReport] = useState(() => {
     const base = normalizeReportAllegations({ ...initial })
@@ -572,7 +577,7 @@ export function InvestigationReportEditor({
   // Ignore parent echo of our own onReportChange so Edit dropdowns are not snapped back.
   const syncingFromParent = useRef(false)
   const lastExternalKey = useRef('')
-  const externalKey = `${caseId ?? 'new'}|${initial.analysis_id ?? ''}|${initial.selected_count}|${(
+  const externalKey = `${caseId ?? 'new'}|${revision}|${initial.analysis_id ?? ''}|${initial.selected_count}|${(
     initial.allegations || []
   )
     .map((a) => a.wac_code)
@@ -858,7 +863,7 @@ export function InvestigationReportEditor({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Flush under Intake / Compare / Report — outside the padded scroll pane */}
+      {/* Flush under Intake / Compare / Documents; outside the padded scroll pane */}
       <div className="sticky top-0 z-10 shrink-0 border-b border-ink-200 bg-card px-3 py-2 dark:border-ink-700 sm:px-4">
         <p className="compare-meta mb-1">Step 3 · Documents</p>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -918,10 +923,10 @@ export function InvestigationReportEditor({
               type="button"
               className="btn-ghost !h-8 !px-2.5 text-xs"
               onClick={onBack}
-              title="Back to Intake"
+              title="Back to Compare"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Intake
+              Compare
             </button>
             {canEdit && (
               <button
@@ -1681,6 +1686,7 @@ export function InvestigationReportEditor({
           <CaseAssistPanel
             caseDetail={caseDetail}
             onRefresh={onCaseRefresh}
+            onRestoreSnapshot={onRestoreSnapshot}
             onReportApplied={(detail) => {
               if (detail.report) setReport(normalizeReportAllegations({ ...detail.report }))
             }}

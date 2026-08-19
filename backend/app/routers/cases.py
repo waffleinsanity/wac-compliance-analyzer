@@ -39,6 +39,7 @@ from app.schemas import (
     CaseUpdate,
     DefensibilityOut,
     EvidenceOut,
+    EvidenceReviewResponse,
     InvestigationReport,
     IrTemplateOut,
     ProcessEntryCreate,
@@ -58,6 +59,8 @@ from app.services.case_store import (
     process_entries_to_bullets,
     purge_trashed_cases,
     report_from_json,
+    is_periodic_note,
+    persist_draft,
     save_snapshot,
     set_status,
     unit_analytics,
@@ -69,6 +72,7 @@ from app.services.docx_export import (
     build_sod_docx,
 )
 from app.services.investigation import build_investigation_report
+from app.services.evidence_review import extract_evidence_text, review_case_evidence
 from app.services.audit import log_action
 from app.services.ir_learning import harvest_completed_ir
 from app.services.ir_templates import (
@@ -486,7 +490,15 @@ def save_draft(
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
     assert_case_editable(case, user)
-    save_snapshot(db, case, payload.report, user, note=payload.note or "Draft save")
+    note = payload.note or "Draft save"
+    persist_draft(
+        db,
+        case,
+        payload.report,
+        user,
+        note=note,
+        snapshot_mode="auto" if is_periodic_note(note) else "always",
+    )
     # Sync light metadata from report when present
     if payload.report.case_id:
         case.case_id_label = payload.report.case_id
@@ -502,6 +514,49 @@ def save_draft(
         )
     db.add(case)
     db.commit()
+    db.refresh(case)
+    return _detail(db, case)
+
+
+@router.post("/{case_id}/snapshots/{snapshot_id}/restore", response_model=CaseDetailOut)
+def restore_draft_snapshot(
+    case_id: int,
+    snapshot_id: int,
+    user: User = Depends(get_editor_user),
+    db: Session = Depends(get_db),
+):
+    """Replace the working draft with a prior recall point. Current work is snapshotted first."""
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    assert_case_editable(case, user)
+    snap = (
+        db.query(CaseReportSnapshot)
+        .filter(CaseReportSnapshot.id == snapshot_id, CaseReportSnapshot.case_id == case_id)
+        .first()
+    )
+    if not snap:
+        raise HTTPException(status_code=404, detail="Recall point not found")
+    target = report_from_json(snap.report_json)
+    if not target:
+        raise HTTPException(status_code=400, detail="Recall point has no report to restore")
+    current = report_from_json(case.current_report_json)
+    if current:
+        persist_draft(
+            db,
+            case,
+            current,
+            user,
+            note="Auto-snapshot before recall",
+            snapshot_mode="always",
+        )
+    persist_draft(
+        db,
+        case,
+        target,
+        user,
+        note=f"Restored from version {snap.version}",
+        snapshot_mode="always",
+    )
     db.refresh(case)
     return _detail(db, case)
 
@@ -914,6 +969,62 @@ async def upload_evidence(
         linked_wac_ids=parse_json_list(ev.linked_wac_ids),
         notes=ev.notes or "",
         created_at=ev.created_at,
+    )
+
+
+@router.post("/{case_id}/evidence/review", response_model=EvidenceReviewResponse)
+def review_evidence_against_report(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Rank exhibit text against allegation and Regulatory Framework duties."""
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    report = report_from_json(case.current_report_json)
+    files = list(case.evidence or [])
+    if not report:
+        raise HTTPException(
+            status_code=400,
+            detail="Draft a report from Intake before reviewing evidence against allegations.",
+        )
+    if not files:
+        return EvidenceReviewResponse(
+            hits=[],
+            evidence_count=0,
+            scanned_count=0,
+            skipped_images=0,
+            message=(
+                "No exhibits attached. Investigation Report and Statement of Deficiencies "
+                "stay available. Attach files when you have them, or return to Documents."
+            ),
+        )
+    skipped = 0
+    scanned = 0
+    for ev in files:
+        name = (ev.original_filename or "").lower()
+        if Path(name).suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+            skipped += 1
+            continue
+        if extract_evidence_text(ev).strip():
+            scanned += 1
+    hits = review_case_evidence(case, report)
+    if not hits:
+        message = (
+            "No overlapping language was found between the attached exhibits and the "
+            "current allegation / Regulatory Framework duties. You can still continue to Documents."
+        )
+    else:
+        message = (
+            "Suggested exhibit excerpts related to allegation duties. Select what applies; "
+            "this is assistive record review, not a finding."
+        )
+    return EvidenceReviewResponse(
+        hits=hits,
+        evidence_count=len(files),
+        scanned_count=scanned,
+        skipped_images=skipped,
+        message=message,
     )
 
 

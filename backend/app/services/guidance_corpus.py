@@ -141,6 +141,7 @@ class GuidanceCorpus:
     enforcement_outcomes: list[str] = field(default_factory=lambda: list(ENFORCEMENT_OUTCOMES))
     dpoc_actions: list[str] = field(default_factory=lambda: list(DPOC_DIRECTED_ACTION_OPTIONS))
     poc_due_days: int = DEFAULT_POC_DUE_DAYS
+    sod_writing_principles: list[str] = field(default_factory=list)
 
 
 def guidance_dir() -> Path:
@@ -156,9 +157,11 @@ def _classify(name: str) -> str:
     low = name.lower()
     if "investigative report" in low and "guidance" in low:
         return "ir_guidance"
+    if "sod writing" in low:
+        return "sod_writing"
     if "formatting standards" in low or ("sod" in low and "standard" in low):
         return "sod_standards"
-    if "sod writing" in low or low.endswith(".pptx"):
+    if low.endswith(".pptx"):
         return "training"
     if "sample" in low and "sod" in low:
         return "sod_sample"
@@ -186,7 +189,27 @@ def _docx_text(path: Path, limit: int = 12000) -> str:
     return "\n".join(parts)[:limit]
 
 
-def _pptx_text(path: Path, limit: int = 12000) -> str:
+def _pdf_text(path: Path, limit: int = 12000) -> str:
+    """Extract PDF text (SOD pack samples). Not statute authority."""
+    try:
+        import fitz
+    except Exception:
+        return ""
+    try:
+        doc = fitz.open(str(path))
+    except Exception:
+        return ""
+    parts: list[str] = []
+    for page in doc:
+        t = (page.get_text("text") or "").strip()
+        if t:
+            parts.append(t)
+        if sum(len(x) for x in parts) >= limit:
+            break
+    return "\n".join(parts)[:limit]
+
+
+def _pptx_text(path: Path, limit: int = 20000) -> str:
     """Extract slide text from PPTX via zip/xml (no python-pptx dependency)."""
     ns = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
     chunks: list[str] = []
@@ -213,15 +236,18 @@ def _load_corpus() -> GuidanceCorpus:
     if not root.is_dir():
         return corpus
     for path in sorted(root.iterdir()):
-        if path.suffix.lower() not in {".docx", ".pptx", ".txt", ".md"}:
+        if path.suffix.lower() not in {".docx", ".pptx", ".txt", ".md", ".pdf"}:
             continue
         if path.name.startswith("~") or path.name.startswith("."):
             continue
         kind = _classify(path.name)
-        if path.suffix.lower() == ".docx":
+        suffix = path.suffix.lower()
+        if suffix == ".docx":
             preview = _docx_text(path)
-        elif path.suffix.lower() == ".pptx":
+        elif suffix == ".pptx":
             preview = _pptx_text(path)
+        elif suffix == ".pdf":
+            preview = _pdf_text(path)
         else:
             preview = path.read_text(encoding="utf-8", errors="replace")[:12000]
         corpus.files.append(
@@ -232,6 +258,10 @@ def _load_corpus() -> GuidanceCorpus:
                 char_count=len(preview),
             )
         )
+    if any(f.kind == "sod_writing" for f in corpus.files):
+        from app.services.sod_writing import WRITING_PRINCIPLES
+
+        corpus.sod_writing_principles = list(WRITING_PRINCIPLES)
     return corpus
 
 
@@ -273,8 +303,8 @@ def failure_to_risk_stub(duty_phrase: str) -> str:
     # Infinitive-ish echo for "Failure to …"
     low = duty[0].lower() + duty[1:] if duty else duty
     return (
-        f"Failure to {low} can result in inconsistent or delayed care and place "
-        f"patients at risk of harm if left uncorrected."
+        f"Failure to {low} places patients at risk of harm if the failed practice "
+        f"is left uncorrected."
     )
 
 
@@ -324,4 +354,5 @@ def guidance_stats() -> dict:
         "poc_due_days": c.poc_due_days,
         "scope_options": c.scope_options,
         "severity_options": c.severity_options,
+        "sod_writing_principles": c.sod_writing_principles,
     }

@@ -1,6 +1,6 @@
 ---
 description: IR Drafting & Allegation worker — DOH IR + sister SOD, PDF-backed quotes, guidance structure
-globs: backend/app/services/investigation.py,backend/app/services/sod_draft.py,backend/app/services/sod_validate.py,backend/app/services/guidance_corpus.py,backend/app/services/wac_scope.py,backend/app/services/quote_verify.py,backend/app/services/ir_blank.py,backend/app/services/template_corpus.py,backend/app/services/defensibility.py,backend/app/services/docx_export.py
+globs: backend/app/services/investigation.py,backend/app/services/sod_draft.py,backend/app/services/sod_validate.py,backend/app/services/sod_blank.py,backend/app/services/sod_writing.py,backend/app/services/guidance_corpus.py,backend/app/services/wac_scope.py,backend/app/services/quote_verify.py,backend/app/services/ir_blank.py,backend/app/services/template_corpus.py,backend/app/services/defensibility.py,backend/app/services/docx_export.py
 alwaysApply: false
 ---
 

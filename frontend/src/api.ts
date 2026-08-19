@@ -242,6 +242,7 @@ export type StatementOfDeficiency = {
   inspection_type?: string
   investigator_number?: string
   investigation_dates?: string
+  agency_services_type?: string
   deficiencies?: SodDeficiency[]
   identifier_key?: SodIdentifierEntry[]
   poc_due_days?: number
@@ -294,6 +295,26 @@ export function recommendEnforcementOutcomes(
   return []
 }
 
+export type EvidenceReviewHit = {
+  id: string
+  evidence_id: number
+  evidence_title: string
+  cite: string
+  duty_phrase: string
+  excerpt: string
+  score: number
+  band: string
+  included_by_default: boolean
+}
+
+export type EvidenceReviewResponse = {
+  hits: EvidenceReviewHit[]
+  evidence_count: number
+  scanned_count: number
+  skipped_images: number
+  message: string
+}
+
 export type InvestigationReport = {
   title: string
   subtitle: string
@@ -340,6 +361,8 @@ export type InvestigationReport = {
   confirmed_allegation_codes?: string[]
   /** Sister SOD draft created with the IR after Compare */
   sod?: StatementOfDeficiency | null
+  /** Investigator-selected exhibit excerpts (not statute quotes). */
+  evidence_review?: EvidenceReviewHit[]
 }
 
 export type UserRole = 'admin' | 'editor' | 'viewer'
@@ -898,6 +921,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ report, note }),
     }),
+  restoreCaseSnapshot: (id: number, snapshotId: number) =>
+    request<CaseDetail>(`/api/cases/${id}/snapshots/${snapshotId}/restore`, { method: 'POST' }),
   rebuildCaseDraft: (id: number) =>
     request<CaseDetail>(`/api/cases/${id}/rebuild`, { method: 'POST' }),
   setCaseStatus: (id: number, status: string, note = '') =>
@@ -988,6 +1013,8 @@ export const api = {
   },
   deleteEvidence: (caseId: number, evidenceId: number) =>
     request<{ ok: boolean }>(`/api/cases/${caseId}/evidence/${evidenceId}`, { method: 'DELETE' }),
+  reviewEvidence: (id: number) =>
+    request<EvidenceReviewResponse>(`/api/cases/${id}/evidence/review`, { method: 'POST' }),
   addProcessEntry: (
     id: number,
     payload: { activity_date?: string; activity_type?: string; who?: string; summary?: string },

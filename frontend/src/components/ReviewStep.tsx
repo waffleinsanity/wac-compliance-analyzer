@@ -546,7 +546,7 @@ export function ReviewStep({
             title={allConfirmed ? undefined : 'Confirm each allegation cite before continuing'}
             onClick={() => onContinue(comparisons.map(codeKey))}
           >
-            Open report editor <ArrowRight className="h-4 w-4" />
+            Open Documents <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -557,7 +557,7 @@ export function ReviewStep({
           className="border-l-2 border-amber-600 bg-amber-50/90 px-3 py-2.5 font-sans text-sm text-amber-950 dark:bg-amber-950/35 dark:text-amber-100"
         >
           <p>
-            Confirm each allegation cite before opening Report ({confirmed.size}/{total} confirmed).
+            Confirm each allegation cite before continuing ({confirmed.size}/{total} confirmed).
           </p>
           {unconfirmedManualCount > 0 && (
             <p className="mt-1 text-xs opacity-90">

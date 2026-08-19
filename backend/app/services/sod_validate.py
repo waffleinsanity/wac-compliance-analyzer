@@ -9,9 +9,17 @@ from app.schemas import InvestigationReport, StatementOfDeficiency
 from app.services.guidance_corpus import (
     SOD_BANNED_FIRST_PERSON,
     SOD_BANNED_VAGUE,
-    SOD_EVIDENCE_TYPES,
 )
 from app.services.quote_verify import is_contiguous_substring, store_text_for_cite
+from app.services.sod_writing import (
+    ABBREV_PERIODS,
+    DID_NOT_ALWAYS,
+    evidence_buckets,
+    finding_covers_bucket,
+)
+
+_HE_SHE_RE = re.compile(r"\b(he/she|she/he|his/her|her/his)\b", re.IGNORECASE)
+_IN_PART_RE = re.compile(r"\bin part\b", re.IGNORECASE)
 
 
 def _issues() -> list[dict[str, str]]:
@@ -69,16 +77,32 @@ def validate_sod(sod: StatementOfDeficiency | dict[str, Any] | None) -> list[dic
                 }
             )
         else:
-            low = based.lower()
-            mentioned = [e for e in SOD_EVIDENCE_TYPES if e in low]
-            if not mentioned:
+            buckets = evidence_buckets(based)
+            if len(buckets) < 2:
                 out.append(
                     {
                         "field": f"{prefix}.based_on",
-                        "reason": "no_evidence_type",
+                        "reason": "need_two_evidence_types",
                         "preview": based[:80],
                     }
                 )
+            findings = list(d.findings or [])
+            for it in d.items or []:
+                findings.extend(it.findings or [])
+            if findings and buckets:
+                missing = [
+                    b
+                    for b in buckets
+                    if not any(finding_covers_bucket(f.method, f.text, b) for f in findings)
+                ]
+                if missing:
+                    out.append(
+                        {
+                            "field": f"{prefix}.findings",
+                            "reason": "evidence_without_finding",
+                            "preview": ", ".join(sorted(missing)),
+                        }
+                    )
         fail = (d.failure_to or "").strip()
         if not fail.lower().startswith("failure to"):
             out.append(
@@ -95,6 +119,38 @@ def validate_sod(sod: StatementOfDeficiency | dict[str, Any] | None) -> list[dic
                     "field": prefix,
                     "reason": "first_person",
                     "preview": "Avoid surveyor first person (I/we)",
+                }
+            )
+        if _HE_SHE_RE.search(blob):
+            out.append(
+                {
+                    "field": prefix,
+                    "reason": "gendered_slash",
+                    "preview": "Do not use he/she or his/her",
+                }
+            )
+        if _IN_PART_RE.search(blob):
+            out.append(
+                {
+                    "field": prefix,
+                    "reason": "in_part",
+                    "preview": "Do not write in part when quoting policy",
+                }
+            )
+        if DID_NOT_ALWAYS.search(blob):
+            out.append(
+                {
+                    "field": prefix,
+                    "reason": "vague_lexicon",
+                    "preview": "did not always",
+                }
+            )
+        if ABBREV_PERIODS.search(blob):
+            out.append(
+                {
+                    "field": prefix,
+                    "reason": "abbrev_periods",
+                    "preview": "Write RN not R.N.",
                 }
             )
         for word in SOD_BANNED_VAGUE:

@@ -31,6 +31,62 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.08.19.5',
+    buildTag: '2026.08.19.5',
+    date: '2026-08-19',
+    title: 'Periodic draft save and recall points',
+    summary:
+      'Open cases save on a 45-second interval and when you leave the tab. The current IR/SOD is written to the server; a versioned recall point is kept about every five minutes of changes, plus every manual save. If the network drops, the draft stays on this device until it can be restored.',
+    highlights: [
+      'Stepper shows last saved time, or Kept on this device when the server is unreachable.',
+      'Recall restores a prior server snapshot; current work is saved first.',
+      'A banner offers restore when this device has a newer copy than the server.',
+    ],
+    areas: ['cases', 'investigation'],
+  },
+  {
+    id: '2026.08.19.4',
+    buildTag: '2026.08.19.4',
+    date: '2026-08-19',
+    title: 'SOD Writing deck is core instruction; official SOD PDF labels merged',
+    summary:
+      'Behavioral Health SOD Writing.pptx is the writing specification (Based on evidence forms, Failure to risk, Findings included). Official SOD PDFs supplied pack labels: Facility Name and Address, Observation Findings, Case Number(s), and BHA/RTF Facility Services Type. Peer SODs remain layout shells only. Statute text still comes from local PDFs.',
+    highlights: [
+      'Based on seeds use observation, interview, and document review (PPTX three-form rule).',
+      'Validators require two evidence forms and matching Findings included rows.',
+      'Export header table matches the official SOD PDF form labels.',
+    ],
+    areas: ['investigation'],
+  },
+  {
+    id: '2026.08.19.3',
+    buildTag: '2026.08.19.3',
+    date: '2026-08-19',
+    title: 'SOD pack follows the same shell rules as the Investigation Report',
+    summary:
+      'Statement of Deficiency export now uses the DOH pack order from peer SOD examples: cover letter, Plan of Correction instructions, header table, then Cite / Based on / Failure to / Findings included. Regulation text still comes only from local PDFs. Findings stay investigator-owned. The identifier key is not exported.',
+    highlights: [
+      'SOD blank shell encoded the same way as the blank IR form (structure and voice only).',
+      'Based on seeds require two or more evidence types and echo the cited duty.',
+      'Export always labels Findings included and leaves the Plan of Correction column blank.',
+    ],
+    areas: ['investigation'],
+  },
+  {
+    id: '2026.08.19.2',
+    buildTag: '2026.08.19.2',
+    date: '2026-08-19',
+    title: 'Evidence step ranks exhibits against allegation duties',
+    summary:
+      'After Compare, Documents (IR/SOD) stay available even if exhibits are missing. Evidence is optional and ranks attached files against allegation duties. Exhibit language is not statute authority.',
+    highlights: [
+      'Stepper order is Intake, Compare, Documents, then Evidence.',
+      'IR and SOD remain open without completing Evidence.',
+      'Move between Documents and Evidence from the stepper or the Documents toolbar.',
+    ],
+    areas: ['investigation', 'cases'],
+  },
+  {
     id: '2026.08.19.1',
     buildTag: '2026.08.19.1',
     date: '2026-08-19',
