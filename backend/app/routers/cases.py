@@ -89,6 +89,12 @@ logger = logging.getLogger(__name__)
 ALLOWED_EVIDENCE_EXT = {".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"}
 _TEXT_EVIDENCE_EXT = {".txt", ".md", ".pdf", ".docx"}
 _IMAGE_EVIDENCE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
+# Block PDF/DOCX only for high-confidence personal identifiers. Name/phone/address
+# hits are common false positives on facility policies (WAC cites, Title Case
+# headings, letterhead). .txt/.md still auto-redact any Cat 3/4 kind.
+_EVIDENCE_BLOCK_KINDS = frozenset(
+    {"ssn", "itin", "mrn", "drivers_license", "dob"}
+)
 
 
 def _scan_evidence_payload(filename: str, data: bytes) -> tuple[bytes, str]:
@@ -118,13 +124,20 @@ def _scan_evidence_payload(filename: str, data: bytes) -> tuple[bytes, str]:
         return cleaned.encode("utf-8"), (
             f" [privacy: auto-redacted {n} Cat 3/4 span(s) ({kind_note})]"
         )
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            f"Evidence file appears to contain Category 3/4 information ({kind_note}). "
-            "De-identify the PDF/DOCX and upload again, or attach a .txt/.md excerpt "
-            "(text uploads are auto-redacted)."
-        ),
+    blocking = [k for k in kinds if k in _EVIDENCE_BLOCK_KINDS]
+    if blocking:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Evidence file appears to contain Category 3/4 identifiers "
+                f"({', '.join(blocking)}). "
+                "De-identify the PDF/DOCX and upload again, or attach a .txt/.md excerpt "
+                "(text uploads are auto-redacted)."
+            ),
+        )
+    return data, (
+        f" [privacy: scanned — possible Cat 3/4-like patterns ({kind_note}); "
+        "file kept (assistive screen, not a block)]"
     )
 
 

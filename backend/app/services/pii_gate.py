@@ -57,9 +57,37 @@ CATEGORY_FOR_KIND: dict[str, str] = {
     "clinical_phi": "4",
 }
 
+# Strong cues: a named person is likely nearby (complaint/evidence identifiers).
+STRONG_PERSON_CUES = re.compile(
+    r"\b(patient|resident|complainant|guardian|mother|father|spouse|"
+    r"dob|date of birth)\b",
+    re.I,
+)
+# Weak cues: ubiquitous in WAC and facility policies ("each individual must…").
+WEAK_PERSON_CUES = re.compile(
+    r"\b(client|individual|consumer|member)\b",
+    re.I,
+)
 PERSON_CUES = re.compile(
     r"\b(patient|resident|client|complainant|individual|consumer|member|"
     r"guardian|mother|father|spouse|child|dob|date of birth)\b",
+    re.I,
+)
+
+# WAC 246-341-0410 looks like NANP (246 is Barbados); never treat statute cites as phones.
+WAC_PHONE_SHAPED = re.compile(
+    r"\b(?:WAC\s*)?246-(?:341|337)-\d{3,4}\b",
+    re.I,
+)
+ORG_PHONE_CUES = re.compile(
+    r"\b(facility|agency|office|fax|hotline|crisis|after[\s-]?hours|main\s+line|"
+    r"reception|switchboard|telephone|tty|extension|ext\.?|department|"
+    r"hospital|clinic|center|provider|letterhead|contact\s+us)\b",
+    re.I,
+)
+PERSONAL_PHONE_CUES = re.compile(
+    r"\b(complainant|patient|resident|guardian|cell|mobile|home\s+phone|"
+    r"personal|callback|call\s+back)\b",
     re.I,
 )
 
@@ -156,15 +184,25 @@ def _scan_raw(text: str) -> list[PiiHit]:
         "email",
         0.95,
     )
-    _find_regex(
-        hits,
-        text,
-        re.compile(
-            r"(?<!\d)(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}(?!\d)"
-        ),
-        "phone",
-        0.9,
+    phone_re = re.compile(
+        r"(?<!\d)(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}(?!\d)"
     )
+    for m in phone_re.finditer(text):
+        span = text[m.start() : m.end()]
+        if WAC_PHONE_SHAPED.search(span) or WAC_PHONE_SHAPED.search(
+            text[max(0, m.start() - 4) : m.end()]
+        ):
+            continue
+        # 246-xxx-xxxx is the WAC chapter shape, not a WA area code.
+        digits = re.sub(r"\D", "", span)
+        if digits.startswith("1"):
+            digits = digits[1:]
+        if digits.startswith("246"):
+            continue
+        window = text[max(0, m.start() - 48) : min(len(text), m.end() + 24)]
+        if ORG_PHONE_CUES.search(window) and not PERSONAL_PHONE_CUES.search(window):
+            continue
+        _add(hits, text, m.start(), m.end(), "phone", 0.9)
 
     # DOB: labeled or near person cues
     for m in re.finditer(
@@ -250,11 +288,59 @@ def _scan_raw(text: str) -> list[PiiHit]:
         "county",
         "state",
         "washington",
+        # Facility policy / WAC Title Case headings (not personal names).
+        "policy",
+        "policies",
+        "procedure",
+        "procedures",
+        "quality",
+        "assurance",
+        "management",
+        "service",
+        "services",
+        "plan",
+        "planning",
+        "treatment",
+        "clinical",
+        "medical",
+        "director",
+        "staff",
+        "training",
+        "emergency",
+        "infection",
+        "control",
+        "human",
+        "resources",
+        "record",
+        "records",
+        "health",
+        "behavioral",
+        "agency",
+        "administrator",
+        "administration",
+        "rights",
+        "responsibilities",
+        "safety",
+        "security",
+        "incident",
+        "reporting",
+        "personnel",
+        "customer",
+        "each",
+        "care",
+        "program",
+        "programs",
+        "written",
+        "required",
+        "applicable",
+        "following",
+        "including",
     }
-    name_pair = re.compile(r"([A-Z][a-z]{1,20})\s+([A-Z][a-z]{1,20})\b")
-    # Names immediately after a person cue (avoids "Patient John" consuming "John Smith").
-    for cue in PERSON_CUES.finditer(text):
-        m = re.match(r"\s+" + name_pair.pattern, text[cue.end() :])
+    # Spaces/tabs only — do not join headings across line breaks ("Policy\nEach").
+    name_pair = re.compile(r"([A-Z][a-z]{1,20})[ \t]+([A-Z][a-z]{1,20})\b")
+    # Names immediately after a strong person cue (Patient Jane Smith).
+    for cue in STRONG_PERSON_CUES.finditer(text):
+        m = re.match(r"[ \t]+" + name_pair.pattern, text[cue.end() :])
         if not m:
             continue
         first, second = m.group(1), m.group(2)
@@ -263,13 +349,16 @@ def _scan_raw(text: str) -> list[PiiHit]:
         start = cue.end() + m.start(1)
         end = cue.end() + m.end(2)
         _add(hits, text, start, end, "name", 0.8)
-    # Also capitalized pairs near cues elsewhere in a window.
+    # Capitalized pairs near strong person cues only — weak cues (individual/client)
+    # appear throughout facility policies and WAC text.
     for m in name_pair.finditer(text):
         first, second = m.group(1), m.group(2)
         if first.lower() in name_stop or second.lower() in name_stop:
             continue
         window = text[max(0, m.start() - 50) : min(len(text), m.end() + 50)]
-        if PERSON_CUES.search(window):
+        if STRONG_PERSON_CUES.search(window) and not WEAK_PERSON_CUES.search(
+            text[m.start() : m.end()]
+        ):
             _add(hits, text, m.start(1), m.end(2), "name", 0.65)
 
     # Clinical PHI near person context (lower confidence)

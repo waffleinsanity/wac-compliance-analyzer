@@ -31,6 +31,20 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.08.19.1',
+    buildTag: '2026.08.19.1',
+    date: '2026-08-19',
+    title: 'Facility policies no longer blocked as Category 3/4 evidence',
+    summary:
+      'Evidence upload no longer treats WAC cites, Title Case policy headings, or facility letterhead phones as personal identifiers. PDF/DOCX still block on SSN, MRN, DOB, and driver license.',
+    highlights: [
+      'WAC 246-341/337 section numbers are not scanned as phone numbers.',
+      'Policy phrases such as Individual Service Plan are not scanned as personal names.',
+      'PDF/DOCX evidence is blocked only for high-confidence identifiers, not name/phone false positives.',
+    ],
+    areas: ['security', 'cases'],
+  },
+  {
     id: '2026.08.17.5',
     buildTag: '2026.08.17.5',
     date: '2026-08-17',

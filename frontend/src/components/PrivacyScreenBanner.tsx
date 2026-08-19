@@ -18,7 +18,7 @@ const COPY: Record<Variant, { title: string; body: string }> = {
   evidence: {
     title: 'Privacy screen — Category 3/4 PII & PHI',
     body:
-      'Evidence text (.txt/.md/.pdf/.docx) is scanned for Category 3/4 PII/PHI. Text uploads are auto-redacted; PDF/DOCX with hits are blocked until de-identified. Images are not text-scanned — prefer de-identified exhibits. This is an assistive check, not a legal determination.',
+      'Evidence text (.txt/.md/.pdf/.docx) is scanned for Category 3/4 PII/PHI. Text uploads are auto-redacted. PDF/DOCX are blocked only when they contain high-confidence identifiers (SSN, MRN, DOB, driver license). Facility policies with letterhead phones or Title Case headings are not treated as personal identifiers. Images are not text-scanned. This is an assistive check, not a legal determination.',
   },
 }
 
