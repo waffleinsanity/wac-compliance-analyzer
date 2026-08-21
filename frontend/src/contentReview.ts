@@ -15,7 +15,8 @@ const FACILITY_PLACEHOLDERS: string[] = Array.isArray(rules.facility_placeholder
 function compilePattern(row: RulePattern): { pattern: RegExp; reason: string } | null {
   const source = (row.pattern || '').trim()
   if (!source) return null
-  const flags = (row.flags || '').replace(/[^ims]/gi, '')
+  // matchAll requires the global flag; keep i/m/s from the fixture and always add g.
+  const flags = `${(row.flags || '').replace(/[^ims]/gi, '')}g`
   try {
     return { pattern: new RegExp(source, flags), reason: row.reason || 'assist_placeholder' }
   } catch {
