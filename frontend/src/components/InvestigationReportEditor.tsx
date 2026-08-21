@@ -979,7 +979,7 @@ export function InvestigationReportEditor({
   ].filter(Boolean) as string[]
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-0 w-full flex-col">
       {/* Flush under Intake / Compare / Documents; outside the padded scroll pane */}
       <div className="sticky top-0 z-10 shrink-0 border-b border-ink-200 bg-card px-3 py-2 dark:border-ink-700 sm:px-4">
         <p className="compare-meta mb-1">Step 3 · Documents</p>
@@ -1136,7 +1136,7 @@ export function InvestigationReportEditor({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 sm:p-4 lg:space-y-3 lg:p-5">
+      <div className="space-y-2 p-3 sm:p-4 lg:space-y-3 lg:p-5">
       <details className="border-b border-ink-200 px-0 py-2 dark:border-ink-700">
         <summary className="cursor-pointer font-sans text-xs font-medium text-ink-600 dark:text-ink-300">
           IR template · {caseDetail?.ir_template?.name || 'Built-in blank'}
