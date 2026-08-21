@@ -416,6 +416,73 @@
     color: #000;
   }
 
+  /* SOD pack paper (same desk/page as IR; table layout from blank) */
+  .sod-doc-page .sod-body {
+    margin: 0;
+    font-size: 11pt;
+    font-weight: 400;
+    line-height: 1.4;
+    color: #000;
+  }
+  .sod-meta-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .sod-meta-table td {
+    width: 50%;
+    vertical-align: top;
+    border: 1px solid #1a1f27;
+    padding: 0.35rem 0.45rem;
+    font-size: 10pt;
+    line-height: 1.35;
+    color: #000;
+  }
+  .sod-meta-label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+  }
+  .sod-meta-value {
+    display: block;
+    font-weight: 400;
+  }
+  .sod-def-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .sod-def-table th,
+  .sod-def-table td {
+    border: 1px solid #1a1f27;
+    vertical-align: top;
+    padding: 0.4rem 0.45rem;
+    font-size: 10pt;
+    line-height: 1.35;
+    color: #000;
+  }
+  .sod-def-table th {
+    font-weight: 700;
+    text-align: left;
+    background: #f5f2ea;
+  }
+  .sod-def-table th:nth-child(1),
+  .sod-def-table td:nth-child(1) {
+    width: 28%;
+  }
+  .sod-def-table th:nth-child(2),
+  .sod-def-table td:nth-child(2) {
+    width: 44%;
+  }
+  .sod-def-table th:nth-child(3),
+  .sod-def-table td:nth-child(3) {
+    width: 28%;
+  }
+  .sod-poc-blank {
+    min-height: 4.5rem;
+    background: #fffef9;
+  }
+
   /* Status marks — rectangular, not pill clusters */
   .status-chip {
     @apply inline-flex items-center gap-1.5 rounded-sm border-l-2 border-y-0 border-r-0 px-2 py-0.5 text-[11px] font-medium;
