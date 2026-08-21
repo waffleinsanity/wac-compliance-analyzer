@@ -267,7 +267,7 @@ function IrProcessLine({ step }: { step: string }) {
   if (spans.length) {
     return (
       <div className="ir-body ir-process-body">
-        <HighlightedProse text={step} spans={spans} className="text-[12pt] leading-[1.45] text-black" />
+        <HighlightedProse text={step} spans={spans} paper className="text-[12pt] leading-[1.45] text-black" />
       </div>
     )
   }
@@ -425,6 +425,7 @@ function DocumentPreview({
                             <HighlightedProse
                               text={shown}
                               inline
+                              paper
                               className="text-[12pt] leading-[1.45] text-black"
                             />
                           )
@@ -480,6 +481,7 @@ function DocumentPreview({
               <div className="ir-body ir-indent">
                 <HighlightedProse
                   text={report.summary_of_findings}
+                  paper
                   className="text-[12pt] leading-[1.45] text-black"
                 />
               </div>
@@ -536,6 +538,7 @@ function DocumentPreview({
                       <HighlightedProse
                         text={displayFinding(finding) || result}
                         inline
+                        paper
                         className="text-[12pt] leading-[1.45] text-black"
                       />
                     ) : (
@@ -589,6 +592,7 @@ function DocumentPreview({
                     <HighlightedProse
                       text={determination || CHOOSE_ITEM}
                       inline
+                      paper
                       className="text-[12pt] leading-[1.45] text-black"
                     />
                   ) : (
@@ -600,6 +604,7 @@ function DocumentPreview({
                     <HighlightedProse
                       text={referral || CHOOSE_ITEM}
                       inline
+                      paper
                       className="text-[12pt] leading-[1.45] text-black"
                     />
                   ) : (
@@ -1224,8 +1229,7 @@ export function InvestigationReportEditor({
       <article
         className={clsx(
           'overflow-hidden',
-          // Always use paper background in preview — transparent + text-black is invisible in dark mode.
-          'doc-surface',
+          viewMode === 'preview' ? 'bg-transparent !border-0 !shadow-none' : 'doc-surface',
         )}
       >
         {viewMode === 'preview' ? (

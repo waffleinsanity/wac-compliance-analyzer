@@ -300,6 +300,20 @@
     box-shadow: 0 0 0 1px rgba(26, 31, 39, 0.08), 0 8px 28px rgba(26, 31, 39, 0.1);
     font-family: 'Times New Roman', Times, Newsreader, Georgia, serif;
     min-height: 11in;
+    /* Paper is always light; never inherit dark-theme foreground. */
+    color: #000 !important;
+    color-scheme: light;
+  }
+  .ir-doc-page,
+  .ir-doc-page p,
+  .ir-doc-page span,
+  .ir-doc-page li,
+  .ir-doc-page div {
+    color: #000;
+  }
+  .ir-doc-page mark {
+    color: #1a1f27 !important;
+    background-color: rgb(252 211 77) !important;
   }
   .ir-doc-page .ir-doc-title {
     margin: 0 0 1.25rem;
