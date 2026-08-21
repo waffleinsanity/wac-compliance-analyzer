@@ -4,6 +4,8 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
+# Shared content-review rules (imported by Vite as @data/...)
+COPY data/content_review_rules.json /app/data/content_review_rules.json
 # Optional: enable Google button in the built SPA
 ARG VITE_GOOGLE_SIGNIN=true
 ARG VITE_GOOGLE_CLIENT_ID=
