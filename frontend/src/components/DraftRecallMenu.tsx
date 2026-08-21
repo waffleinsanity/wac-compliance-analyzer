@@ -81,7 +81,7 @@ export function DraftRecallMenu({ snapshots, disabled = false, busy = false, onR
             ref={menuRef}
             id={menuId}
             role="menu"
-            className="fixed z-[80] max-h-72 w-72 overflow-y-auto rounded-md border border-ink-200 bg-card p-1 shadow-lg dark:border-ink-700"
+            className="fixed z-[45] max-h-72 w-72 overflow-y-auto rounded-md border border-ink-200 bg-card p-1 shadow-lg dark:border-ink-700"
             style={{ top: pos.top, left: pos.left }}
           >
             <p className="px-2 py-1 font-sans text-[11px] text-ink-500">

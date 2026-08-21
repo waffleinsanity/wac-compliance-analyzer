@@ -249,9 +249,11 @@ export function useInvestigationWorkspace(opts: {
       if (detail.report) {
         const nextReport = applyReport(withLegacyCompareConfirmed(detail.report))
         setReport(nextReport)
-        setStep('report')
+        // Land on Compare so the draft is visible immediately. Documents preview can be
+        // opened from the stepper; a blank Documents panel must not hide saved work.
+        setStep('review')
         lastSavedFp.current = workspaceFingerprint({
-          step: 'report',
+          step: 'review',
           text: detail.complaint_text || '',
           caseIdLabel: detail.case_id_label || '',
           investigationDate: detail.investigation_date || '',

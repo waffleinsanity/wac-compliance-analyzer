@@ -65,7 +65,7 @@ export function FeedbackDialog({ open, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink-950/50 p-4 backdrop-blur-sm">
       <div className="panel max-h-[90vh] w-full max-w-lg animate-rise overflow-y-auto p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>

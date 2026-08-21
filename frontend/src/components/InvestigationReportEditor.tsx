@@ -468,7 +468,7 @@ function DocumentPreview({
               />
             </div>
             {(report.investigative_process || []).map((step, i) => (
-              <IrProcessLine key={`${i}-${step.slice(0, 24)}`} step={step} />
+              <IrProcessLine key={`${i}-${String(step || '').slice(0, 24)}`} step={step || ''} />
             ))}
           </div>
           <div className="mb-4 space-y-2">
@@ -1221,7 +1221,13 @@ export function InvestigationReportEditor({
       )}
 
       <div className="mx-auto grid max-w-6xl gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-      <article className={clsx('overflow-hidden', viewMode === 'preview' ? 'doc-surface !bg-transparent !shadow-none !border-0' : 'doc-surface')}>
+      <article
+        className={clsx(
+          'overflow-hidden',
+          // Always use paper background in preview — transparent + text-black is invisible in dark mode.
+          'doc-surface',
+        )}
+      >
         {viewMode === 'preview' ? (
           <DocumentPreview
             report={report}

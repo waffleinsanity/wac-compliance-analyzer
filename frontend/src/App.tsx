@@ -29,6 +29,7 @@ import { AdminAuditPanel } from './components/AdminAuditPanel'
 import { AdminInboxPanel } from './components/AdminInboxPanel'
 import { AdminUsersPanel } from './components/AdminUsersPanel'
 import { BugReportDialog } from './components/BugReportDialog'
+import { PanelErrorBoundary } from './components/PanelErrorBoundary'
 import { CasesPanel } from './components/CasesPanel'
 import { ChangelogPanel } from './components/ChangelogPanel'
 import { ComplaintStep } from './components/ComplaintStep'
@@ -252,7 +253,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-ink-200 bg-card dark:border-ink-700">
+      <header className="sticky top-0 z-[70] border-b border-ink-200 bg-card dark:border-ink-700">
         <div className="mx-auto flex h-14 max-w-none items-center justify-between gap-3 px-4 lg:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <button
@@ -624,38 +625,55 @@ export default function App() {
                     </div>
                   )}
                   {step === 'review' && report && (
-                    <ReviewStep
-                      comparisons={report.comparisons}
-                      complaintText={text}
-                      report={report}
-                      onReportChange={setReport}
-                      onBack={() => setStep('workspace')}
-                      onContinue={(codes) => void confirmCompareAndContinue(codes)}
-                      busy={busy}
-                      statuteHits={statuteHits}
-                      searchBusy={searchBusy}
-                      onSearchStatutes={() => void searchStatutes()}
-                      onAddCode={addCodeToSelection}
-                      selectedIds={selectedCodes}
-                      caseId={activeCaseId}
-                      caseDetail={caseDetail}
-                      onCaseRefresh={refreshCaseDetail}
-                    />
+                    <PanelErrorBoundary
+                      key={`review-${restoreEpoch}`}
+                      fallbackTitle="Compare failed to render this draft"
+                      onReset={() => setStep('workspace')}
+                    >
+                      <ReviewStep
+                        comparisons={report.comparisons}
+                        complaintText={text}
+                        report={report}
+                        onReportChange={setReport}
+                        onBack={() => setStep('workspace')}
+                        onContinue={(codes) => void confirmCompareAndContinue(codes)}
+                        busy={busy}
+                        statuteHits={statuteHits}
+                        searchBusy={searchBusy}
+                        onSearchStatutes={() => void searchStatutes()}
+                        onAddCode={addCodeToSelection}
+                        selectedIds={selectedCodes}
+                        caseId={activeCaseId}
+                        caseDetail={caseDetail}
+                        onCaseRefresh={refreshCaseDetail}
+                      />
+                    </PanelErrorBoundary>
                   )}
                   {step === 'evidence' && report && (
-                    <EvidenceStep
-                      report={report}
-                      caseDetail={caseDetail}
-                      caseId={activeCaseId}
-                      busy={busy}
-                      canEdit={userCanEdit}
-                      onReportChange={setReport}
-                      onCaseRefresh={refreshCaseDetail}
-                      onBack={() => setStep('report')}
-                      onContinue={(next) => void confirmEvidenceAndContinue(next)}
-                    />
+                    <PanelErrorBoundary
+                      key={`evidence-${restoreEpoch}`}
+                      fallbackTitle="Evidence failed to render"
+                      onReset={() => setStep('report')}
+                    >
+                      <EvidenceStep
+                        report={report}
+                        caseDetail={caseDetail}
+                        caseId={activeCaseId}
+                        busy={busy}
+                        canEdit={userCanEdit}
+                        onReportChange={setReport}
+                        onCaseRefresh={refreshCaseDetail}
+                        onBack={() => setStep('report')}
+                        onContinue={(next) => void confirmEvidenceAndContinue(next)}
+                      />
+                    </PanelErrorBoundary>
                   )}
                   {step === 'report' && report && (
+                    <PanelErrorBoundary
+                      key={`report-${restoreEpoch}`}
+                      fallbackTitle="Documents failed to render this draft"
+                      onReset={() => setStep('review')}
+                    >
                     <div className="flex min-h-0 flex-col gap-3">
                       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-ink-200 px-3 pt-2 dark:border-ink-700 sm:px-4 lg:px-5">
                         <div className="flex flex-wrap gap-0">
@@ -737,6 +755,7 @@ export default function App() {
                         />
                       )}
                     </div>
+                    </PanelErrorBoundary>
                   )}
                 </div>
               </div>

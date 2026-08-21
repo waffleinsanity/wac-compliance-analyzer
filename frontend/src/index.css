@@ -466,8 +466,9 @@
 .app-update-banner {
   position: fixed !important;
   inset-inline: 0 !important;
-  top: 0 !important;
-  z-index: 60 !important;
+  /* Sit below the sticky app header (h-14) so Bug / Feedback stay clickable. */
+  top: 3.5rem !important;
+  z-index: 55 !important;
   border-bottom: 1px solid #0a2e2b !important;
   background: #18433b !important;
   color: #ffffff !important;
