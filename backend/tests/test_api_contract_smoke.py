@@ -22,6 +22,10 @@ CRITICAL_PATH_METHODS: tuple[tuple[str, str], ...] = (
     ("post", "/api/investigate"),
     ("post", "/api/investigate/duty-option"),
     ("post", "/api/cases/{case_id}/evidence/review"),
+    ("post", "/api/cases/{case_id}/save-draft"),
+    ("get", "/api/cases/{case_id}/defensibility"),
+    ("post", "/api/cases/{case_id}/process-entries/apply"),
+    ("post", "/api/cases/{case_id}/evidence"),
 )
 
 # Frontend template var -> OpenAPI path param (context-aware by path prefix).

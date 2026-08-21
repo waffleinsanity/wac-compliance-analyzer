@@ -52,14 +52,15 @@ from app.services.case_store import (
     archive_stale_final_cases,
     dumps_list,
     evidence_dir,
-    evidence_exhibit_lines,
     get_case_or_404,
     hard_delete_case,
     parse_json_list,
+    merge_process_activity_bullets,
     process_entries_to_bullets,
     purge_trashed_cases,
     report_from_json,
     is_periodic_note,
+    maybe_persist_legacy_document_review,
     persist_draft,
     save_snapshot,
     set_status,
@@ -404,6 +405,7 @@ def get_case(
 ):
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
+    maybe_persist_legacy_document_review(db, case, user)
     return _detail(db, case)
 
 
@@ -1011,13 +1013,15 @@ def review_evidence_against_report(
     hits = review_case_evidence(case, report)
     if not hits:
         message = (
-            "No overlapping language was found between the attached exhibits and the "
-            "current allegation / Regulatory Framework duties. You can still continue to Documents."
+            "No exhibit language matched the Washington WAC/RCW duty text from the local "
+            "statute store. Other-state citations in a policy are ignored. You can still "
+            "continue to Documents."
         )
     else:
         message = (
-            "Suggested exhibit excerpts related to allegation duties. Select what applies; "
-            "this is assistive record review, not a finding."
+            "Suggested excerpts are exhibit language that matches the cited Washington "
+            "duty in the local WAC/RCW store. Select what applies; this is assistive "
+            "record review, not a finding and not statute authority."
         )
     return EvidenceReviewResponse(
         hits=hits,
@@ -1092,15 +1096,31 @@ def apply_process_to_report(
     assert_case_editable(case, user)
     report = _report_for_export(case)
     bullets = process_entries_to_bullets(list(case.process_entries))
-    exhibits = evidence_exhibit_lines(list(case.evidence))
+    process = list(report.investigative_process or [])
     if bullets:
-        report.investigative_process = bullets
-    if exhibits:
-        # Append exhibit list into summary assistively (editable)
-        block = "Documents / exhibits reviewed:\n" + "\n".join(exhibits)
-        existing = (report.summary_of_findings or "").strip()
-        if "Documents / exhibits reviewed:" not in existing:
-            report.summary_of_findings = (existing + "\n\n" + block).strip() if existing else block
+        process = merge_process_activity_bullets(process, bullets)
+    files = list(case.evidence or [])
+    if files:
+        from app.services.evidence_review import (
+            extract_document_date,
+            extract_evidence_text,
+            merge_exhibit_process_lines,
+        )
+
+        report.investigative_process = merge_exhibit_process_lines(
+            process,
+            [
+                {
+                    "evidence_id": ev.id,
+                    "evidence_title": ev.title or ev.original_filename or f"document {ev.id}",
+                    "document_date": extract_document_date(extract_evidence_text(ev)),
+                    "excerpt": "",
+                }
+                for ev in files
+            ],
+        )
+    else:
+        report.investigative_process = process
     save_snapshot(db, case, report, user, note="Applied process/evidence assists into draft")
     return _detail(db, case)
 

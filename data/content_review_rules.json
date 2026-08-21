@@ -1,0 +1,53 @@
+{
+  "literals": [
+    "[To be completed]",
+    "[document date]",
+    "[Document review]",
+    "[Interviews]",
+    "[Observations]",
+    "[describe the failed practice]",
+    "Choose an item.",
+    "Pending Investigation",
+    "The Investigator will review facility policies, procedures, and records relevant to the authorized allegations.",
+    "This summary outlines how authorized WAC/RCW selections relate to the drafted allegations; investigative findings will be completed after interviews, observations, and document review.",
+    "Investigative findings (to be completed):\n[Document review]\n[Interviews]\n[Observations]",
+    "Investigator collaborator notes (template — not findings):",
+    "[Human investigators complete evidentiary findings after interviews, observations, and document review.]",
+    "Investigative findings (to be completed):",
+    "Record review of exhibit",
+    "The Department of Health (DOH) received a complaint alleging concerns within the scope of the authorized WAC/RCW selections."
+  ],
+  "facility_placeholders": ["Washington State"],
+  "patterns": [
+    {
+      "pattern": "is authorized for this investigation because the complaint raises concerns within the scope of that section\\.\\s*The corresponding allegation asserts:",
+      "reason": "auto_summary_mapping",
+      "flags": "i"
+    },
+    {
+      "pattern": "systemic practices and conditions derived from the complaint intake and authorized for investigation",
+      "reason": "generic_allegation_fallback",
+      "flags": "i"
+    },
+    {
+      "pattern": "^Based on .+, the agency failed to .+\\.$",
+      "reason": "sod_based_on_seed",
+      "flags": "im"
+    },
+    {
+      "pattern": "Failure to .+ places patients at risk of harm if the failed practice is left uncorrected\\.",
+      "reason": "sod_failure_to_seed",
+      "flags": "i"
+    },
+    {
+      "pattern": "Review of case evidence .+ showed \\[describe the failed practice\\]\\.",
+      "reason": "sod_evidence_stub",
+      "flags": "i"
+    },
+    {
+      "pattern": "^Record review of exhibit.+as applied to WAC",
+      "reason": "legacy_exhibit_line",
+      "flags": "im"
+    }
+  ]
+}

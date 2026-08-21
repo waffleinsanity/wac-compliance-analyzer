@@ -128,6 +128,30 @@ def test_editor_cannot_export_another_case(store_ready, db, editor_a, editor_b, 
         assert res.status_code == 404, res.text
 
 
+def test_editor_cannot_review_evidence_on_foreign_case(store_ready, db, editor_a, editor_b, as_user):
+    case = _owned_case(db, editor_a, "ISO-A5")
+    with as_user(editor_b) as client:
+        res = client.post(f"/api/cases/{case.id}/evidence/review")
+        assert res.status_code == 404, res.text
+        assert res.json().get("detail") == "Case not found"
+
+
+def test_editor_cannot_read_defensibility_on_foreign_case(store_ready, db, editor_a, editor_b, as_user):
+    case = _owned_case(db, editor_a, "ISO-A6")
+    with as_user(editor_b) as client:
+        res = client.get(f"/api/cases/{case.id}/defensibility")
+        assert res.status_code == 404, res.text
+        assert res.json().get("detail") == "Case not found"
+
+
+def test_editor_cannot_apply_process_on_foreign_case(store_ready, db, editor_a, editor_b, as_user):
+    case = _owned_case(db, editor_a, "ISO-A7")
+    with as_user(editor_b) as client:
+        res = client.post(f"/api/cases/{case.id}/process-entries/apply")
+        assert res.status_code == 404, res.text
+        assert res.json().get("detail") == "Case not found"
+
+
 def test_google_does_not_auto_link_password_account(db):
     password_user = _ensure_user(db, username="iso_pwd", email="overlap@example.com", role="editor")
     assert (password_user.hashed_password or "").strip()

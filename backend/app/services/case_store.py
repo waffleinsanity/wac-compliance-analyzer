@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -50,9 +51,56 @@ def report_from_json(raw: str | None) -> InvestigationReport | None:
     if not raw:
         return None
     try:
-        return InvestigationReport.model_validate_json(raw)
+        report = InvestigationReport.model_validate_json(raw)
     except Exception:
         return None
+    if report.investigative_process:
+        from app.services.evidence_review import rewrite_legacy_document_review_lines
+
+        report.investigative_process = rewrite_legacy_document_review_lines(
+            report.investigative_process
+        )
+    return report
+
+
+def raw_has_legacy_document_review(raw: str | None) -> bool:
+    """True when stored JSON still contains legacy exhibit process lines."""
+    text = raw or ""
+    if "Record review of exhibit" in text:
+        return True
+    return bool(re.search(r'"[Ee]xhibit\s+\d+\s*:', text))
+
+
+def maybe_persist_legacy_document_review(
+    db: Session,
+    case: InvestigationCase,
+    user: User,
+) -> bool:
+    """Rewrite legacy Document Review lines into current format and persist once.
+
+    Display-only for locked/trashed cases. Editable drafts are written so API,
+    export, and DB stay aligned after first open.
+    """
+    if not raw_has_legacy_document_review(case.current_report_json):
+        return False
+    if case.status not in EDITABLE_STATUSES:
+        return False
+    from app.permissions import can_edit, user_role
+
+    if not can_edit(user_role(user)):
+        return False
+    report = report_from_json(case.current_report_json)
+    if not report:
+        return False
+    persist_draft(
+        db,
+        case,
+        report,
+        user,
+        note="Migrated Document Review lines to investigator-reviewed format",
+        snapshot_mode="if_changed",
+    )
+    return True
 
 
 def get_case_or_404(db: Session, case_id: int) -> InvestigationCase:
@@ -339,13 +387,58 @@ def process_entries_to_bullets(entries: list[CaseProcessEntry]) -> list[str]:
     return bullets
 
 
+_PROCESS_SECTION_LABELS = frozenset(
+    {
+        "pre-investigation activity",
+        "investigation activity",
+        "observations",
+        "interviews",
+        "document review",
+    }
+)
+
+
+def _is_process_section_label(line: str) -> bool:
+    return (line or "").strip().replace(":", "").lower() in _PROCESS_SECTION_LABELS
+
+
+def merge_process_activity_bullets(process: list[str], bullets: list[str]) -> list[str]:
+    """Append dated Case Assist bullets without replacing the DOH process shell."""
+    if not bullets:
+        return list(process or [])
+    from app.services.ir_blank import BLANK_PROCESS_SKELETON
+
+    src = list(process or [])
+    if not src:
+        src = list(BLANK_PROCESS_SKELETON)
+    doc_idx = next(
+        (i for i, p in enumerate(src) if (p or "").strip().replace(":", "").lower() == "document review"),
+        -1,
+    )
+    if doc_idx < 0:
+        return [*src, "Investigation activity log:", *bullets]
+    insert_at = doc_idx + 1
+    while insert_at < len(src) and not _is_process_section_label(src[insert_at]):
+        insert_at += 1
+    return [*src[:insert_at], *bullets, *src[insert_at:]]
+
+
 def evidence_exhibit_lines(items: list[CaseEvidence]) -> list[str]:
+    from app.services.evidence_review import (
+        extract_document_date,
+        extract_evidence_text,
+        format_document_review_line,
+    )
+
     lines: list[str] = []
-    for i, ev in enumerate(items, start=1):
-        links = parse_json_list(ev.linked_wac_ids)
-        link_note = f" (linked: {', '.join(links)})" if links else ""
-        note = f" — {ev.notes.strip()}" if ev.notes and ev.notes.strip() else ""
-        lines.append(f"Exhibit {i}: {ev.title}{link_note}{note}")
+    for ev in items:
+        title = ev.title or ev.original_filename or f"document {ev.id}"
+        dated = ""
+        try:
+            dated = extract_document_date(extract_evidence_text(ev))
+        except Exception:
+            dated = ""
+        lines.append(format_document_review_line(title, dated))
     return lines
 
 

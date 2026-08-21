@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from app.schemas import InvestigationReport, QuoteIntegrityOut
+from app.services.content_review import content_review_checks
 
 Severity = Literal["pass", "warn", "block"]
 
@@ -109,6 +110,9 @@ def check_defensibility(
             f"Quote integrity failed ({len(failures)} issue(s)). Working draft may still be downloaded; "
             "fix statute wording before finalize.",
         )
+
+    for review in content_review_checks(data):
+        add(review["code"], review["severity"], review["message"])  # type: ignore[arg-type]
 
     has_block = any(c["severity"] == "block" for c in checks)
     has_warn = any(c["severity"] == "warn" for c in checks)

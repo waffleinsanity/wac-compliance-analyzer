@@ -8,6 +8,10 @@ import {
   type InvestigationReport,
 } from '../api'
 import { ApplicationStrengthBadge } from './ApplicationStrengthBadge'
+import {
+  documentsFromEvidence,
+  mergeDocumentReviewLines,
+} from '../documentReviewFormat'
 
 type Props = {
   report: InvestigationReport
@@ -21,12 +25,33 @@ type Props = {
   onContinue: (report: InvestigationReport) => void
 }
 
-const EXHIBIT_PREFIX = 'Record review of exhibit'
+function citeCodeKey(cite: string): string {
+  return (cite || '').replace(/^(WAC|RCW)\s+/i, '').replace(/\s+/g, '').toLowerCase()
+}
 
-function formatProcessLine(hit: EvidenceReviewHit): string {
-  const excerpt = (hit.excerpt || '').replace(/\s+/g, ' ').trim().replace(/[ ;,]+$/g, '')
-  const clipped = excerpt.length > 320 ? `${excerpt.slice(0, 317).trimEnd()}…` : excerpt
-  return `${EXHIBIT_PREFIX} ${hit.evidence_title} as applied to ${hit.cite}: ${clipped}`
+/** Washington code title for a duty cite (Compare title or stored hit field). */
+function wacTitleForCite(cite: string, report: InvestigationReport, hit?: EvidenceReviewHit): string {
+  const stored = (hit?.wac_title || '').trim()
+  if (stored) return stored
+  const key = citeCodeKey(cite)
+  for (const comp of report.comparisons || []) {
+    const title = (comp.title || '').trim()
+    if (!title) continue
+    for (const opt of comp.duty_options || []) {
+      if (citeCodeKey(opt.cite || '') === key) return title
+    }
+    for (const mc of comp.matched_subsections || []) {
+      if (citeCodeKey(String(mc)) === key) return title
+    }
+    if (citeCodeKey(comp.code || '') === key || key.startsWith(citeCodeKey(comp.code || ''))) {
+      return title
+    }
+  }
+  for (const alleg of report.allegations || []) {
+    const title = (alleg.wac_title || '').trim()
+    if (title && key.startsWith(citeCodeKey(alleg.wac_code || ''))) return title
+  }
+  return ''
 }
 
 export function EvidenceStep({
@@ -113,17 +138,14 @@ export function EvidenceStep({
 
   const continueWithSelection = () => {
     const selectedHits = chosen.map((h) => ({ ...h, included_by_default: true }))
-    const process = [
-      ...(report.investigative_process || []).filter((p) => !p.startsWith(EXHIBIT_PREFIX)),
-      ...selectedHits.map(formatProcessLine),
-    ]
+    const documents = documentsFromEvidence(caseDetail?.evidence, selectedHits)
     const next: InvestigationReport = {
       ...report,
       evidence_review: hits.map((h) => ({
         ...h,
         included_by_default: selected.has(h.id),
       })),
-      investigative_process: process,
+      investigative_process: mergeDocumentReviewLines(report.investigative_process || [], documents),
     }
     onReportChange(next)
     onContinue(next)
@@ -155,10 +177,10 @@ export function EvidenceStep({
             Review exhibits against allegation duties
           </h2>
           <p className="mt-1 max-w-2xl font-sans text-sm text-ink-500">
-            Optional. IR and SOD stay available if exhibits are missing or incomplete.
-            Suggested excerpts come from attached files and overlap allegation or Regulatory
-            Framework duties. Select what applies; this is assistive record review, not a
-            finding and not statute authority.
+            Suggested excerpts are exhibit language that matches the cited Washington
+            WAC/RCW duty in the local statute store. Cross-state citation tables in a
+            facility policy are ignored. Select what applies; this is assistive record
+            review, not a finding and not statute authority.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -222,23 +244,29 @@ export function EvidenceStep({
       )}
 
       {grouped.length > 0 && (
-        <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
+        <div className="grid gap-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
           <nav className="space-y-1" aria-label="Allegation cites">
             {grouped.map(([cite, list]) => {
               const n = list.filter((h) => selected.has(h.id)).length
+              const wacTitle = wacTitleForCite(cite, report, list[0])
               return (
                 <button
                   key={cite}
                   type="button"
                   className={clsx(
-                    'w-full rounded-md px-2 py-2 text-left font-mono text-xs',
+                    'w-full rounded-md px-2 py-2 text-left text-xs',
                     cite === (activeCite || grouped[0][0])
                       ? 'bg-ink-100 dark:bg-ink-800'
                       : 'hover:bg-ink-50 dark:hover:bg-ink-900',
                   )}
                   onClick={() => setActiveCite(cite)}
                 >
-                  <span className="font-semibold">{cite}</span>
+                  <span className="compare-cite block font-semibold leading-snug">{cite}</span>
+                  {wacTitle ? (
+                    <span className="mt-0.5 block font-sans text-[11px] font-normal normal-case tracking-normal text-ink-500 dark:text-ink-400">
+                      {wacTitle}
+                    </span>
+                  ) : null}
                   <span className="mt-0.5 block font-sans text-[11px] text-ink-400">
                     {n} selected · {list.length} suggested
                   </span>
@@ -249,6 +277,7 @@ export function EvidenceStep({
           <div className="space-y-3">
             {activeHits.map((hit) => {
               const checked = selected.has(hit.id)
+              const wacTitle = wacTitleForCite(hit.cite, report, hit)
               return (
                 <label
                   key={hit.id}
@@ -273,7 +302,13 @@ export function EvidenceStep({
                     </span>
                     <span className="mt-1 block font-sans text-[11px] uppercase tracking-wide text-ink-400">
                       Related duty · {hit.cite}
+                      {wacTitle ? ` · ${wacTitle}` : ''}
                     </span>
+                    {hit.duty_phrase ? (
+                      <span className="mt-0.5 block font-sans text-xs text-ink-500">
+                        {hit.duty_phrase}
+                      </span>
+                    ) : null}
                     <span className="mt-1 block font-serif text-sm leading-relaxed text-ink-700 dark:text-ink-200">
                       {hit.excerpt}
                     </span>
@@ -286,8 +321,9 @@ export function EvidenceStep({
       )}
 
       <p className="font-sans text-xs text-ink-400">
-        {chosen.length} excerpt{chosen.length === 1 ? '' : 's'} will be added to Investigative
-        Process. You can skip with none selected.
+        Each attached document is written into Document Review as: The investigator reviewed
+        title dated [date]. One line per file. You can fill in a missing date on the
+        Documents step.
       </p>
     </div>
   )

@@ -13,6 +13,8 @@ import {
   type SodFinding,
   type StatementOfDeficiency,
 } from '../api'
+import { findRemovalSpans } from '../contentReview'
+import { RemovalReviewHint } from './HighlightedProse'
 
 type Props = {
   report: InvestigationReport
@@ -23,6 +25,27 @@ type Props = {
   activeCaseId?: number | null
   evidence?: CaseEvidence[]
   onEnsureCase?: (report: InvestigationReport) => Promise<number>
+}
+
+function citeKey(value: string): string {
+  return (value || '').replace(/^(WAC|RCW)\s+/i, '').replace(/\s+/g, '').toLowerCase()
+}
+
+function matchedExhibitTitles(report: InvestigationReport, cite: string): string[] {
+  const key = citeKey(cite)
+  if (!key) return []
+  const titles: string[] = []
+  const seen = new Set<string>()
+  for (const hit of report.evidence_review || []) {
+    if ((hit.band || '') === 'weak') continue
+    const hk = citeKey(hit.cite || '')
+    if (hk !== key && !hk.startsWith(key) && !key.startsWith(hk)) continue
+    const title = (hit.evidence_title || '').trim()
+    if (!title || seen.has(title)) continue
+    seen.add(title)
+    titles.push(title)
+  }
+  return titles
 }
 
 function emptySod(report: InvestigationReport): StatementOfDeficiency {
@@ -56,6 +79,11 @@ export function SodEditor({
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [linkTarget, setLinkTarget] = useState<string>('')
+
+  const sodHasRemovalHighlights = (report.sod?.deficiencies || []).some((d) => {
+    const blocks = [d.based_on || '', d.failure_to || '', ...(d.findings || []).map((f) => f.text || '')]
+    return blocks.some((block) => findRemovalSpans(block).length > 0)
+  })
 
   const patchSod = (partial: Partial<StatementOfDeficiency>) => {
     if (!onReportChange) return
@@ -98,7 +126,7 @@ export function SodEditor({
     const ev = evidence.find((e) => String(e.id) === linkTarget)
     addFinding(defId, {
       method: 'document review',
-      text: `Review of case evidence “${ev?.title || linkTarget}” showed [describe the failed practice].`,
+      text: `Review of case evidence ${ev?.title || linkTarget} showed [describe the failed practice].`,
       evidence_ids: [linkTarget],
     })
     setLinkTarget('')
@@ -220,6 +248,13 @@ export function SodEditor({
         Plan of Correction stays blank for the facility.
       </p>
 
+      {sodHasRemovalHighlights && (
+        <p className="rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/25 dark:text-amber-100">
+          Amber highlights mark Compare seed text and other assistive placeholders. Replace them with
+          your investigation narrative before submission.
+        </p>
+      )}
+
       {!defs.length && (
         <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
           No SOD deficiency blocks yet. Draft from Intake with approved WACs so Compare duties seed
@@ -242,6 +277,13 @@ export function SodEditor({
                 {d.regulation_text}
               </p>
             )}
+            {matchedExhibitTitles(report, d.regulation_cite || '').length > 0 && (
+              <p className="mt-2 text-xs text-ink-500">
+                Exhibits matched to this Washington cite (record review assist):{' '}
+                {matchedExhibitTitles(report, d.regulation_cite || '').join('; ')}. Findings
+                included stay investigator-owned.
+              </p>
+            )}
 
             <label className="mt-3 block text-sm">
               <span className="text-ink-500">Based on…</span>
@@ -251,6 +293,7 @@ export function SodEditor({
                 value={d.based_on || ''}
                 onChange={(e) => patchDeficiency(d.id || '', { based_on: e.target.value })}
               />
+              <RemovalReviewHint text={d.based_on || ''} />
             </label>
             <label className="mt-3 block text-sm">
               <span className="text-ink-500">Failure to…</span>
@@ -260,6 +303,7 @@ export function SodEditor({
                 value={d.failure_to || ''}
                 onChange={(e) => patchDeficiency(d.id || '', { failure_to: e.target.value })}
               />
+              <RemovalReviewHint text={d.failure_to || ''} />
             </label>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -400,6 +444,7 @@ export function SodEditor({
                       value={f.text || ''}
                       onChange={(e) => patchFinding(d.id || '', fi, { text: e.target.value })}
                     />
+                    <RemovalReviewHint text={f.text || ''} />
                   </li>
                 ))}
               </ul>

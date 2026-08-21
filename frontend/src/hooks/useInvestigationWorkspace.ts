@@ -701,7 +701,6 @@ export function useInvestigationWorkspace(opts: {
         confirmed_allegation_codes: [],
       })
       setReport(drafted)
-      setStep('review')
       setBusy(false)
       setProgress('Saving working draft to case…')
       try {
@@ -712,6 +711,7 @@ export function useInvestigationWorkspace(opts: {
           facility_address: overrides?.facility_address ?? facilityAddress,
           credential_number: overrides?.credential_number ?? credentialNumber,
         })
+        setStep('review')
       } catch (saveErr) {
         setError(saveErr instanceof Error ? saveErr.message : 'Draft built, but case save failed')
       }
@@ -908,12 +908,12 @@ export function useInvestigationWorkspace(opts: {
       compare_cites_confirmed: true,
       confirmed_allegation_codes: confirmedCodes,
     })!
-    setReport(next)
-    setStep('report')
     if (activeCaseId) {
       try {
         const detail = await api.saveCaseDraft(activeCaseId, next, 'Compare cites confirmed')
+        setReport(next)
         setCaseDetail(detail)
+        setStep('report')
         setCasesRefreshKey((k) => k + 1)
         lastSavedFp.current = workspaceFingerprint({
           step: 'report',
@@ -929,18 +929,21 @@ export function useInvestigationWorkspace(opts: {
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not save cite confirmation')
       }
+      return
     }
+    setReport(next)
+    setStep('report')
   }
 
   const confirmEvidenceAndContinue = async (nextReport?: InvestigationReport | null) => {
     const payload = nextReport || report
     if (!payload) return
-    setReport(payload)
-    setStep('report')
     if (activeCaseId) {
       try {
         const detail = await api.saveCaseDraft(activeCaseId, payload, 'Evidence excerpts selected')
+        setReport(payload)
         setCaseDetail(detail)
+        setStep('report')
         setCasesRefreshKey((k) => k + 1)
         lastSavedFp.current = workspaceFingerprint({
           step: 'report',
@@ -956,7 +959,10 @@ export function useInvestigationWorkspace(opts: {
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not save evidence selections')
       }
+      return
     }
+    setReport(payload)
+    setStep('report')
   }
 
   const clearPrivacyHints = () => {

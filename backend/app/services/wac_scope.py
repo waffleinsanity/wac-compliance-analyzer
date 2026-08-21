@@ -28,6 +28,18 @@ _TFIDF_STOP = frozenset(ENGLISH_STOP_WORDS)
 
 FOREIGN_WAC_RE = re.compile(r"246-(?:341|337)-\d{3,4}")
 FOREIGN_RCW_RE = re.compile(r"71\.(?:05|24|34)\.\d{3,4}")
+# Out-of-state / federal cite catalogs that appear in facility P&Ps. Never ranking authority.
+_FOREIGN_JURISDICTION_RE = re.compile(
+    r"\b(?:12\s*)?VAC\s*\d+[-\d.A-Za-z]*"
+    r"|\bMCA\s+\d+(?:\.\d+)+"
+    r"|\bNMAC\s+[\d.]+"
+    r"|\bNM\s+\d+\.\d+"
+    r"|\bLA\s*§\s*\d+"
+    r"|\bCOMAR\s+[\d.]+"
+    r"|\bOAR\s+\d+-\d+"
+    r"|\b(?:CFR|USC)\s+\d+",
+    re.IGNORECASE,
+)
 EXPLICIT_CITE_RE = re.compile(
     r"(?:WAC\s*)?(246-(?:341|337)-\d{3,4})\s*((?:\([0-9a-z]+\))+)?|"
     r"(?:RCW\s*)?(71\.(?:05|24|34)\.\d{3,4})\s*((?:\([0-9a-z]+\))+)?",
@@ -1060,6 +1072,14 @@ def _tfidf_analyzer(text: str) -> list[str]:
     return grams
 
 
+def strip_foreign_jurisdiction_cites(text: str) -> str:
+    """Drop VA/NM/LA/MCA/CFR-style tokens so they cannot drive WAC/RCW ranking."""
+    if not text:
+        return ""
+    cleaned = _FOREIGN_JURISDICTION_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def expand_ranking_query(complaint: str) -> str:
     """Public alias: ranking-only query expansion (never mutates statute text)."""
     return _expand_ranking_query(complaint)
@@ -1067,7 +1087,7 @@ def expand_ranking_query(complaint: str) -> str:
 
 def _expand_ranking_query(complaint: str) -> str:
     """Append ranking-only aliases; PDF subsection text remains the documents."""
-    out = complaint or ""
+    out = strip_foreign_jurisdiction_cites(complaint or "")
     extras: list[str] = []
     for pat, repl in _RANK_QUERY_ALIASES:
         if pat.search(out):

@@ -361,8 +361,10 @@ class EvidenceReviewHit(BaseModel):
     evidence_id: int
     evidence_title: str
     cite: str
+    wac_title: str = ""
     duty_phrase: str = ""
     excerpt: str
+    document_date: str = ""
     score: float = 0.0
     band: str = "weak"
     included_by_default: bool = False

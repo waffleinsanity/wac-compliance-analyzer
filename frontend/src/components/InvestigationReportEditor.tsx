@@ -42,6 +42,15 @@ import {
   type ProcessFields,
 } from '../processTemplate'
 import {
+  documentsFromEvidence,
+  documentsFromLegacyProcess,
+  documentReviewHasLegacyExhibitLines,
+  mergeDocumentReviewLines,
+  rewriteLegacyDocumentReviewLines,
+} from '../documentReviewFormat'
+import { findRemovalSpans, isFacilityPlaceholder } from '../contentReview'
+import { HighlightedProse, RemovalReviewHint } from './HighlightedProse'
+import {
   ACTION_DETERMINATION_CHOICES,
   ACTION_REFERRAL_CHOICES,
   CHOOSE_ITEM,
@@ -254,6 +263,14 @@ function IrProcessLine({ step }: { step: string }) {
   if (kind === 'subhead') {
     return <p className="ir-process-subhead">{step}</p>
   }
+  const spans = findRemovalSpans(step)
+  if (spans.length) {
+    return (
+      <div className="ir-body ir-process-body">
+        <HighlightedProse text={step} spans={spans} className="text-[12pt] leading-[1.45] text-black" />
+      </div>
+    )
+  }
   return <p className="ir-body ir-process-body whitespace-pre-wrap">{step}</p>
 }
 
@@ -390,16 +407,32 @@ function DocumentPreview({
             </p>
           )}
           <div className="mb-4 space-y-0">
-            {facilityLines.map(([label, value, control]) => (
-              <p key={label} className="ir-body">
-                <span className="ir-facility-label">{label}</span>{' '}
-                <span className="ir-facility-value">
-                  {control
-                    ? control()
-                    : value || (label.includes('Priority') ? CHOOSE_ITEM : '')}
-                </span>
-              </p>
-            ))}
+            {facilityLines.map(([label, value, control]) => {
+              const shown = value || (label.includes('Priority') ? CHOOSE_ITEM : '')
+              const highlightFacility =
+                !control &&
+                (label.startsWith('Facility Address')
+                  ? isFacilityPlaceholder(shown) || findRemovalSpans(shown).length > 0
+                  : findRemovalSpans(shown).length > 0)
+              return (
+                <p key={label} className="ir-body">
+                  <span className="ir-facility-label">{label}</span>{' '}
+                  <span className="ir-facility-value">
+                    {control
+                      ? control()
+                      : highlightFacility
+                        ? (
+                            <HighlightedProse
+                              text={shown}
+                              inline
+                              className="text-[12pt] leading-[1.45] text-black"
+                            />
+                          )
+                        : shown}
+                  </span>
+                </p>
+              )
+            })}
           </div>
           <div className="mb-4 space-y-2">
             <IrSectionHeading
@@ -443,7 +476,16 @@ function DocumentPreview({
               title="Summary of Findings"
               hint="(Narrative overview of the results of investigation.)"
             />
-            <p className="ir-body ir-indent whitespace-pre-wrap">{report.summary_of_findings || '—'}</p>
+            {report.summary_of_findings ? (
+              <div className="ir-body ir-indent">
+                <HighlightedProse
+                  text={report.summary_of_findings}
+                  className="text-[12pt] leading-[1.45] text-black"
+                />
+              </div>
+            ) : (
+              <p className="ir-body ir-indent">—</p>
+            )}
           </div>
           <div className="mb-4 space-y-2">
             <p className="ir-section-title">Conclusion/ Results of Investigation</p>
@@ -490,6 +532,12 @@ function DocumentPreview({
                           </option>
                         ))}
                       </select>
+                    ) : findRemovalSpans(result).length || findRemovalSpans(displayFinding(finding)).length ? (
+                      <HighlightedProse
+                        text={displayFinding(finding) || result}
+                        inline
+                        className="text-[12pt] leading-[1.45] text-black"
+                      />
                     ) : (
                       displayFinding(finding)
                     )}
@@ -536,8 +584,28 @@ function DocumentPreview({
               </>
             ) : (
               <>
-                <p className="ir-body ir-indent">{determination || CHOOSE_ITEM}</p>
-                <p className="ir-body ir-indent">{referral || CHOOSE_ITEM}</p>
+                <p className="ir-body ir-indent">
+                  {findRemovalSpans(determination || CHOOSE_ITEM).length ? (
+                    <HighlightedProse
+                      text={determination || CHOOSE_ITEM}
+                      inline
+                      className="text-[12pt] leading-[1.45] text-black"
+                    />
+                  ) : (
+                    determination || CHOOSE_ITEM
+                  )}
+                </p>
+                <p className="ir-body ir-indent">
+                  {findRemovalSpans(referral || CHOOSE_ITEM).length ? (
+                    <HighlightedProse
+                      text={referral || CHOOSE_ITEM}
+                      inline
+                      className="text-[12pt] leading-[1.45] text-black"
+                    />
+                  ) : (
+                    referral || CHOOSE_ITEM
+                  )}
+                </p>
               </>
             )}
           </div>
@@ -651,6 +719,55 @@ export function InvestigationReportEditor({
     () => unpackProcessFields(report.investigative_process),
     [report.investigative_process],
   )
+
+  const hasRemovalHighlights = useMemo(() => {
+    const blocks = [
+      report.facility_info?.facility_address || '',
+      processFields.observations,
+      processFields.interviews,
+      processFields.documentReview,
+      report.summary_of_findings || '',
+      ...(report.conclusions || []).map((c) => c.result || ''),
+    ]
+    return blocks.some((block) => findRemovalSpans(block).length > 0)
+  }, [processFields, report.conclusions, report.facility_info?.facility_address, report.summary_of_findings])
+
+  const legacyMigrateCaseRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    const caseId = caseDetail?.id ?? null
+    if (caseId != null && legacyMigrateCaseRef.current === caseId) return
+    const lines = report.investigative_process || []
+    const hasLegacy = documentReviewHasLegacyExhibitLines(lines)
+    if (!hasLegacy) {
+      if (caseId != null) legacyMigrateCaseRef.current = caseId
+      return
+    }
+    const converted = rewriteLegacyDocumentReviewLines(lines)
+    const fromFiles = documentsFromEvidence(
+      caseDetail?.evidence,
+      (report.evidence_review || []).filter((h) => h.included_by_default),
+    )
+    const fromLegacy = documentsFromLegacyProcess(lines)
+    const byTitle = new Map(fromLegacy.map((d) => [d.title.toLowerCase(), d]))
+    for (const d of fromFiles) {
+      const key = d.title.toLowerCase()
+      const prev = byTitle.get(key)
+      byTitle.set(key, {
+        title: d.title,
+        documentDate: d.documentDate || prev?.documentDate,
+        excerpt: (d.excerpt || '').length >= (prev?.excerpt || '').length ? d.excerpt : prev?.excerpt,
+        cite: d.cite || prev?.cite,
+      })
+    }
+    const docs = [...byTitle.values()]
+    const nextLines = docs.length ? mergeDocumentReviewLines(converted, docs) : converted
+    if (caseId != null) legacyMigrateCaseRef.current = caseId
+    if (nextLines.length === lines.length && nextLines.every((line, i) => line === lines[i])) return
+    setReport((prev) => ({ ...prev, investigative_process: nextLines }))
+    // Migrate once per case open; backend also persists on GET.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseDetail?.id, caseDetail?.evidence])
 
   const updateProcessFields = useCallback((patch: Partial<ProcessFields>) => {
     setReport((prev) => {
@@ -1046,6 +1163,14 @@ export function InvestigationReportEditor({
         </div>
       )}
 
+      {hasRemovalHighlights && (
+        <div className="border-l-2 border-amber-500 bg-amber-50/80 px-3 py-2 text-sm text-amber-950 dark:border-amber-600 dark:bg-amber-950/20 dark:text-amber-100">
+          Amber highlights mark assistive placeholders, seed sentences, and other text that is not
+          part of the IR format, your entries, or Compare selections. Delete or replace those spans
+          before submission.
+        </div>
+      )}
+
       {exportWarn && canExport && (
         <div className="flex gap-3 border-l-2 border-cedar-500 bg-ink-50/80 px-3 py-2.5 text-sm text-ink-700 dark:bg-ink-900/50 dark:text-ink-200">
           <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-sm bg-amber-500" aria-hidden />
@@ -1053,7 +1178,9 @@ export function InvestigationReportEditor({
             <p className="font-medium text-ink-900 dark:text-ink-50">
               {report.quote_integrity?.ok === false
                 ? `Statute wording needs a check (${report.quote_integrity.failures.length})`
-                : defensibility?.summary || 'A few review notes remain'}
+                : hasRemovalHighlights
+                  ? 'Highlighted assistive text must be removed or replaced before submission.'
+                  : defensibility?.summary || 'A few review notes remain'}
             </p>
             <p className="text-xs text-ink-500 dark:text-ink-400">
               You can still download a working draft. Fix wording before treating the IR as final.
@@ -1406,6 +1533,7 @@ export function InvestigationReportEditor({
                       value={naIfEmpty(processFields.observations)}
                       onChange={(e) => updateProcessFields({ observations: e.target.value })}
                     />
+                    <RemovalReviewHint text={naIfEmpty(processFields.observations)} />
                   </div>
                   <div>
                     <p className="mb-1.5 font-serif text-sm font-bold text-ink-800 dark:text-ink-100">
@@ -1416,6 +1544,7 @@ export function InvestigationReportEditor({
                       value={naIfEmpty(processFields.interviews)}
                       onChange={(e) => updateProcessFields({ interviews: e.target.value })}
                     />
+                    <RemovalReviewHint text={naIfEmpty(processFields.interviews)} />
                   </div>
                   <div>
                     <p className="mb-1.5 font-serif text-sm font-bold text-ink-800 dark:text-ink-100">
@@ -1426,6 +1555,7 @@ export function InvestigationReportEditor({
                       value={naIfEmpty(processFields.documentReview)}
                       onChange={(e) => updateProcessFields({ documentReview: e.target.value })}
                     />
+                    <RemovalReviewHint text={naIfEmpty(processFields.documentReview)} />
                   </div>
                 </div>
               </div>
@@ -1504,6 +1634,7 @@ export function InvestigationReportEditor({
               value={naIfEmpty(report.summary_of_findings)}
               onChange={(e) => setReport((p) => ({ ...p, summary_of_findings: e.target.value }))}
             />
+            <RemovalReviewHint text={naIfEmpty(report.summary_of_findings)} />
           </section>
 
           {/* Conclusions — DOH sentence with inline finding dropdown */}

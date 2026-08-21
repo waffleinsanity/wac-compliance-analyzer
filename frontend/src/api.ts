@@ -300,8 +300,10 @@ export type EvidenceReviewHit = {
   evidence_id: number
   evidence_title: string
   cite: string
+  wac_title?: string
   duty_phrase: string
   excerpt: string
+  document_date?: string
   score: number
   band: string
   included_by_default: boolean

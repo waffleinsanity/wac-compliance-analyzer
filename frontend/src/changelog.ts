@@ -31,6 +31,35 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.08.20.1',
+    buildTag: '2026.08.20.1',
+    date: '2026-08-20',
+    title: 'Document Review format, assistive-text highlights, and enterprise gates',
+    summary:
+      'Evidence lines in Document Review now use the Investigation Report example shape (quoted title and document date). Assistive placeholders and SOD seeds are amber-highlighted for removal before submission. Compare and Evidence steps save before advancing, Case Assist no longer wipes the DOH process shell, and CI covers contract smoke plus case isolation.',
+    highlights: [
+      'Document Review: The investigator reviewed "title" dated Month D, YYYY',
+      'Amber highlights for placeholders, summary shells, and SOD Based on / Failure to seeds',
+      'Legacy exhibit lines migrate and persist on first case open',
+      'Save-success gates on Compare and Evidence continue; CI adds isolation and content-review tests',
+    ],
+    areas: ['investigation', 'cases', 'platform'],
+  },
+  {
+    id: '2026.08.19.6',
+    buildTag: '2026.08.19.6',
+    date: '2026-08-19',
+    title: 'Evidence matches Washington WAC/RCW store text',
+    summary:
+      'Exhibit suggestions are ranked against the local WAC/RCW statute store, the same corpus used for IR duties and SOD regulation text. Multi-state citation tables inside a facility policy (Virginia VAC, NMAC, MCA, and similar) are ignored so they cannot appear as a related Washington duty.',
+    highlights: [
+      'Evidence review queries the local PDF corpus (TF-IDF + Chroma) scoped to the approved code',
+      'IR ranking strips out-of-state cite tokens before scoring complaint text',
+      'SOD shows store-matched exhibits next to the matching Washington cite; findings stay investigator-owned',
+    ],
+    areas: ['investigation'],
+  },
+  {
     id: '2026.08.19.5',
     buildTag: '2026.08.19.5',
     date: '2026-08-19',
