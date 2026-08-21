@@ -63,6 +63,26 @@ def report_from_json(raw: str | None) -> InvestigationReport | None:
     return report
 
 
+def report_for_case(db: Session, case: InvestigationCase) -> InvestigationReport | None:
+    """Prefer current draft JSON; if unreadable, fall back to newest snapshot."""
+    report = report_from_json(case.current_report_json)
+    if report is not None:
+        return report
+    if not (case.current_report_json or "").strip():
+        return None
+    snaps = (
+        db.query(CaseReportSnapshot)
+        .filter(CaseReportSnapshot.case_id == case.id)
+        .order_by(CaseReportSnapshot.version.desc())
+        .all()
+    )
+    for snap in snaps:
+        recovered = report_from_json(snap.report_json)
+        if recovered is not None:
+            return recovered
+    return None
+
+
 def raw_has_legacy_document_review(raw: str | None) -> bool:
     """True when stored JSON still contains legacy exhibit process lines."""
     text = raw or ""

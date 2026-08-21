@@ -93,7 +93,7 @@ export type InvestigationWorkspace = {
   loadWacs: () => Promise<void>
   toggleFavorite: (wacId: string) => Promise<void>
   refreshCaseDetail: () => Promise<void>
-  openCase: (id: number) => Promise<void>
+  openCase: (id: number) => Promise<boolean>
   startNewCase: () => void
   ensureCaseSaved: (
     reportPayload: InvestigationReport,
@@ -233,7 +233,7 @@ export function useInvestigationWorkspace(opts: {
     setCasesRefreshKey((k) => k + 1)
   }, [activeCaseId])
 
-  const openCase = async (id: number) => {
+  const openCase = async (id: number): Promise<boolean> => {
     setBusy(true)
     setError('')
     try {
@@ -285,8 +285,10 @@ export function useInvestigationWorkspace(opts: {
         setRecoverOffer(null)
       }
       setSaveStatus({ state: 'saved', at: detail.updated_at || new Date().toISOString() })
+      return true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to open case')
+      return false
     } finally {
       setBusy(false)
     }

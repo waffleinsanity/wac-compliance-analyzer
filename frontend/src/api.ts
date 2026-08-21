@@ -640,8 +640,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+      const host = typeof window !== 'undefined' ? window.location.hostname : ''
+      const local = host === 'localhost' || host === '127.0.0.1'
       throw new Error(
-        'Cannot reach the API (http://127.0.0.1:8000). The local stack is down — use Run and Debug → WACMAKR: Run (or wait for auto-heal).',
+        local
+          ? 'Cannot reach the API (http://127.0.0.1:8000). The local stack is down — use Run and Debug → WACMAKR: Run (or wait for auto-heal).'
+          : 'Cannot reach the API. Check your connection and refresh; if this keeps happening, the service may be restarting.',
       )
     }
     throw err instanceof Error ? err : new Error(msg)

@@ -59,6 +59,7 @@ from app.services.case_store import (
     process_entries_to_bullets,
     purge_trashed_cases,
     report_from_json,
+    report_for_case,
     is_periodic_note,
     maybe_persist_legacy_document_review,
     persist_draft,
@@ -295,7 +296,7 @@ def _detail(db: Session, case: InvestigationCase) -> CaseDetailOut:
         facility_address=case.facility_address or "",
         credential_number=case.credential_number or "",
         approved_wac_ids=parse_json_list(case.approved_wac_ids),
-        report=report_from_json(case.current_report_json),
+        report=report_for_case(db, case),
         owner_user_id=case.owner_user_id,
         ir_template_id=getattr(case, "ir_template_id", None),
         ir_template=ir_tpl,
@@ -405,7 +406,18 @@ def get_case(
 ):
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
-    maybe_persist_legacy_document_review(db, case, user)
+    try:
+        maybe_persist_legacy_document_review(db, case, user)
+    except Exception:
+        # Never block opening a saved draft because Document Review migration failed.
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "Legacy Document Review persist failed for case %s", case_id
+        )
+        db.rollback()
+        case = get_case_or_404(db, case_id)
+        assert_case_access(case, user)
     return _detail(db, case)
 
 

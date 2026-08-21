@@ -188,8 +188,10 @@ export default function App() {
           wacs={wacs}
           selectedCodes={selectedCodes}
           onSelectionChange={(codes) => {
+            const same =
+              codes.length === selectedCodes.length && codes.every((c) => selectedCodes.includes(c))
             setSelectedCodes(codes)
-            clearReportToWorkspace()
+            if (!same) clearReportToWorkspace()
           }}
           onToggleFavorite={toggleFavorite}
           favoriteIds={favoriteIds}
@@ -227,7 +229,8 @@ export default function App() {
     <CasesPanel
       activeCaseId={activeCaseId}
       onOpenCase={(id) => {
-        void openCase(id).then(() => {
+        void openCase(id).then((ok) => {
+          if (!ok) return
           setTab('analysis')
           setShowCasesDrawer(false)
         })
@@ -548,7 +551,8 @@ export default function App() {
                 <div
                   className={
                     step === 'report'
-                      ? 'min-h-0 flex-1 overflow-y-auto'
+                      ? // Keep Documents toolbar outside scroll so Recall is not clipped.
+                        'flex min-h-0 flex-1 flex-col overflow-hidden'
                       : 'min-h-0 flex-1 overflow-y-auto p-3 pb-20 sm:p-4 lg:p-5 lg:pb-5'
                   }
                 >
@@ -653,8 +657,8 @@ export default function App() {
                     />
                   )}
                   {step === 'report' && report && (
-                    <div className="flex min-h-0 flex-1 flex-col gap-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-200 dark:border-ink-700">
+                    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+                      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-ink-200 px-3 pt-2 dark:border-ink-700 sm:px-4 lg:px-5">
                         <div className="flex flex-wrap gap-0">
                           {(
                             [
@@ -699,40 +703,42 @@ export default function App() {
                         )}
                         </div>
                       </div>
-                      {docSurface === 'ir' ? (
-                        <InvestigationReportEditor
-                          report={report}
-                          selectedWacs={selectedCodes}
-                          caseId={activeCaseId}
-                          caseDetail={caseDetail}
-                          onCaseRefresh={refreshCaseDetail}
-                          onReportChange={setReport}
-                          onRebuild={rebuildCaseDraft}
-                          onEnsureCase={async (reportPayload) => {
-                            const detail = await ensureCaseSaved(reportPayload)
-                            return detail.id
-                          }}
-                          onBack={() => setStep('review')}
-                          revision={restoreEpoch}
-                          onRestoreSnapshot={(id) => void restoreSnapshot(id)}
-                          canEdit={userCanEdit}
-                          canExport={userCanExport}
-                        />
-                      ) : (
-                        <SodEditor
-                          report={report}
-                          onReportChange={setReport}
-                          canEdit={userCanEdit}
-                          canExport={userCanExport}
-                          busy={busy}
-                          activeCaseId={activeCaseId}
-                          evidence={caseDetail?.evidence || []}
-                          onEnsureCase={async (reportPayload) => {
-                            const detail = await ensureCaseSaved(reportPayload)
-                            return detail.id
-                          }}
-                        />
-                      )}
+                      <div className="min-h-0 flex-1 overflow-y-auto">
+                        {docSurface === 'ir' ? (
+                          <InvestigationReportEditor
+                            report={report}
+                            selectedWacs={selectedCodes}
+                            caseId={activeCaseId}
+                            caseDetail={caseDetail}
+                            onCaseRefresh={refreshCaseDetail}
+                            onReportChange={setReport}
+                            onRebuild={rebuildCaseDraft}
+                            onEnsureCase={async (reportPayload) => {
+                              const detail = await ensureCaseSaved(reportPayload)
+                              return detail.id
+                            }}
+                            onBack={() => setStep('review')}
+                            revision={restoreEpoch}
+                            onRestoreSnapshot={(id) => void restoreSnapshot(id)}
+                            canEdit={userCanEdit}
+                            canExport={userCanExport}
+                          />
+                        ) : (
+                          <SodEditor
+                            report={report}
+                            onReportChange={setReport}
+                            canEdit={userCanEdit}
+                            canExport={userCanExport}
+                            busy={busy}
+                            activeCaseId={activeCaseId}
+                            evidence={caseDetail?.evidence || []}
+                            onEnsureCase={async (reportPayload) => {
+                              const detail = await ensureCaseSaved(reportPayload)
+                              return detail.id
+                            }}
+                          />
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
