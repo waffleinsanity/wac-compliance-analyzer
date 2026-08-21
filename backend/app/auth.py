@@ -356,8 +356,11 @@ def link_google_to_user(db: Session, user: User, info: dict) -> User:
     sub = info["sub"]
     other = db.query(User).filter(User.google_sub == sub, User.id != user.id).first()
     if other is not None:
+        # Flush the detach first. SQLite UNIQUE on google_sub rejects a same-statement
+        # reassignment while the prior owner still holds the value in the transaction.
         other.google_sub = None
         db.add(other)
+        db.flush()
 
     user.google_sub = sub
     display = (info.get("name") or "").strip()
