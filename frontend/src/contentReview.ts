@@ -100,3 +100,31 @@ export function countRemovalSpans(text: string): number {
 export function isFacilityPlaceholder(value: string): boolean {
   return FACILITY_PLACEHOLDERS.includes((value || '').trim())
 }
+
+const COLLABORATOR_FOOTER =
+  '[Human investigators complete evidentiary findings after interviews, observations, and document review.]'
+
+/** Remove in-app collaborator notes from Summary of Findings (document body only). */
+export function stripCollaboratorFromSummary(text: string | null | undefined): string {
+  let body = (text || '').replace(/\u00a0/g, ' ').replace(/\u200b/g, '').trim()
+  if (!body) return ''
+  // Hard cut at the marked header through the end of Summary (ignore dash / spacing variants).
+  const marker = /Investigator\s+collaborator\s+notes\b/i
+  const idx = body.search(marker)
+  if (idx >= 0) {
+    body = body.slice(0, idx).trim()
+  } else {
+    // Header missing: drop the Areas + Suggested methods collaborator pair if present.
+    body = body
+      .replace(
+        /(?:^|\n)\s*Areas of concern:\s*\n(?:[ \t]*-.+\n)+\s*\nSuggested methods to begin or strengthen the investigation:\s*\n[\s\S]*$/i,
+        '',
+      )
+      .trim()
+  }
+  body = body.split(COLLABORATOR_FOOTER).join('').trim()
+  body = body
+    .replace(/\nSuggested methods to begin or strengthen the investigation:\s*\n[\s\S]*$/i, '')
+    .trim()
+  return body.replace(/\n{3,}/g, '\n\n').trim()
+}

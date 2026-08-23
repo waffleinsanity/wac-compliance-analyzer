@@ -178,11 +178,14 @@ export function composeAllegationFromDuties(
   return normalizeAllegationLine(`${opener}, by having failed to ${parts.join('; ')}.`)
 }
 
+import { stripCollaboratorFromSummary } from './contentReview'
+
 /** Normalize allegation fields on an investigate/case report payload (in place). */
 export function normalizeReportAllegations<T extends {
   allegations?: Array<{ allegation_text?: string }>
   comparisons?: Array<{ allegation_draft?: string }>
   conclusions?: Array<{ allegation_text?: string }>
+  summary_of_findings?: string
   report_text?: string
 }>(report: T): T {
   if (report.allegations) {
@@ -200,11 +203,16 @@ export function normalizeReportAllegations<T extends {
       if (c.allegation_text != null) c.allegation_text = normalizeAllegationLine(c.allegation_text)
     }
   }
+  if (report.summary_of_findings != null) {
+    report.summary_of_findings = stripCollaboratorFromSummary(report.summary_of_findings)
+  }
   if (report.report_text) {
-    report.report_text = report.report_text
-      .replace(/["“”„]/g, '')
-      .replace(/;\s*see also\b.*$/gim, '')
-      .replace(/^A\s+potential\s+violation\b/gim, 'Potential violation')
+    report.report_text = stripCollaboratorFromSummary(
+      report.report_text
+        .replace(/["“”„]/g, '')
+        .replace(/;\s*see also\b.*$/gim, '')
+        .replace(/^A\s+potential\s+violation\b/gim, 'Potential violation'),
+    )
   }
   return report
 }

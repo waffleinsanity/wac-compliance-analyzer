@@ -7,20 +7,26 @@ export const SOD_TITLE = 'Statement of Deficiency Report'
 
 export const SOD_TABLE_HEADERS = [
   'Deficiency Number and Rule Reference',
-  'Observation Findings',
+  'Findings',
   'Plan of Correction',
 ] as const
 
 export const SOD_HEADER_LABELS = {
-  agency: 'Facility Name and Address',
+  agency: 'Agency Name and Address',
   administrator: 'Administrator',
   inspection_type: 'Inspection Type',
   investigation_start: 'Investigation Start Date',
   investigator_number: 'Investigator Number',
   case_number: 'Case Number(s)',
   license_number: 'License Number',
-  services_type: 'BHA/RTF Facility Services Type',
+  services_type: 'BHA/RTF Agency Services Type',
 } as const
+
+export const SOD_DOH_CONTACT_LINES = [
+  'Department of Health',
+  'P.O. Box 47874, Olympia, WA 98504-7874',
+  'TEL: 360-236-4732',
+] as const
 
 export const SOD_DISCLAIMER =
   'Please note that the deficiencies/violations/observations noted in this report ' +
@@ -29,19 +35,18 @@ export const SOD_DISCLAIMER =
 
 export const SOD_ENFORCEMENT_RCW_HINT =
   "You may receive notice of the Department's intent to take enforcement action " +
-  'against your license under RCW 71.24.037, 71.12, WAC 246-337-021 and ' +
-  'WAC 246-341-0335 based on any deficiency listed on the enclosed report. ' +
-  'Your submission of a Plan of Correction or any other action you take in ' +
-  'response to this Statement of Deficiency Report may be taken into consideration ' +
-  'in an enforcement action but does not prevent the Department from proceeding ' +
-  'with enforcement action.'
+  'against your license under RCW 71.24.037 and WAC 246-341-0335 based on any ' +
+  'deficiency listed on the enclosed report. Your submission of a Plan of Correction ' +
+  'or any other action you take in response to this Statement of Deficiency Report ' +
+  'may be taken into consideration in an enforcement action but does not prevent ' +
+  'the Department from proceeding with enforcement action.'
 
 export const SOD_POC_ELEMENTS = [
-  'The regulation number',
-  'How the deficiency will be corrected',
-  'Who is responsible for making the correction',
-  'When the correction will be completed',
-  'How you will ensure that the deficiency has been successfully corrected. ' +
+  'The regulation number;',
+  'How the deficiency will be corrected;',
+  'Who is responsible for making the correction;',
+  'When the correction will be completed;',
+  'How you will assure that the deficiency has been successfully corrected. ' +
     'When monitoring activities are planned, objectives must be measurable and ' +
     'quantifiable. Please include information about the monitoring time frame and ' +
     'number of planned observations.',
@@ -83,33 +88,47 @@ export function coverLetterParagraphs(args: {
   const dear = admin !== 'N/A' ? admin : 'Administrator'
   const pocDueDays = args.pocDueDays ?? 14
   const dated = (args.letterDate || '').trim()
-  const lines = [
+  const blank = ''
+  const lines: string[] = [
     'STATE OF WASHINGTON',
+    blank,
     'DEPARTMENT OF HEALTH',
+    blank,
     'PO Box 47874, Olympia, Washington 98504-7874',
+    blank,
+    blank,
   ]
-  if (dated) lines.push(dated)
+  if (dated) lines.push(dated, blank)
   lines.push(
     name,
     addr,
-    `Dear: ${dear}:`,
-    `This letter contains information regarding the investigation at ${name} ` +
+    blank,
+    `Dear ${dear}:`,
+    blank,
+    `This letter contains information regarding the recent investigation at ${name} ` +
       `by the Washington State Department of Health. Your state licensing investigation ` +
       `was completed on ${done}.`,
+    blank,
     'During the investigation, deficient practice was found in the areas listed on the ' +
       'attached Statement of Deficiency Report. A written Plan of Correction is required ' +
       'for each deficiency listed on the Statement of Deficiency Report and will be due ' +
       `${pocDueDays} days after you receive this letter.`,
+    blank,
     'Each plan of correction statement must include the following:',
-    ...SOD_POC_ELEMENTS.map((item) => `- ${item}`),
+    ...SOD_POC_ELEMENTS,
+    blank,
     'You are not required to write the Plan of Correction on the Statement of Deficiency Report.',
+    blank,
     SOD_ENFORCEMENT_RCW_HINT,
-    'Please email the report and Plans of Correction to the Investigator. You can also ' +
-      'sign and send the original reports and Plans of Correction to the Investigator at ' +
-      'the following address:',
+    blank,
+    'Please sign and return the original reports and Plans of Correction to the following address:',
+    blank,
     `Investigator: ${inv}`,
-    SOD_DOH_RETURN_BLOCK,
-    'Enclosures: Statement of Deficiency Report; Plan of Correction Instructions',
+    ...SOD_DOH_RETURN_BLOCK.split('\n'),
+    blank,
+    blank,
+    'Enclosures:\tStatement of Deficiency Report',
+    'Plan of Correction Instructions',
   )
   return lines
 }
@@ -187,7 +206,7 @@ function findingLine(n: number, finding: FindingLike, number: boolean): string {
   return `${prefix}${text}`.trim()
 }
 
-/** Mirror backend format_findings_column for Observation Findings cell. */
+/** Mirror backend format_findings_column for Findings cell. */
 export function formatFindingsColumn(deficiency: DeficiencyLike): string {
   const parts: string[] = []
   const based = (deficiency.based_on || '').trim()

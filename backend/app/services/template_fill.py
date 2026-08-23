@@ -376,6 +376,9 @@ def smart_fill(template_path: Path | str, report: InvestigationReport) -> bytes:
     intake = (report.intake_details or "").strip()
     process_steps = [str(s) for s in (report.investigative_process or [])]
     summary = (report.summary_of_findings or "").strip()
+    from app.services.investigation import strip_collaborator_from_summary
+
+    summary = strip_collaborator_from_summary(summary)
     conclusions = conclusion_export_lines(report)
     det, ref = parse_actions_fields(
         report.actions or "",

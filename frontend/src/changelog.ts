@@ -31,6 +31,20 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.08.20.2',
+    buildTag: '2026.08.20.2',
+    date: '2026-08-20',
+    title: 'Collaborator notes stay in-app only',
+    summary:
+      'Investigator Collaborator suggestions remain on the Documents edit screen for the investigator. They are no longer written into Summary of Findings for Form preview, Copy, or DOCX export. Existing drafts that embedded the collaborator block are cleaned on save and export.',
+    highlights: [
+      'Summary of Findings draft no longer appends collaborator notes',
+      'Plain text, Form preview, and DOCX strip legacy collaborator blocks',
+      'Collaborator panel copy clarifies in-app only',
+    ],
+    areas: ['investigation'],
+  },
+  {
     id: '2026.08.20.1',
     buildTag: '2026.08.20.1',
     date: '2026-08-20',

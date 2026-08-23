@@ -324,8 +324,8 @@ def _detail(db: Session, case: InvestigationCase) -> CaseDetailOut:
     )
 
 
-def _report_for_export(case: InvestigationCase) -> InvestigationReport:
-    report = report_from_json(case.current_report_json)
+def _report_for_export(db: Session, case: InvestigationCase) -> InvestigationReport:
+    report = report_for_case(db, case)
     if not report:
         raise HTTPException(status_code=400, detail="Case has no report draft to export")
     return report
@@ -690,7 +690,7 @@ def update_status(
         require_role_edit(user)
         if case.status not in {"draft", "reopened"}:
             raise HTTPException(status_code=400, detail="Only draft/reopened cases can be submitted for review")
-        report = _report_for_export(case)
+        report = _report_for_export(db, case)
         save_snapshot(db, case, report, user, note=payload.note or "Submitted for review")
         set_status(db, case, "in_review", user)
         _harvest_ir_style(db, case, report, user, trigger="submitted")
@@ -702,7 +702,7 @@ def update_status(
                 raise HTTPException(status_code=403, detail="Only an admin can finalize an in-review case")
         else:
             require_role_edit(user)
-        report = _report_for_export(case)
+        report = _report_for_export(db, case)
         block = _quote_integrity_blocks_finalize(report)
         if block:
             raise HTTPException(status_code=400, detail=block)
@@ -791,7 +791,7 @@ def defensibility(
 ):
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
-    report = _report_for_export(case)
+    report = _report_for_export(db, case)
     selected = parse_json_list(case.approved_wac_ids) or [a.wac_code for a in report.allegations]
     integrity = verify_report_quotes(
         allegations=report.allegations,
@@ -814,7 +814,7 @@ def export_docx(
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
     assert_case_not_trashed(case, action="exporting")
-    report = _report_for_export(case)
+    report = _report_for_export(db, case)
     selected = parse_json_list(case.approved_wac_ids) or [a.wac_code for a in report.allegations]
     verify_report_quotes(
         allegations=report.allegations,
@@ -846,7 +846,7 @@ def export_sod(
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
     assert_case_not_trashed(case, action="exporting")
-    report = _report_for_export(case)
+    report = _report_for_export(db, case)
     _ = acknowledge_gaps
     content = build_sod_docx(report)
     filename = f"SOD_{case.case_id_label or case.id}.docx"
@@ -869,7 +869,7 @@ def export_pack(
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
     assert_case_not_trashed(case, action="exporting")
-    report = _report_for_export(case)
+    report = _report_for_export(db, case)
     selected = parse_json_list(case.approved_wac_ids) or [a.wac_code for a in report.allegations]
     from app.schemas import InvestigationAllegation
 
@@ -1106,7 +1106,7 @@ def apply_process_to_report(
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)
     assert_case_editable(case, user)
-    report = _report_for_export(case)
+    report = _report_for_export(db, case)
     bullets = process_entries_to_bullets(list(case.process_entries))
     process = list(report.investigative_process or [])
     if bullets:

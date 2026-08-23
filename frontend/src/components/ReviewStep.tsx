@@ -396,6 +396,19 @@ export function ReviewStep({
   )
   const unconfirmedManualCount = manualReviewCodes.filter((c) => !confirmed.has(codeKey(c))).length
 
+  useEffect(() => {
+    if (!report || !onReportChange) return
+    if (!report.compare_cites_confirmed) return
+    if (allConfirmed) return
+    onReportChange({
+      ...report,
+      compare_cites_confirmed: false,
+      confirmed_allegation_codes: comparisons
+        .filter((c) => confirmed.has(codeKey(c)))
+        .map((c) => c.code),
+    })
+  }, [allConfirmed, confirmed, comparisons, onReportChange, report])
+
   const toggleConfirmActive = () => {
     if (!active) return
     const key = codeKey(active)

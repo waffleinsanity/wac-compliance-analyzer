@@ -18,20 +18,26 @@ TITLE = "Statement of Deficiency Report"
 
 TABLE_HEADERS = (
     "Deficiency Number and Rule Reference",
-    "Observation Findings",
+    "Findings",
     "Plan of Correction",
 )
 
 HEADER_LABELS = {
-    "agency": "Facility Name and Address",
+    "agency": "Agency Name and Address",
     "administrator": "Administrator",
     "inspection_type": "Inspection Type",
     "investigation_start": "Investigation Start Date",
     "investigator_number": "Investigator Number",
     "case_number": "Case Number(s)",
     "license_number": "License Number",
-    "services_type": "BHA/RTF Facility Services Type",
+    "services_type": "BHA/RTF Agency Services Type",
 }
+
+DOH_CONTACT_LINES = (
+    "Department of Health",
+    "P.O. Box 47874, Olympia, WA 98504-7874",
+    "TEL: 360-236-4732",
+)
 
 DISCLAIMER = (
     "Please note that the deficiencies/violations/observations noted in this report "
@@ -41,23 +47,24 @@ DISCLAIMER = (
 
 ENFORCEMENT_RCW_HINT = (
     "You may receive notice of the Department's intent to take enforcement action "
-    "against your license under RCW 71.24.037, 71.12, WAC 246-337-021 and "
-    "WAC 246-341-0335 based on any deficiency listed on the enclosed report. "
-    "Your submission of a Plan of Correction or any other action you take in "
-    "response to this Statement of Deficiency Report may be taken into consideration "
-    "in an enforcement action but does not prevent the Department from proceeding "
-    "with enforcement action."
+    "against your license under RCW 71.24.037 and WAC 246-341-0335 based on any "
+    "deficiency listed on the enclosed report. Your submission of a Plan of Correction "
+    "or any other action you take in response to this Statement of Deficiency Report "
+    "may be taken into consideration in an enforcement action but does not prevent "
+    "the Department from proceeding with enforcement action."
 )
 
 POC_ELEMENTS = (
-    "The regulation number",
-    "How the deficiency will be corrected",
-    "Who is responsible for making the correction",
-    "When the correction will be completed",
-    "How you will ensure that the deficiency has been successfully corrected. "
-    "When monitoring activities are planned, objectives must be measurable and "
-    "quantifiable. Please include information about the monitoring time frame and "
-    "number of planned observations.",
+    "The regulation number;",
+    "How the deficiency will be corrected;",
+    "Who is responsible for making the correction;",
+    "When the correction will be completed;",
+    (
+        "How you will assure that the deficiency has been successfully corrected. "
+        "When monitoring activities are planned, objectives must be measurable and "
+        "quantifiable. Please include information about the monitoring time frame and "
+        "number of planned observations."
+    ),
 )
 
 DOH_RETURN_BLOCK = (
@@ -86,41 +93,59 @@ def cover_letter_paragraphs(
     inv = (investigator_number or "").strip() or "N/A"
     dear = admin if admin != "N/A" else "Administrator"
     dated = (letter_date or "").strip()
-    lines = [
+
+    def _blank() -> str:
+        return ""
+
+    lines: list[str] = [
         "STATE OF WASHINGTON",
+        _blank(),
         "DEPARTMENT OF HEALTH",
+        _blank(),
         "PO Box 47874, Olympia, Washington 98504-7874",
+        _blank(),
+        _blank(),
     ]
     if dated:
-        lines.append(dated)
+        lines.extend([dated, _blank()])
     lines.extend(
         [
             name,
             addr,
-            f"Dear: {dear}:",
+            _blank(),
+            f"Dear {dear}:",
+            _blank(),
             (
-                f"This letter contains information regarding the investigation at {name} "
+                f"This letter contains information regarding the recent investigation at {name} "
                 f"by the Washington State Department of Health. Your state licensing investigation "
                 f"was completed on {done}."
             ),
+            _blank(),
             (
                 "During the investigation, deficient practice was found in the areas listed on the "
                 "attached Statement of Deficiency Report. A written Plan of Correction is required "
                 "for each deficiency listed on the Statement of Deficiency Report and will be due "
                 f"{poc_due_days} days after you receive this letter."
             ),
+            _blank(),
             "Each plan of correction statement must include the following:",
-            *[f"- {item}" for item in POC_ELEMENTS],
+            *POC_ELEMENTS,
+            _blank(),
             "You are not required to write the Plan of Correction on the Statement of Deficiency Report.",
+            _blank(),
             ENFORCEMENT_RCW_HINT,
+            _blank(),
             (
-                "Please email the report and Plans of Correction to the Investigator. You can also "
-                "sign and send the original reports and Plans of Correction to the Investigator at "
-                "the following address:"
+                "Please sign and return the original reports and Plans of Correction to the "
+                "following address:"
             ),
+            _blank(),
             f"Investigator: {inv}",
-            DOH_RETURN_BLOCK,
-            "Enclosures: Statement of Deficiency Report; Plan of Correction Instructions",
+            *DOH_RETURN_BLOCK.split("\n"),
+            _blank(),
+            _blank(),
+            "Enclosures:\tStatement of Deficiency Report",
+            "Plan of Correction Instructions",
         ]
     )
     return lines

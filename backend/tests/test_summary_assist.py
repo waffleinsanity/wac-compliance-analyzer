@@ -47,7 +47,7 @@ def test_collaborator_block_template_wording():
     assert "in compliance" not in block.lower()
 
 
-def test_build_summary_includes_collaborator_not_compliance():
+def test_build_summary_excludes_collaborator_block():
     inv = InvestigatorResult(
         intake_summary="test",
         areas_of_concern=["Whether staffing documentation matches authorized scope."],
@@ -65,11 +65,46 @@ def test_build_summary_includes_collaborator_not_compliance():
         ],
         inv,
     )
-    assert "Investigator collaborator notes" in text
-    assert "Areas of concern:" in text
-    assert "Suggested methods" in text
+    assert "Investigator collaborator notes" not in text
+    assert "Areas of concern:" not in text
+    assert "Suggested methods" not in text
+    assert "authorized for this investigation" in text
     assert "in compliance" not in text.lower()
     assert "out of compliance" not in text.lower()
+
+
+def test_strip_collaborator_from_summary_removes_legacy_block():
+    from app.services.investigation import strip_collaborator_from_summary
+
+    shell = (
+        "The Department of Health (DOH) received a complaint.\n\n"
+        "Evidentiary findings will be documented after investigation activities.\n\n"
+    )
+    block = format_collaborator_summary_block(
+        areas_of_concern=["WAC 246-341-0410 staffing gaps."],
+        investigation_methods=["Interview the administrator."],
+    )
+    cleaned = strip_collaborator_from_summary(shell + block)
+    assert "Investigator collaborator notes" not in cleaned
+    assert "Areas of concern:" not in cleaned
+    assert "Suggested methods" not in cleaned
+    assert "DOH" in cleaned
+    assert "Evidentiary findings will be documented" in cleaned
+    assert strip_collaborator_from_summary(shell) == shell.strip()
+    # Summary that is only the collaborator block becomes empty.
+    assert strip_collaborator_from_summary(block) == ""
+    # Header-less Areas + Suggested methods pair is also removed.
+    orphan = (
+        shell
+        + "Areas of concern:\n"
+        + "- Staffing gaps.\n\n"
+        + "Suggested methods to begin or strengthen the investigation:\n"
+        + "- Interview staff.\n"
+    )
+    orphan_clean = strip_collaborator_from_summary(orphan)
+    assert "Areas of concern:" not in orphan_clean
+    assert "Suggested methods" not in orphan_clean
+    assert "DOH" in orphan_clean
 
 
 def test_llm_prompt_uses_redacted_complaint_not_raw_ssn():

@@ -123,12 +123,16 @@ def build_report_plain_text(report: InvestigationReport) -> str:
     for step in report.investigative_process or []:
         lines.append(str(step))
 
+    from app.services.investigation import strip_collaborator_from_summary
+
+    summary_body = strip_collaborator_from_summary(report.summary_of_findings)
+
     lines.extend(
         [
             "",
             SUMMARY_HEADER,
             "",
-            (report.summary_of_findings or "").strip(),
+            summary_body,
             "",
             CONCLUSION_HEADER,
             "",
@@ -151,6 +155,8 @@ def build_report_plain_text(report: InvestigationReport) -> str:
 
 def sync_report_text(report: InvestigationReport) -> InvestigationReport:
     """Regenerate report_text from structured fields (keeps Copy/DOCX/save aligned)."""
+    from app.services.investigation import strip_collaborator_from_summary
+
     det, ref = parse_actions_fields(
         report.actions or "",
         determination=getattr(report, "action_determination", "") or "",
@@ -159,5 +165,7 @@ def sync_report_text(report: InvestigationReport) -> InvestigationReport:
     report.action_determination = det
     report.action_referral = ref
     report.actions = compose_actions_text(det, ref)
+    # Keep Summary document body free of in-app collaborator notes (legacy drafts).
+    report.summary_of_findings = strip_collaborator_from_summary(report.summary_of_findings)
     report.report_text = build_report_plain_text(report)
     return report

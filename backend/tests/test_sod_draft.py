@@ -115,9 +115,13 @@ def test_sod_pack_export_matches_blank_shell():
     assert "Plan of Correction Instructions" in text
     assert "Deficiency Number and Rule Reference" in text
     assert FINDINGS_INCLUDED_LABEL in text
-    assert "Observation Findings" in text
-    assert "Facility Name and Address" in text
-    assert "BHA/RTF Facility Services Type" in text
+    assert "Findings" in text
+    assert "Agency Name and Address" in text
+    assert "BHA/RTF Agency Services Type" in text
+    # Pack order: cover letter, report title, POC instructions last.
+    title_pos = text.index(TITLE)
+    poc_pos = text.index("Plan of Correction Instructions")
+    assert title_pos < poc_pos
 
 
 def test_validate_sod_flags_empty_findings():

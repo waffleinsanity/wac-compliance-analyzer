@@ -164,6 +164,7 @@ export function EvidenceStep({
       await onCaseRefresh?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
       setLoading(false)
     }
   }

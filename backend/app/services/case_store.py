@@ -60,6 +60,10 @@ def report_from_json(raw: str | None) -> InvestigationReport | None:
         report.investigative_process = rewrite_legacy_document_review_lines(
             report.investigative_process
         )
+    # Collaborator notes are in-app only; never leave them in Summary document body.
+    from app.services.investigation import strip_collaborator_from_summary
+
+    report.summary_of_findings = strip_collaborator_from_summary(report.summary_of_findings)
     return report
 
 

@@ -285,6 +285,17 @@ _COLLABORATOR_FOOTER = (
     "[Human investigators complete evidentiary findings after interviews, "
     "observations, and document review.]"
 )
+# Match the in-app collaborator marker despite dash / spacing variants.
+_COLLABORATOR_MARKER_RE = re.compile(
+    r"(?is)Investigator\s+collaborator\s+notes\b",
+)
+# Collaborator body without a recognizable header (Areas + Suggested methods pair).
+_COLLABORATOR_SECTIONS_RE = re.compile(
+    r"(?is)(?:^|\n)\s*Areas of concern:\s*\n"
+    r"(?:[ \t]*-.+\n)+"
+    r"\s*\nSuggested methods to begin or strengthen the investigation:\s*\n"
+    r"[\s\S]*$",
+)
 
 
 def format_collaborator_summary_block(
@@ -292,7 +303,7 @@ def format_collaborator_summary_block(
     areas_of_concern: list[str] | None = None,
     investigation_methods: list[str] | None = None,
 ) -> str:
-    """Marked template block for Summary of Findings (assistive, not determinations)."""
+    """Marked template block for in-app collaborator panel only (never IR body text)."""
     areas = [a.strip() for a in (areas_of_concern or []) if a and a.strip()]
     methods = [m.strip() for m in (investigation_methods or []) if m and m.strip()]
     if not areas and not methods:
@@ -310,15 +321,38 @@ def format_collaborator_summary_block(
     return "\n".join(lines).strip()
 
 
+def strip_collaborator_from_summary(text: str | None) -> str:
+    """Remove embedded collaborator notes from Summary of Findings (document body only)."""
+    body = (text or "").replace("\u00a0", " ").replace("\u200b", "").strip()
+    if not body:
+        return ""
+    # Hard cut at the marked header through end of Summary (most reliable).
+    m = _COLLABORATOR_MARKER_RE.search(body)
+    if m:
+        body = body[: m.start()].rstrip()
+    else:
+        body = _COLLABORATOR_SECTIONS_RE.sub("", body).rstrip()
+    body = body.replace(_COLLABORATOR_FOOTER, "").strip()
+    # Drop orphan footer / methods label if header was already removed.
+    body = re.sub(
+        r"(?is)\nSuggested methods to begin or strengthen the investigation:\s*\n[\s\S]*$",
+        "",
+        body,
+    ).strip()
+    return re.sub(r"\n{3,}", "\n\n", body).strip()
+
+
 def build_summary_of_findings(
     intake_text: str,
     allegations: list[InvestigationAllegation],
     investigator: InvestigatorResult | None = None,
 ) -> str:
-    """Framework starter for Summary of Findings — scope bridge, allegation mapping, collaborator assist.
+    """Framework starter for Summary of Findings — scope bridge and allegation mapping.
 
+    Collaborator assist stays on structured report fields for the in-app panel only.
     Does not invent investigative outcomes; evidentiary findings remain human-owned.
     """
+    del investigator  # Structured fields are set on the report separately.
     sections: list[str] = [_summary_intake_opener(intake_text), _SUMMARY_SCOPE_BRIDGE]
     for allegation in allegations:
         sections.append(
@@ -329,14 +363,7 @@ def build_summary_of_findings(
             )
         )
     sections.append(_SUMMARY_FINDINGS_SHELL)
-    if investigator is not None:
-        block = format_collaborator_summary_block(
-            areas_of_concern=investigator.areas_of_concern,
-            investigation_methods=investigator.investigation_methods,
-        )
-        if block:
-            sections.append(block)
-    return "\n\n".join(sections)
+    return strip_collaborator_from_summary("\n\n".join(sections))
 
 
 def build_report_text(report: InvestigationReport) -> str:

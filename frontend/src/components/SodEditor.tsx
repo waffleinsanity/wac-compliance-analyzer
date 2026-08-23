@@ -20,6 +20,7 @@ import {
   FINDINGS_INCLUDED_LABEL,
   pocInstructionParagraphs,
   SOD_DISCLAIMER,
+  SOD_DOH_CONTACT_LINES,
   SOD_HEADER_LABELS,
   SOD_TABLE_HEADERS,
   SOD_TITLE,
@@ -121,21 +122,26 @@ function SodDocumentPreview({
         </p>
       </div>
       <div className="ir-doc-scroll">
-        {/* Cover letter */}
+        {/* Page 1: cover letter */}
         <div className="ir-doc-page sod-doc-page mb-6" role="document" aria-label="SOD cover letter">
           {cover.map((line, i) => {
-            const isLetterhead = i < 3
-            const isDear = line.startsWith('Dear:')
-            const isBullet = line.startsWith('- ')
+            if (!line) {
+              return <p key={`cover-${i}`} className="sod-body h-3" aria-hidden />
+            }
+            const isLetterhead = line === 'STATE OF WASHINGTON' || line === 'DEPARTMENT OF HEALTH'
+            const isDear = line.startsWith('Dear ')
+            const isInvestigator = line.startsWith('Investigator:')
+            const isEnclosure = line.startsWith('Enclosures:')
             return (
               <p
                 key={`cover-${i}`}
                 className={clsx(
                   'sod-body',
                   isLetterhead && 'text-center font-bold uppercase tracking-wide',
-                  isDear && 'mt-4',
-                  isBullet && 'pl-4',
-                  !isLetterhead && !isDear && 'mt-2',
+                  isDear && 'mt-1',
+                  isInvestigator && 'mt-2',
+                  isEnclosure && 'mt-4',
+                  !isLetterhead && !isDear && 'mt-1',
                 )}
               >
                 {line}
@@ -144,9 +150,89 @@ function SodDocumentPreview({
           })}
         </div>
 
-        {/* POC instructions */}
+        {/* Page 2: Statement of Deficiency Report */}
         <div
           className="ir-doc-page sod-doc-page mb-6"
+          role="document"
+          aria-label="Statement of Deficiency Report"
+        >
+          <h1 className="ir-doc-title">{sod.title || SOD_TITLE}</h1>
+          <div className="mb-4 space-y-0">
+            {SOD_DOH_CONTACT_LINES.map((line) => (
+              <p key={line} className="sod-body">
+                {line}
+              </p>
+            ))}
+          </div>
+
+          <table className="sod-meta-table mb-4">
+            <tbody>
+              {Array.from({ length: Math.ceil(headerCells.length / 2) }, (_, row) => {
+                const left = headerCells[row * 2]
+                const right = headerCells[row * 2 + 1]
+                return (
+                  <tr key={`meta-${row}`}>
+                    <td>
+                      <span className="sod-meta-label">{left[0]}</span>
+                      <span className="sod-meta-value whitespace-pre-wrap">{left[1]}</span>
+                    </td>
+                    <td>
+                      {right ? (
+                        <>
+                          <span className="sod-meta-label">{right[0]}</span>
+                          <span className="sod-meta-value whitespace-pre-wrap">{right[1]}</span>
+                        </>
+                      ) : null}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+
+          <p className="sod-body mb-4 italic">{SOD_DISCLAIMER}</p>
+
+          {!defs.length ? (
+            <p className="sod-body italic">
+              No deficiencies drafted yet. Complete Compare with approved WACs so duties seed this
+              pack.
+            </p>
+          ) : (
+            <table className="sod-def-table">
+              <thead>
+                <tr>
+                  {SOD_TABLE_HEADERS.map((h) => (
+                    <th key={h}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {defs.map((d, i) => {
+                  const cite = d.regulation_cite || 'Cite pending'
+                  const ruleCol = [cite, (d.regulation_text || '').trim()].filter(Boolean).join('\n\n')
+                  const findings = formatFindingsColumn(d)
+                  return (
+                    <tr key={d.id || i}>
+                      <td>
+                        <PaperBlock text={ruleCol} className="!mb-0" />
+                      </td>
+                      <td>
+                        <PaperBlock text={findings || '—'} className="!mb-0" />
+                      </td>
+                      <td className="sod-poc-blank">
+                        <span className="sr-only">Plan of Correction left blank for facility</span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Page 3+: Plan of Correction Instructions */}
+        <div
+          className="ir-doc-page sod-doc-page"
           role="document"
           aria-label="Plan of Correction Instructions"
         >
@@ -176,84 +262,6 @@ function SodDocumentPreview({
               </p>
             )
           })}
-        </div>
-
-        {/* Deficiency report */}
-        <div
-          className="ir-doc-page sod-doc-page"
-          role="document"
-          aria-label="Statement of Deficiency Report"
-        >
-          <h1 className="ir-doc-title">{sod.title || SOD_TITLE}</h1>
-          <p className="sod-body mb-4 italic">{SOD_DISCLAIMER}</p>
-
-          <table className="sod-meta-table mb-4">
-            <tbody>
-              {Array.from({ length: Math.ceil(headerCells.length / 2) }, (_, row) => {
-                const left = headerCells[row * 2]
-                const right = headerCells[row * 2 + 1]
-                return (
-                  <tr key={`meta-${row}`}>
-                    <td>
-                      <span className="sod-meta-label">{left[0]}</span>
-                      <span className="sod-meta-value whitespace-pre-wrap">{left[1]}</span>
-                    </td>
-                    <td>
-                      {right ? (
-                        <>
-                          <span className="sod-meta-label">{right[0]}</span>
-                          <span className="sod-meta-value whitespace-pre-wrap">{right[1]}</span>
-                        </>
-                      ) : null}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-
-          {!defs.length ? (
-            <p className="sod-body italic">
-              No deficiencies drafted yet. Complete Compare with approved WACs so duties seed this
-              pack.
-            </p>
-          ) : (
-            <table className="sod-def-table">
-              <thead>
-                <tr>
-                  {SOD_TABLE_HEADERS.map((h) => (
-                    <th key={h}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {defs.map((d, i) => {
-                  const cite = d.regulation_cite || 'Cite pending'
-                  const ruleCol = [
-                    `Deficiency ${i + 1}`,
-                    cite,
-                    (d.regulation_text || '').trim(),
-                  ]
-                    .filter(Boolean)
-                    .join('\n\n')
-                  const findings = formatFindingsColumn(d)
-                  return (
-                    <tr key={d.id || i}>
-                      <td>
-                        <PaperBlock text={ruleCol} className="!mb-0" />
-                      </td>
-                      <td>
-                        <PaperBlock text={findings || '—'} className="!mb-0" />
-                      </td>
-                      <td className="sod-poc-blank">
-                        <span className="sr-only">Plan of Correction left blank for facility</span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
         </div>
       </div>
     </div>

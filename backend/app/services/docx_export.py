@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_UNDERLINE
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_UNDERLINE
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
@@ -32,6 +32,7 @@ from app.services.ir_format import (
 )
 from app.services.sod_blank import (
     DISCLAIMER,
+    DOH_CONTACT_LINES,
     HEADER_LABELS,
     TABLE_HEADERS,
     TITLE as SOD_TITLE,
@@ -253,9 +254,11 @@ def build_investigation_docx(
     _add_blank(doc, STYLE_BODY)
     _add_section_heading(doc, SUMMARY_HEADER)
     _add_blank(doc, STYLE_BODY)
+    from app.services.investigation import strip_collaborator_from_summary
+
     _add(
         doc,
-        (report.summary_of_findings or "").strip(),
+        strip_collaborator_from_summary(report.summary_of_findings),
         STYLE_BODY,
         size_pt=SIZE_BODY,
         indent=True,
@@ -337,9 +340,10 @@ def build_deficiency_cite_sheet(report: InvestigationReport | dict[str, Any]) ->
 
 
 def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
-    """Facility-facing SOD pack: cover letter, POC instructions, report table.
+    """Facility-facing SOD pack: cover letter, report table, POC instructions.
 
-    Identifier key is intentionally omitted. Plan of Correction column stays blank.
+    Page order matches peer BHA samples: cover letter, Statement of Deficiency Report,
+    then Plan of Correction Instructions. Identifier key is omitted. POC column stays blank.
     """
     if isinstance(report, InvestigationReport):
         data = report.model_dump()
@@ -380,6 +384,11 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
         run.font.name = "Arial"
         run.bold = bold
 
+    def _page_break() -> None:
+        para = doc.add_paragraph()
+        run = para.add_run()
+        run.add_break(WD_BREAK.PAGE)
+
     for line in cover_letter_paragraphs(
         facility_name=facility_name,
         facility_address=facility_address,
@@ -387,32 +396,19 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
         completed_on=dates,
         investigator_number=investigator,
         poc_due_days=poc,
-        letter_date=dates,
     ):
+        if not line:
+            doc.add_paragraph()
+            continue
         _p(line, bold=line.startswith("STATE OF WASHINGTON") or line.startswith("DEPARTMENT OF HEALTH"))
 
-    doc.add_paragraph()
+    _page_break()
     _p(SOD_TITLE, bold=True, size=14.0, center=True)
-    _p("Department of Health")
-    _p("P.O. Box 47874, Olympia, WA 98504-7874")
-    _p("TEL: 360-236-4732")
-    _p(DISCLAIMER)
-
     doc.add_paragraph()
-    for line in poc_instruction_paragraphs():
-        heading = line in {
-            "Plan of Correction Instructions",
-            "Introduction",
-            "Descriptive Content",
-            "Completion Dates",
-            "Continued Monitoring",
-            "Checklist:",
-            "Approval of POC",
-            "Questions?",
-        }
-        _p(line, bold=heading)
-
+    for contact in DOH_CONTACT_LINES:
+        _p(contact)
     doc.add_paragraph()
+
     meta = doc.add_table(rows=4, cols=2)
     meta.style = "Table Grid"
     meta_rows = [
@@ -444,6 +440,9 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
                     run.font.name = "Arial"
 
     doc.add_paragraph()
+    _p(DISCLAIMER)
+    doc.add_paragraph()
+
     table = doc.add_table(rows=1, cols=3)
     table.style = "Table Grid"
     hdr = table.rows[0].cells
@@ -466,10 +465,10 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
         )
         row[2].text = ""
     else:
-        for idx, d in enumerate(deficiencies, start=1):
+        for d in deficiencies:
             row = table.add_row().cells
             cite_parts = [
-                f"{idx}. {d.get('regulation_cite') or ''}",
+                (d.get("regulation_cite") or "").strip(),
                 (d.get("regulation_text") or "").strip(),
             ]
             row[0].text = "\n\n".join(p for p in cite_parts if p)
@@ -480,6 +479,20 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
                     for run in paragraph.runs:
                         run.font.size = Pt(11)
                         run.font.name = "Arial"
+
+    _page_break()
+    for line in poc_instruction_paragraphs():
+        heading = line in {
+            "Plan of Correction Instructions",
+            "Introduction",
+            "Descriptive Content",
+            "Completion Dates",
+            "Continued Monitoring",
+            "Checklist:",
+            "Approval of POC",
+            "Questions?",
+        }
+        _p(line, bold=heading)
 
     buf = io.BytesIO()
     doc.save(buf)

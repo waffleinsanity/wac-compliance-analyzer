@@ -29,6 +29,7 @@ import {
   quoteFailureLabel,
 } from '../investigatorLabels'
 import { normalizeAllegationLine, normalizeReportAllegations } from '../allegationFormat'
+import { findRemovalSpans, isFacilityPlaceholder, stripCollaboratorFromSummary } from '../contentReview'
 import {
   FINDING_PHRASES,
   PROCESS_LABELS,
@@ -48,7 +49,6 @@ import {
   mergeDocumentReviewLines,
   rewriteLegacyDocumentReviewLines,
 } from '../documentReviewFormat'
-import { findRemovalSpans, isFacilityPlaceholder } from '../contentReview'
 import { HighlightedProse, RemovalReviewHint } from './HighlightedProse'
 import {
   ACTION_DETERMINATION_CHOICES,
@@ -198,7 +198,7 @@ function buildPlainText(report: InvestigationReport): string {
     '',
     'Summary of Findings (Narrative overview of the results of investigation.)',
     '',
-    report.summary_of_findings,
+    stripCollaboratorFromSummary(report.summary_of_findings),
     '',
     'Conclusion/ Results of Investigation',
     '',
@@ -288,6 +288,8 @@ function DocumentPreview({
   const byCode = Object.fromEntries(report.conclusions.map((c) => [c.wac_code, c]))
   const { determination, referral } = parseActionsFields(report)
   const editable = Boolean(canEdit && onChange)
+  // Document body never includes collaborator notes (in-app panel only).
+  const summaryForDoc = stripCollaboratorFromSummary(report.summary_of_findings)
 
   const patch = (partial: Partial<InvestigationReport>) => {
     if (!onChange) return
@@ -477,10 +479,10 @@ function DocumentPreview({
               title="Summary of Findings"
               hint="(Narrative overview of the results of investigation.)"
             />
-            {report.summary_of_findings ? (
+            {summaryForDoc ? (
               <div className="ir-body ir-indent">
                 <HighlightedProse
-                  text={report.summary_of_findings}
+                  text={summaryForDoc}
                   paper
                   className="text-[12pt] leading-[1.45] text-black"
                 />
@@ -669,6 +671,13 @@ export function InvestigationReportEditor({
     setInfo('')
   }, [externalKey, initial])
 
+  // Persist-strip: if a legacy draft still embeds collaborator notes in Summary, drop them from state.
+  useEffect(() => {
+    const cleaned = stripCollaboratorFromSummary(report.summary_of_findings)
+    if (cleaned === (report.summary_of_findings || '').trim()) return
+    setReport((prev) => ({ ...prev, summary_of_findings: cleaned }))
+  }, [report.summary_of_findings])
+
   useEffect(() => {
     if (syncingFromParent.current) {
       syncingFromParent.current = false
@@ -731,7 +740,7 @@ export function InvestigationReportEditor({
       processFields.observations,
       processFields.interviews,
       processFields.documentReview,
-      report.summary_of_findings || '',
+      stripCollaboratorFromSummary(report.summary_of_findings || ''),
       ...(report.conclusions || []).map((c) => c.result || ''),
     ]
     return blocks.some((block) => findRemovalSpans(block).length > 0)
@@ -1578,9 +1587,10 @@ export function InvestigationReportEditor({
               <FileText className="h-4 w-4 text-tide-600" /> Summary of Findings
             </h3>
             <p className="mb-3 font-sans text-xs text-ink-400">
-              Framework starter for authorized WAC/RCW selections — complete the findings narrative
-              after investigation activities. Collaborator notes assist your work; they are not
-              compliance findings. Keep patient identifiers out of free-text pastes.
+              Framework starter for authorized WAC/RCW selections. Complete the findings narrative
+              after investigation activities. Collaborator notes stay in this app only; they are not
+              written into Form preview or DOCX export. Keep patient identifiers out of free-text
+              pastes.
             </p>
 
             {(report.areas_of_concern?.length || report.investigation_methods?.length || report.clarifying_questions?.length) ? (
@@ -1593,12 +1603,13 @@ export function InvestigationReportEditor({
                     {report.llm_assist_used
                       ? `Assistive draft${report.llm_model ? ` · ${report.llm_model}` : ''}`
                       : 'Local assistive draft'}
-                    {' · '}saved with this case
+                    {' · '}in-app only
                   </p>
                 </div>
                 <p className="mb-3 font-sans text-xs text-ink-600 dark:text-ink-300">
-                  Suggestions to begin or strengthen the investigation. Edit the Summary below as you
-                  gather evidence; final determinations stay with the human investigator.
+                  Suggestions to begin or strengthen the investigation. Not part of the Investigation
+                  Report document. Edit the Summary below as you gather evidence; final
+                  determinations stay with the human investigator.
                 </p>
                 {!!report.areas_of_concern?.length && (
                   <div className="mb-3">
@@ -1641,10 +1652,17 @@ export function InvestigationReportEditor({
 
             <textarea
               className="input min-h-[200px] font-serif leading-relaxed"
-              value={naIfEmpty(report.summary_of_findings)}
-              onChange={(e) => setReport((p) => ({ ...p, summary_of_findings: e.target.value }))}
+              value={naIfEmpty(stripCollaboratorFromSummary(report.summary_of_findings))}
+              onChange={(e) =>
+                setReport((p) => ({
+                  ...p,
+                  summary_of_findings: stripCollaboratorFromSummary(e.target.value),
+                }))
+              }
             />
-            <RemovalReviewHint text={naIfEmpty(report.summary_of_findings)} />
+            <RemovalReviewHint
+              text={naIfEmpty(stripCollaboratorFromSummary(report.summary_of_findings))}
+            />
           </section>
 
           {/* Conclusions — DOH sentence with inline finding dropdown */}

@@ -95,6 +95,29 @@ def test_plain_text_matches_blank_shell():
     assert "246-341-0410: Pending Investigation" not in text
 
 
+def test_export_strips_collaborator_notes_from_summary():
+    report = _sample_report()
+    report.summary_of_findings = (
+        "Pending investigation narrative.\n\n"
+        "Investigator collaborator notes (template — not findings):\n\n"
+        "Areas of concern:\n"
+        "- Staffing gaps under WAC 246-341-0410.\n\n"
+        "[Human investigators complete evidentiary findings after interviews, "
+        "observations, and document review.]"
+    )
+    report.areas_of_concern = ["Staffing gaps under WAC 246-341-0410."]
+    plain = build_report_plain_text(report)
+    assert "Pending investigation narrative." in plain
+    assert "Investigator collaborator notes" not in plain
+    assert "Areas of concern:" not in plain
+    raw = build_investigation_docx(report)
+    doc = Document(io.BytesIO(raw))
+    joined = "\n".join((p.text or "") for p in doc.paragraphs)
+    assert "Pending investigation narrative." in joined
+    assert "Investigator collaborator notes" not in joined
+    assert report.summary_of_findings == "Pending investigation narrative."
+
+
 def test_docx_export_uses_blank_styles_not_heading2_or_bullets():
     raw = build_investigation_docx(_sample_report())
     doc = Document(io.BytesIO(raw))
