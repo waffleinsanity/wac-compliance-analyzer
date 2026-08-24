@@ -53,13 +53,67 @@ def read_blank_sod_template_bytes() -> bytes:
 
 
 def _set_paragraph_text(paragraph, text: str) -> None:
+    """Set paragraph text; trailing Unicode superscripts become Word superscript runs."""
     text = text if text is not None else ""
+    from app.services.evidence_log import strip_trailing_superscripts
+
+    body, marks = strip_trailing_superscripts(text)
+    # Clear all existing runs
+    for run in list(paragraph.runs):
+        run.text = ""
     if paragraph.runs:
-        paragraph.runs[0].text = text
-        for run in paragraph.runs[1:]:
-            run.text = ""
+        paragraph.runs[0].text = body
     else:
-        paragraph.add_run(text)
+        paragraph.add_run(body)
+    if not marks:
+        return
+    digits = marks.translate(str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789"))
+    for run in list(paragraph.runs[1:]):
+        run.text = ""
+    # Keep only first run as body; add a fresh superscript run
+    while len(paragraph.runs) > 1:
+        r = paragraph.runs[-1]
+        r._r.getparent().remove(r._r)
+    sup = paragraph.add_run(digits)
+    try:
+        sup.font.superscript = True
+    except Exception:
+        pass
+
+
+def _annotate_deficiency_for_exhibits(deficiency: dict[str, Any] | Any, by_id: dict) -> dict[str, Any]:
+    from app.services.evidence_log import annotate_finding_text_with_exhibits
+
+    if hasattr(deficiency, "model_dump"):
+        d = deficiency.model_dump()
+    else:
+        d = dict(deficiency or {})
+    fins = []
+    for f in d.get("findings") or []:
+        fd = dict(f) if not isinstance(f, dict) else dict(f)
+        fd["text"] = annotate_finding_text_with_exhibits(
+            fd.get("text") or "",
+            fd.get("evidence_ids") or [],
+            by_id,
+        )
+        fins.append(fd)
+    d["findings"] = fins
+    items = []
+    for it in d.get("items") or []:
+        itd = dict(it) if not isinstance(it, dict) else dict(it)
+        it_fins = []
+        for f in itd.get("findings") or []:
+            fd = dict(f) if not isinstance(f, dict) else dict(f)
+            fd["text"] = annotate_finding_text_with_exhibits(
+                fd.get("text") or "",
+                fd.get("evidence_ids") or [],
+                by_id,
+            )
+            it_fins.append(fd)
+        itd["findings"] = it_fins
+        items.append(itd)
+    d["items"] = items
+    return d
 
 
 def _replace_in_paragraph(paragraph, old: str, new: str) -> bool:
@@ -155,9 +209,17 @@ def _findings_block_needs_verify(text: str) -> bool:
     return low.startswith("based on ") or low.startswith("failure to ")
 
 
-def _set_findings_cell_with_verify(cell, deficiency: dict[str, Any] | Any) -> None:
+def _set_findings_cell_with_verify(
+    cell,
+    deficiency: dict[str, Any] | Any,
+    *,
+    exhibit_by_id: dict | None = None,
+) -> None:
     """Write findings as separate paragraphs; yellow-shade seed Based on / Failure to only."""
-    raw = format_findings_column(deficiency)
+    d = deficiency
+    if exhibit_by_id:
+        d = _annotate_deficiency_for_exhibits(deficiency, exhibit_by_id)
+    raw = format_findings_column(d)
     blocks = [b.strip() for b in raw.split("\n\n") if b.strip()]
     if not blocks:
         _set_unique_cell_text(cell, "")
@@ -270,11 +332,18 @@ def _embed_png_logo(docx_bytes: bytes) -> bytes:
     return out.getvalue()
 
 
-def fill_sod_template(report: InvestigationReport | dict[str, Any] | None = None) -> Document:
+def fill_sod_template(
+    report: InvestigationReport | dict[str, Any] | None = None,
+    *,
+    exhibits: list[Any] | None = None,
+) -> Document:
     """Open Investigation SOD Template.docx and fill case / deficiency fields."""
+    from app.services.evidence_log import exhibit_map_by_id
+
     data = _report_dict(report)
     sod = _ensure_sod_payload(data)
     fi = data.get("facility_info") or {}
+    exhibit_by_id = exhibit_map_by_id(exhibits) if exhibits else {}
 
     facility_name = (sod.get("facility_name") or "").strip()
     facility_address = (sod.get("facility_address") or fi.get("facility_address") or "").strip()
@@ -388,15 +457,19 @@ def fill_sod_template(report: InvestigationReport | dict[str, Any] | None = None
             ]
             # Column 0 = PDF-backed statute authority: never yellow-shade.
             _set_unique_cell_text(row[0], "\n\n".join(p for p in cite_parts if p))
-            _set_findings_cell_with_verify(row[1], d)
+            _set_findings_cell_with_verify(row[1], d, exhibit_by_id=exhibit_by_id or None)
             _set_unique_cell_text(row[2], "")
 
     return doc
 
 
-def build_sod_docx_bytes(report: InvestigationReport | dict[str, Any] | None = None) -> bytes:
+def build_sod_docx_bytes(
+    report: InvestigationReport | dict[str, Any] | None = None,
+    *,
+    exhibits: list[Any] | None = None,
+) -> bytes:
     """Facility SOD: filled Investigation SOD Template (same bytes for preview + export)."""
-    doc = fill_sod_template(report)
+    doc = fill_sod_template(report, exhibits=exhibits)
     buf = io.BytesIO()
     doc.save(buf)
     # Browser preview cannot paint WMF; PNG seal keeps preview/export visually aligned.

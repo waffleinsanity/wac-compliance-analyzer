@@ -178,7 +178,7 @@ export function composeAllegationFromDuties(
   return normalizeAllegationLine(`${opener}, by having failed to ${parts.join('; ')}.`)
 }
 
-import { stripCollaboratorFromSummary } from './contentReview'
+import { cleanSummaryForDocument } from './summaryFindingsFormat'
 
 /** Normalize allegation fields on an investigate/case report payload (in place). */
 export function normalizeReportAllegations<T extends {
@@ -204,10 +204,10 @@ export function normalizeReportAllegations<T extends {
     }
   }
   if (report.summary_of_findings != null) {
-    report.summary_of_findings = stripCollaboratorFromSummary(report.summary_of_findings)
+    report.summary_of_findings = cleanSummaryForDocument(report.summary_of_findings)
   }
   if (report.report_text) {
-    report.report_text = stripCollaboratorFromSummary(
+    report.report_text = cleanSummaryForDocument(
       report.report_text
         .replace(/["“”„]/g, '')
         .replace(/;\s*see also\b.*$/gim, '')

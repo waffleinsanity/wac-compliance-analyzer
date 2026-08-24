@@ -31,8 +31,13 @@ def test_investigate_assault_structure(client):
     assert "Investigative findings (to be completed)" in summary
     assert "…" not in summary
     assert "..." not in summary
-    for wac in case["selected_wacs"]:
-        assert wac in summary or wac.replace("WAC ", "") in summary
+    # Summary narrates evidence vs allegations; WAC cites and allegation lines stay elsewhere.
+    assert "The corresponding allegation asserts:" not in summary
+    assert "is authorized for this investigation because" not in summary
+    for a in data.get("allegations") or []:
+        line = (a.get("allegation_text") or "").strip()
+        if line:
+            assert line not in summary
     assert "primary investigative standard" in (data.get("authority_statement") or "").lower()
     assert data.get("quote_integrity", {}).get("ok") is True, data.get("quote_integrity")
 

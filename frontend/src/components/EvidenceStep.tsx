@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, FileUp, Loader2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Download, FileUp, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
 import {
   api,
@@ -12,6 +12,9 @@ import {
   documentsFromEvidence,
   mergeDocumentReviewLines,
 } from '../documentReviewFormat'
+import { mergeEvidenceIntoSummary, linkEvidenceHitsToSod } from '../summaryFindingsFormat'
+import { useAuth } from '../auth'
+import { canExport } from '../permissions'
 
 type Props = {
   report: InvestigationReport
@@ -65,6 +68,8 @@ export function EvidenceStep({
   onBack,
   onContinue,
 }: Props) {
+  const { user } = useAuth()
+  const exporter = canExport(user?.role, user?.is_admin)
   const fileRef = useRef<HTMLInputElement>(null)
   const [hits, setHits] = useState<EvidenceReviewHit[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -139,13 +144,27 @@ export function EvidenceStep({
   const continueWithSelection = () => {
     const selectedHits = chosen.map((h) => ({ ...h, included_by_default: true }))
     const documents = documentsFromEvidence(caseDetail?.evidence, selectedHits)
+    const sod = linkEvidenceHitsToSod(
+      { ...report, sod: report.sod },
+      selectedHits,
+    )
     const next: InvestigationReport = {
       ...report,
+      sod,
       evidence_review: hits.map((h) => ({
         ...h,
         included_by_default: selected.has(h.id),
       })),
       investigative_process: mergeDocumentReviewLines(report.investigative_process || [], documents),
+      summary_of_findings: mergeEvidenceIntoSummary(
+        report,
+        documents.map((d) => ({
+          title: d.title,
+          documentDate: d.documentDate,
+          excerpt: d.excerpt,
+        })),
+        selectedHits,
+      ),
     }
     onReportChange(next)
     onContinue(next)
@@ -169,6 +188,25 @@ export function EvidenceStep({
     }
   }
 
+  const downloadEvidenceLog = async () => {
+    if (!caseId || !exporter) return
+    setLoading(true)
+    setError('')
+    try {
+      const blob = await api.exportEvidenceLog(caseId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Evidence_Log_${caseId}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Evidence Log download failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -178,10 +216,11 @@ export function EvidenceStep({
             Review exhibits against allegation duties
           </h2>
           <p className="mt-1 max-w-2xl font-sans text-sm text-ink-500">
-            Suggested excerpts are exhibit language that matches the cited Washington
-            WAC/RCW duty in the local statute store. Cross-state citation tables in a
-            facility policy are ignored. Select what applies; this is assistive record
-            review, not a finding and not statute authority.
+            Suggested excerpts are exhibit language matched to the cited Washington WAC/RCW
+            duty using the same local statute store as Compare. Select what applies; Save to
+            Documents drafts those excerpts into Summary of Findings and SOD Findings
+            included. Statute quotes stay PDF-backed; this is assistive record review, not a
+            final compliance determination.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -225,12 +264,38 @@ export function EvidenceStep({
         >
           <FileUp className="h-3.5 w-3.5" /> Attach exhibits
         </button>
+        {exporter && evidenceCount > 0 && (
+          <button
+            type="button"
+            className="btn-ghost !px-2.5 !py-1 text-xs"
+            disabled={!caseId || loading}
+            title="Download Evidence Log.xlsx"
+            onClick={() => void downloadEvidenceLog()}
+          >
+            <Download className="h-3.5 w-3.5" /> Evidence Log
+          </button>
+        )}
         <span className="font-sans text-xs text-ink-400">
           {evidenceCount === 0
             ? 'No exhibits attached'
             : `${evidenceCount} exhibit${evidenceCount === 1 ? '' : 's'} · ${scanned} scanned`}
         </span>
       </div>
+
+      {caseDetail && caseDetail.evidence.length > 0 && (
+        <ul className="space-y-1 rounded-md border border-ink-200 px-3 py-2 dark:border-ink-700">
+          {[...caseDetail.evidence]
+            .sort((a, b) => (a.exhibit_number || 0) - (b.exhibit_number || 0))
+            .map((ev) => (
+              <li key={ev.id} className="flex items-baseline gap-2 font-sans text-xs text-ink-700 dark:text-ink-200">
+                <span className="shrink-0 font-semibold text-ink-500">
+                  #{ev.exhibit_number ?? '—'}
+                </span>
+                <span className="min-w-0 truncate">{ev.title || ev.original_filename}</span>
+              </li>
+            ))}
+        </ul>
+      )}
 
       {loading && (
         <p className="flex items-center gap-2 font-sans text-sm text-ink-500">

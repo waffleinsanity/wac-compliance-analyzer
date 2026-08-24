@@ -220,3 +220,56 @@ def link_evidence_to_finding(
         )
         return sod
     return sod
+
+
+def _cite_key(value: str) -> str:
+    return re.sub(r"\s+", "", (value or "").lower().replace("wac", "").replace("rcw", ""))
+
+
+def link_evidence_hits_to_sod(
+    report: InvestigationReport,
+    hits: list[Any],
+) -> InvestigationReport:
+    """Attach consolidated exhibit findings to matching SOD deficiencies.
+
+    One Findings included row per evidence document per deficiency. Multiple duty
+    hits for the same upload are merged into a single showed-paragraph.
+    """
+    if not report.sod or not report.sod.deficiencies:
+        return report
+    from app.services.evidence_review import (
+        consolidate_hits_by_evidence,
+        format_sod_document_finding,
+        selected_evidence_hits,
+    )
+
+    selected = selected_evidence_hits(hits, included_only=True)
+    for d in report.sod.deficiencies:
+        reg_k = _cite_key(d.regulation_cite or "")
+        if not reg_k:
+            continue
+        matching = [
+            h
+            for h in selected
+            if (ck := _cite_key(str(h.get("cite") or "")))
+            and (ck in reg_k or reg_k in ck)
+        ]
+        if not matching:
+            continue
+        for row in consolidate_hits_by_evidence(matching, included_only=True):
+            eid = str(row.get("evidence_id") or "").strip()
+            if not eid:
+                continue
+            note = format_sod_document_finding(
+                str(row.get("evidence_title") or "document"),
+                str(row.get("excerpt") or ""),
+                cites=list(row.get("cites") or []),
+            )
+            link_evidence_to_finding(
+                report.sod,
+                deficiency_id=d.id,
+                evidence_id=eid,
+                method="document review",
+                text=note[:900],
+            )
+    return report

@@ -642,6 +642,209 @@ _QUOTED_REVIEW_LINE = re.compile(
 )
 
 
+MAX_SUMMARY_FINDINGS = 12
+MAX_SOD_FINDING_CHARS = 900
+
+
+def _exhibit_title_for_finding(title: str) -> str:
+    shown = display_evidence_title(title)
+    return shown.replace('"', "").replace("“", "").replace("”", "").strip() or "document"
+
+
+def _finding_excerpt(excerpt: str, *, max_chars: int = DISPLAY_EXCERPT_CHARS) -> str:
+    body = re.sub(r"\s+", " ", (excerpt or "").strip())
+    body = body.replace('"', "").replace("“", "").replace("”", "")
+    if len(body) > max_chars:
+        body = complete_sentence_excerpt(body, max_chars=max_chars) or body[:max_chars].rsplit(" ", 1)[0]
+    return body.strip().rstrip(".")
+
+
+def _merge_excerpt_parts(parts: list[str], *, max_chars: int) -> str:
+    """Join unique exhibit excerpts into one showed-clause (longest-first dedupe)."""
+    cleaned: list[str] = []
+    for raw in parts:
+        body = _finding_excerpt(raw, max_chars=max_chars)
+        if not body:
+            continue
+        low = body.lower()
+        # Drop if already covered by a kept excerpt (or covers a shorter one).
+        superseded = False
+        for i, kept in enumerate(cleaned):
+            kl = kept.lower()
+            if low in kl:
+                superseded = True
+                break
+            if kl in low:
+                cleaned[i] = body
+                superseded = True
+                break
+        if not superseded:
+            cleaned.append(body)
+    if not cleaned:
+        return ""
+    joined = ". ".join(cleaned)
+    return _finding_excerpt(joined, max_chars=max_chars)
+
+
+def format_ir_summary_finding(
+    title: str,
+    document_date: str = "",
+    excerpt: str = "",
+    cites: list[str] | None = None,
+) -> str:
+    """Peer IR Summary of Findings: one paragraph per exhibit (all related duties)."""
+    shown = _exhibit_title_for_finding(title)
+    dated = format_document_date(document_date) if document_date else MISSING_DOCUMENT_DATE
+    body = _finding_excerpt(excerpt)
+    if not body:
+        return (
+            f'A review of the document titled "{shown}", dated {dated}, showed '
+            "[pending: how this record supports or does not support the authorized WAC duties]."
+        )
+    para = f'A review of the document titled "{shown}", dated {dated}, showed {body}.'
+    cite_list = [c.strip() for c in (cites or []) if (c or "").strip()]
+    # Preserve order, drop duplicates.
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for c in cite_list:
+        key = re.sub(r"\s+", "", c.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(c)
+    if uniq:
+        para = f"{para.rstrip('.')} Related to {'; '.join(uniq)}."
+    return para
+
+
+def format_sod_document_finding(
+    title: str,
+    excerpt: str = "",
+    cites: list[str] | None = None,
+) -> str:
+    """SOD Findings included row: one paragraph per exhibit for the matched deficiency."""
+    shown = _exhibit_title_for_finding(title)
+    body = _finding_excerpt(excerpt, max_chars=MAX_SOD_FINDING_CHARS)
+    if not body:
+        return f'Review of the document titled, "{shown}", showed the record was reviewed.'
+    para = f'Review of the document titled, "{shown}", showed {body}.'
+    cite_list = [c.strip() for c in (cites or []) if (c or "").strip()]
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for c in cite_list:
+        key = re.sub(r"\s+", "", c.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(c)
+    if uniq:
+        para = f"{para.rstrip('.')} Related to {'; '.join(uniq)}."
+    return para
+
+
+def selected_evidence_hits(
+    hits: list[EvidenceReviewHit] | list[dict[str, Any]] | None,
+    *,
+    included_only: bool = True,
+) -> list[dict[str, Any]]:
+    """Normalize review hits for Summary / SOD populate (default: included-by-default only)."""
+    out: list[dict[str, Any]] = []
+    for hit in hits or []:
+        if isinstance(hit, dict):
+            included = bool(hit.get("included_by_default", True))
+            row = {
+                "id": str(hit.get("id") or ""),
+                "evidence_id": hit.get("evidence_id"),
+                "evidence_title": str(hit.get("evidence_title") or "document"),
+                "cite": str(hit.get("cite") or ""),
+                "duty_phrase": str(hit.get("duty_phrase") or ""),
+                "excerpt": str(hit.get("excerpt") or ""),
+                "document_date": str(hit.get("document_date") or ""),
+                "included_by_default": included,
+                "score": float(hit.get("score") or 0),
+            }
+        else:
+            included = bool(getattr(hit, "included_by_default", True))
+            row = {
+                "id": str(getattr(hit, "id", "") or ""),
+                "evidence_id": getattr(hit, "evidence_id", None),
+                "evidence_title": str(getattr(hit, "evidence_title", None) or "document"),
+                "cite": str(getattr(hit, "cite", "") or ""),
+                "duty_phrase": str(getattr(hit, "duty_phrase", "") or ""),
+                "excerpt": str(getattr(hit, "excerpt", "") or ""),
+                "document_date": str(getattr(hit, "document_date", "") or ""),
+                "included_by_default": included,
+                "score": float(getattr(hit, "score", 0) or 0),
+            }
+        if included_only and not row["included_by_default"]:
+            continue
+        if not (row["excerpt"] or "").strip():
+            continue
+        out.append(row)
+    out.sort(key=lambda r: (-r["score"], r["cite"], str(r["evidence_id"])))
+    return out
+
+
+def consolidate_hits_by_evidence(
+    hits: list[EvidenceReviewHit] | list[dict[str, Any]] | None,
+    *,
+    included_only: bool = True,
+    max_chars: int = DISPLAY_EXCERPT_CHARS,
+) -> list[dict[str, Any]]:
+    """One consolidated row per exhibit: merged excerpts + all related WAC/RCW cites.
+
+    Duty RAG may return several cite hits for the same upload; Summary/SOD should emit
+    a single paragraph per evidence document, not one paragraph per cite match.
+    """
+    selected = selected_evidence_hits(hits, included_only=included_only)
+    by_key: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for hit in selected:
+        eid = hit.get("evidence_id")
+        key = f"id:{eid}" if eid is not None and str(eid).strip() != "" else f"title:{(hit.get('evidence_title') or '').lower()}"
+        if key not in by_key:
+            by_key[key] = {
+                "evidence_id": eid,
+                "evidence_title": hit["evidence_title"],
+                "document_date": hit.get("document_date") or "",
+                "excerpt_parts": [],
+                "cites": [],
+                "included_by_default": True,
+                "score": float(hit.get("score") or 0),
+            }
+            order.append(key)
+        row = by_key[key]
+        if hit.get("document_date") and not row["document_date"]:
+            row["document_date"] = hit["document_date"]
+        row["score"] = max(float(row["score"]), float(hit.get("score") or 0))
+        excerpt = (hit.get("excerpt") or "").strip()
+        if excerpt:
+            row["excerpt_parts"].append(excerpt)
+        cite = (hit.get("cite") or "").strip()
+        if cite:
+            cite_key = re.sub(r"\s+", "", cite.lower())
+            existing = {re.sub(r"\s+", "", c.lower()) for c in row["cites"]}
+            if cite_key not in existing:
+                row["cites"].append(cite)
+
+    out: list[dict[str, Any]] = []
+    for key in order:
+        row = by_key[key]
+        out.append(
+            {
+                "evidence_id": row["evidence_id"],
+                "evidence_title": row["evidence_title"],
+                "document_date": row["document_date"],
+                "excerpt": _merge_excerpt_parts(row["excerpt_parts"], max_chars=max_chars),
+                "cite": "; ".join(row["cites"]),
+                "cites": list(row["cites"]),
+                "included_by_default": True,
+                "score": float(row["score"]),
+            }
+        )
+    out.sort(key=lambda r: (-r["score"], str(r["evidence_id"])))
+    return out[:MAX_SUMMARY_FINDINGS]
+
 def format_document_review_line(
     title: str,
     document_date: str = "",
@@ -649,6 +852,7 @@ def format_document_review_line(
     cite: str = "",
 ) -> str:
     """IR Document Review line: opener, quoted title, date. Excerpt is not appended."""
+    del excerpt, cite
     shown = display_evidence_title(title)
     dated = format_document_date(document_date)
     return f'The investigator reviewed "{shown}" dated {dated}.'
@@ -675,8 +879,25 @@ def _is_doc_review_placeholder(line: str) -> bool:
 def merge_exhibit_process_lines(
     process: list[str],
     selected: list[EvidenceReviewHit] | list[dict[str, Any]],
+    *,
+    exhibits: list[Any] | None = None,
 ) -> list[str]:
     """One Document Review line per exhibit (quoted title and document date)."""
+    from app.services.evidence_log import (
+        ExhibitRow,
+        append_exhibit_superscript,
+        exhibit_map_by_id,
+        list_exhibits_for_case,
+    )
+
+    by_exhibit: dict[int, ExhibitRow] = {}
+    if exhibits:
+        if exhibits and isinstance(exhibits[0], ExhibitRow):
+            by_exhibit = exhibit_map_by_id(list(exhibits))  # type: ignore[arg-type]
+        else:
+            # CaseEvidence rows
+            by_exhibit = exhibit_map_by_id(list_exhibits_for_case(None, evidence_rows=list(exhibits)))  # type: ignore[arg-type]
+
     by_id: dict[int, dict[str, Any]] = {}
     for hit in selected:
         if isinstance(hit, dict):
@@ -692,16 +913,19 @@ def merge_exhibit_process_lines(
         if eid <= 0:
             eid = abs(hash(title)) % 10_000_000
         row = by_id.setdefault(
-            eid, {"title": title, "document_date": dated, "excerpt": ""}
+            eid, {"title": title, "document_date": dated, "excerpt": "", "evidence_id": eid}
         )
         if not row["document_date"] and dated:
             row["document_date"] = dated
         if excerpt and len(excerpt) > len(row["excerpt"]):
             row["excerpt"] = excerpt
-    added = [
-        format_document_review_line(row["title"], row["document_date"], row["excerpt"])
-        for row in by_id.values()
-    ]
+    added: list[str] = []
+    for row in by_id.values():
+        line = format_document_review_line(row["title"], row["document_date"], row["excerpt"])
+        ex = by_exhibit.get(int(row["evidence_id"]))
+        if ex:
+            line = append_exhibit_superscript(line, ex.exhibit_no)
+        added.append(line)
     src = [p for p in process if not is_exhibit_process_line(p)]
     label_idx = next(
         (i for i, p in enumerate(src) if (p or "").strip().lower() == DOC_REVIEW_LABEL.lower()),

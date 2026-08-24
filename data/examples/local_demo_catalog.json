@@ -1,10 +1,11 @@
 {
-  "notes": "Mirror of frontend/src/fixtures/localQuickDraft.ts — admin demos for Intake→Compare→Report. Exact WAC duties (no see-also shortcuts), top-2 starters + duty checkboxes, blank IR shell fields (investigation_type, priorities). Policy guidance under data/examples/policy_guidance/. Not ingested by template_corpus.",
-  "updated": "2026-07-31",
+  "notes": "Mirror of frontend/src/fixtures/localQuickDraft.ts — admin demos for Intake→Compare→Report. Exact WAC duties (no see-also shortcuts), top-2 starters + duty checkboxes, blank IR shell fields (investigation_type, priorities). Policy guidance under data/examples/policy_guidance/. Demo evidence packs from localDemoEvidence.ts are uploaded when Load & draft saves a case. Not ingested by template_corpus.",
+  "updated": "2026-08-24",
   "core_documents": {
     "blank_ir": "data/templates/5. Investigation report.docx",
     "baseline_allegations": "data/examples/Baseline Allegations RTF.txt",
-    "policy_guidance": "data/examples/policy_guidance/"
+    "policy_guidance": "data/examples/policy_guidance/",
+    "demo_evidence": "frontend/src/fixtures/localDemoEvidence.ts"
   },
   "scenarios": [
     {
@@ -25,7 +26,27 @@
         "WAC 246-337-065",
         "WAC 246-337-080"
       ],
-      "complaint": "The Department of Health received a complaint alleging that a patient was sexually assaulted by another patient while residing at a behavioral health facility.\n\nStaff allegedly failed to protect patient safety and security, including inadequate supervision on the unit after staff were informed of escalating conflict between the two patients. The complaint further alleged that the administrator failed to ensure day-to-day operations protected residents, that staffing was insufficient to monitor the milieu, and that facility policies on patient-to-patient assault and sexual harassment prevention were not followed.\n\nThe complainant reported that after the incident, staff delayed separating the patients and did not promptly document or escalate the event according to agency procedure."
+      "complaint": "The Department of Health received a complaint alleging that a patient was sexually assaulted by another patient while residing at a behavioral health facility.\n\nStaff allegedly failed to protect patient safety and security, including inadequate supervision on the unit after staff were informed of escalating conflict between the two patients. The complaint further alleged that the administrator failed to ensure day-to-day operations protected residents, that staffing was insufficient to monitor the milieu, and that facility policies on patient-to-patient assault and sexual harassment prevention were not followed.\n\nThe complainant reported that after the incident, staff delayed separating the patients and did not promptly document or escalate the event according to agency procedure.",
+      "evidence": [
+        {
+          "title": "Patient Safety and Supervision Policy",
+          "filename": "patient_safety_supervision_policy.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0410",
+            "WAC 246-341-0420"
+          ],
+          "body_chars": 616
+        },
+        {
+          "title": "Unit Incident Timeline July 2026",
+          "filename": "unit_incident_timeline.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0410",
+            "WAC 246-341-0420"
+          ],
+          "body_chars": 409
+        }
+      ]
     },
     {
       "id": "confidentiality_phi",
@@ -44,7 +65,27 @@
         "WAC 246-341-0600",
         "RCW 71.05.020"
       ],
-      "complaint": "The Department of Health received a complaint alleging that agency staff disclosed protected health information about an adult patient to the patient's parent without the patient's consent.\n\nThe complaint states staff shared diagnosis, medication, and treatment appointment details during a phone call. The patient had not authorized family involvement. The complainant further alleged the agency lacked clear policies on when clinical information may be shared and that the individual service record system did not document the disclosure."
+      "complaint": "The Department of Health received a complaint alleging that agency staff disclosed protected health information about an adult patient to the patient's parent without the patient's consent.\n\nThe complaint states staff shared diagnosis, medication, and treatment appointment details during a phone call. The patient had not authorized family involvement. The complainant further alleged the agency lacked clear policies on when clinical information may be shared and that the individual service record system did not document the disclosure.",
+      "evidence": [
+        {
+          "title": "Confidentiality and Disclosure Policy",
+          "filename": "confidentiality_disclosure_policy.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0420",
+            "WAC 246-341-0425"
+          ],
+          "body_chars": 438
+        },
+        {
+          "title": "Phone Disclosure Log Excerpt",
+          "filename": "phone_disclosure_log.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0420",
+            "WAC 246-341-0425"
+          ],
+          "body_chars": 408
+        }
+      ]
     },
     {
       "id": "restraint_seclusion",
@@ -63,7 +104,35 @@
         "WAC 246-337-045",
         "WAC 246-341-0410"
       ],
-      "complaint": "A complaint alleged that a resident was placed in seclusion for several hours after a verbal altercation, without timely physician authorization and without continuous monitoring documentation.\n\nStaff reportedly used physical holds before seclusion. The complainant alleged residents were not informed of rights related to restraint and seclusion, and that staff lacked training for de-escalation.\n\nGovernance failed at the RTF: no adopted policies were periodically reviewed or updated, the communication and conflict-resolution process for staff and residents was absent, and the personnel system did not track qualifications or supervision of clinical staff who provide direct resident care."
+      "complaint": "A complaint alleged that a resident was placed in seclusion for several hours after a verbal altercation, without timely physician authorization and without continuous monitoring documentation.\n\nStaff reportedly used physical holds before seclusion. The complainant alleged residents were not informed of rights related to restraint and seclusion, and that staff lacked training for de-escalation.\n\nGovernance failed at the RTF: no adopted policies were periodically reviewed or updated, the communication and conflict-resolution process for staff and residents was absent, and the personnel system did not track qualifications or supervision of clinical staff who provide direct resident care.",
+      "evidence": [
+        {
+          "title": "Restraint and Seclusion Procedure",
+          "filename": "restraint_seclusion_procedure.txt",
+          "linked_wac_ids": [
+            "WAC 246-337-110",
+            "WAC 246-337-075"
+          ],
+          "body_chars": 373
+        },
+        {
+          "title": "Seclusion Monitoring Log",
+          "filename": "seclusion_monitoring_log.txt",
+          "linked_wac_ids": [
+            "WAC 246-337-110",
+            "WAC 246-337-075"
+          ],
+          "body_chars": 327
+        },
+        {
+          "title": "Governance Policy Review Checklist",
+          "filename": "governance_policy_review.txt",
+          "linked_wac_ids": [
+            "WAC 246-337-045"
+          ],
+          "body_chars": 392
+        }
+      ]
     },
     {
       "id": "medication_errors",
@@ -82,7 +151,27 @@
         "WAC 246-337-050",
         "WAC 246-341-0510"
       ],
-      "complaint": "The complaint alleged repeated medication administration errors at a residential treatment facility, including missed evening doses, wrong-dose administration of a psychiatric medication, and failure to report medication errors, adverse effects, and side effects.\n\nStaff allegedly failed to document medication administration accurately, did not notify a prescriber after an adverse reaction, left controlled medications unlocked on one shift, and did not follow prescribing and administering drugs procedures. The complainant also alleged inadequate staffing and supervision of medication-trained personnel."
+      "complaint": "The complaint alleged repeated medication administration errors at a residential treatment facility, including missed evening doses, wrong-dose administration of a psychiatric medication, and failure to report medication errors, adverse effects, and side effects.\n\nStaff allegedly failed to document medication administration accurately, did not notify a prescriber after an adverse reaction, left controlled medications unlocked on one shift, and did not follow prescribing and administering drugs procedures. The complainant also alleged inadequate staffing and supervision of medication-trained personnel.",
+      "evidence": [
+        {
+          "title": "Medication Administration Policy",
+          "filename": "medication_administration_policy.txt",
+          "linked_wac_ids": [
+            "WAC 246-337-105",
+            "WAC 246-337-080"
+          ],
+          "body_chars": 413
+        },
+        {
+          "title": "MAR Exception Report July 2026",
+          "filename": "mar_exception_report.txt",
+          "linked_wac_ids": [
+            "WAC 246-337-105",
+            "WAC 246-337-080"
+          ],
+          "body_chars": 415
+        }
+      ]
     },
     {
       "id": "assessment_isp",
@@ -101,7 +190,27 @@
         "WAC 246-341-0410",
         "WAC 246-341-0420"
       ],
-      "complaint": "A complaint alleged that an individual received outpatient behavioral health services for several weeks without a completed clinical assessment and without an individual service plan addressing treatment goals and needed services.\n\nProgress notes allegedly referenced treatment activities that were never tied to an approved individual service plan. The complainant stated the administrator failed to ensure clinical policies requiring timely assessment, service planning, and clinical documentation were followed, and that staffing was inadequate to provide treatment services."
+      "complaint": "A complaint alleged that an individual received outpatient behavioral health services for several weeks without a completed clinical assessment and without an individual service plan addressing treatment goals and needed services.\n\nProgress notes allegedly referenced treatment activities that were never tied to an approved individual service plan. The complainant stated the administrator failed to ensure clinical policies requiring timely assessment, service planning, and clinical documentation were followed, and that staffing was inadequate to provide treatment services.",
+      "evidence": [
+        {
+          "title": "Clinical Assessment and ISP Policy",
+          "filename": "assessment_isp_policy.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0640",
+            "WAC 246-341-0600"
+          ],
+          "body_chars": 448
+        },
+        {
+          "title": "Chart Audit Worksheet",
+          "filename": "chart_audit_worksheet.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0640",
+            "WAC 246-341-0600"
+          ],
+          "body_chars": 384
+        }
+      ]
     },
     {
       "id": "grievance_rights",
@@ -120,7 +229,27 @@
         "WAC 246-341-0420",
         "WAC 246-337-075"
       ],
-      "complaint": "The complainant alleged that when a patient attempted to file a grievance about staff mistreatment, agency staff discouraged the complaint, failed to provide written information about individual rights, and did not follow the agency complaint process timelines.\n\nThe patient reportedly asked for a copy of rights materials and was told to wait. No grievance log entry was created. After an employee of the agency assisted the patient in contacting the department, the employee was retaliated against by the agency provider. The complaint also alleged posted rights were outdated, staff were unfamiliar with the complaint procedure, and the agency did not protect confidentiality of treatment information when communicating about the grievance."
+      "complaint": "The complainant alleged that when a patient attempted to file a grievance about staff mistreatment, agency staff discouraged the complaint, failed to provide written information about individual rights, and did not follow the agency complaint process timelines.\n\nThe patient reportedly asked for a copy of rights materials and was told to wait. No grievance log entry was created. After an employee of the agency assisted the patient in contacting the department, the employee was retaliated against by the agency provider. The complaint also alleged posted rights were outdated, staff were unfamiliar with the complaint procedure, and the agency did not protect confidentiality of treatment information when communicating about the grievance.",
+      "evidence": [
+        {
+          "title": "Individual Rights and Grievance Policy",
+          "filename": "rights_grievance_policy.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0600",
+            "WAC 246-341-0605"
+          ],
+          "body_chars": 389
+        },
+        {
+          "title": "Grievance File Summary",
+          "filename": "grievance_file_summary.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0600",
+            "WAC 246-341-0605"
+          ],
+          "body_chars": 384
+        }
+      ]
     },
     {
       "id": "infection_environment",
@@ -139,7 +268,27 @@
         "WAC 246-337-146",
         "WAC 246-337-045"
       ],
-      "complaint": "Infection control breakdown at the RTF: staff worked while sick with a communicable disease in an infectious stage, hand hygiene was not enforced, environmental management was neglected, and resident hygiene routines were missed on multiple shifts.\n\nA complaint alleged unsanitary conditions in a residential treatment facility, including unclean resident bathrooms, soiled linens left in hallways, and failure to isolate a resident with a contagious illness according to infection control procedures.\n\nStaff allegedly lacked personal protective equipment on one weekend shift. Governance was alleged to have failed to ensure infection control policies and environmental cleaning schedules were implemented and monitored. Written policies and procedures for cleaning and disinfection, resident hygiene, and management of staff with a communicable disease were not developed or followed."
+      "complaint": "Infection control breakdown at the RTF: staff worked while sick with a communicable disease in an infectious stage, hand hygiene was not enforced, environmental management was neglected, and resident hygiene routines were missed on multiple shifts.\n\nA complaint alleged unsanitary conditions in a residential treatment facility, including unclean resident bathrooms, soiled linens left in hallways, and failure to isolate a resident with a contagious illness according to infection control procedures.\n\nStaff allegedly lacked personal protective equipment on one weekend shift. Governance was alleged to have failed to ensure infection control policies and environmental cleaning schedules were implemented and monitored. Written policies and procedures for cleaning and disinfection, resident hygiene, and management of staff with a communicable disease were not developed or followed.",
+      "evidence": [
+        {
+          "title": "Infection Prevention Policy",
+          "filename": "infection_prevention_policy.txt",
+          "linked_wac_ids": [
+            "WAC 246-337-060",
+            "WAC 246-337-120"
+          ],
+          "body_chars": 504
+        },
+        {
+          "title": "Environmental Cleaning and Outbreak Log",
+          "filename": "environmental_outbreak_log.txt",
+          "linked_wac_ids": [
+            "WAC 246-337-060",
+            "WAC 246-337-120"
+          ],
+          "body_chars": 406
+        }
+      ]
     },
     {
       "id": "qi_critical_incident",
@@ -158,7 +307,27 @@
         "WAC 246-337-045",
         "WAC 246-341-0420"
       ],
-      "complaint": "Following a serious resident injury during a behavioral escalation, a complaint alleged the facility did not collect or review quality improvement data on critical incidents, did not implement corrective actions, and did not update policies to prevent recurrence.\n\nThe complainant alleged the administrator failed to maintain an internal quality management plan addressing clinical supervision and training of staff, incident response, and monitoring of compliance after substantiated events. Governance also failed to adopt, periodically review, and update policies governing organization and functions of the RTF."
+      "complaint": "Following a serious resident injury during a behavioral escalation, a complaint alleged the facility did not collect or review quality improvement data on critical incidents, did not implement corrective actions, and did not update policies to prevent recurrence.\n\nThe complainant alleged the administrator failed to maintain an internal quality management plan addressing clinical supervision and training of staff, incident response, and monitoring of compliance after substantiated events. Governance also failed to adopt, periodically review, and update policies governing organization and functions of the RTF.",
+      "evidence": [
+        {
+          "title": "Quality Improvement Plan",
+          "filename": "quality_improvement_plan.txt",
+          "linked_wac_ids": [
+            "WAC 246-337-048",
+            "WAC 246-341-0410"
+          ],
+          "body_chars": 428
+        },
+        {
+          "title": "Critical Incident Review Minutes",
+          "filename": "critical_incident_review.txt",
+          "linked_wac_ids": [
+            "WAC 246-337-048",
+            "WAC 246-341-0410"
+          ],
+          "body_chars": 416
+        }
+      ]
     },
     {
       "id": "crisis_outreach",
@@ -177,7 +346,27 @@
         "WAC 246-341-0600",
         "WAC 246-341-0420"
       ],
-      "complaint": "A complaint alleged that after a family requested crisis mental health services for an individual in acute distress, the agency delayed outreach for many hours and was not staffed 24 hours a day, seven days a week, with a multidisciplinary team capable of meeting the needs of the individual in crisis.\n\nCallers allegedly were given inconsistent information about response times. The complaint further alleged the agency failed to document outreach and stabilization follow-up, administrative oversight of crisis staffing was inadequate, and individual participant rights information was not provided during the crisis episode."
+      "complaint": "A complaint alleged that after a family requested crisis mental health services for an individual in acute distress, the agency delayed outreach for many hours and was not staffed 24 hours a day, seven days a week, with a multidisciplinary team capable of meeting the needs of the individual in crisis.\n\nCallers allegedly were given inconsistent information about response times. The complaint further alleged the agency failed to document outreach and stabilization follow-up, administrative oversight of crisis staffing was inadequate, and individual participant rights information was not provided during the crisis episode.",
+      "evidence": [
+        {
+          "title": "Crisis Outreach Protocol",
+          "filename": "crisis_outreach_protocol.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0903",
+            "WAC 246-341-0410"
+          ],
+          "body_chars": 394
+        },
+        {
+          "title": "Crisis Call Response Log",
+          "filename": "crisis_call_response_log.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0903",
+            "WAC 246-341-0410"
+          ],
+          "body_chars": 373
+        }
+      ]
     },
     {
       "id": "otp_dosing",
@@ -196,7 +385,27 @@
         "WAC 246-341-0420",
         "WAC 246-341-0425"
       ],
-      "complaint": "A complaint alleged an opioid treatment program dispensed take-home doses inconsistent with the individual's phase of treatment, without required medical director review, and with incomplete individual service record documentation of dosing decisions.\n\nStaff allegedly failed to develop, maintain, and implement policies and procedures for OTP requirements, failed to follow policies for missed doses, and did not document counseling contacts. The complainant stated program administration did not ensure medical director responsibilities, adequate staffing, and individual service record standards were met."
+      "complaint": "A complaint alleged an opioid treatment program dispensed take-home doses inconsistent with the individual's phase of treatment, without required medical director review, and with incomplete individual service record documentation of dosing decisions.\n\nStaff allegedly failed to develop, maintain, and implement policies and procedures for OTP requirements, failed to follow policies for missed doses, and did not document counseling contacts. The complainant stated program administration did not ensure medical director responsibilities, adequate staffing, and individual service record standards were met.",
+      "evidence": [
+        {
+          "title": "OTP Dosing and Take-Home Policy",
+          "filename": "otp_dosing_policy.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-1000",
+            "WAC 246-341-0410"
+          ],
+          "body_chars": 450
+        },
+        {
+          "title": "Dosing Exception Audit",
+          "filename": "dosing_exception_audit.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-1000",
+            "WAC 246-341-0410"
+          ],
+          "body_chars": 358
+        }
+      ]
     },
     {
       "id": "youth_inpatient_rights",
@@ -215,7 +424,27 @@
         "WAC 246-341-0410",
         "RCW 71.34.510"
       ],
-      "complaint": "A complaint alleged that an adolescent admitted for inpatient mental health treatment did not have an attempt to obtain informed consent documented in the clinical record, was not asked whether they wished to involve parents, and was not informed of individual rights in an age-appropriate manner.\n\nStaff allegedly restricted family contact without documenting clinical justification. The complainant further alleged required parental notice regarding the voluntary admission was delayed, and administrator oversight of certified behavioral health treatment services and rights practices was not followed."
+      "complaint": "A complaint alleged that an adolescent admitted for inpatient mental health treatment did not have an attempt to obtain informed consent documented in the clinical record, was not asked whether they wished to involve parents, and was not informed of individual rights in an age-appropriate manner.\n\nStaff allegedly restricted family contact without documenting clinical justification. The complainant further alleged required parental notice regarding the voluntary admission was delayed, and administrator oversight of certified behavioral health treatment services and rights practices was not followed.",
+      "evidence": [
+        {
+          "title": "Youth Admission Consent Policy",
+          "filename": "youth_admission_consent_policy.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-1124",
+            "WAC 246-341-0600"
+          ],
+          "body_chars": 430
+        },
+        {
+          "title": "Admission Chart Checklist",
+          "filename": "admission_chart_checklist.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-1124",
+            "WAC 246-341-0600"
+          ],
+          "body_chars": 368
+        }
+      ]
     },
     {
       "id": "weak_overlap",
@@ -231,7 +460,25 @@
       "selected_wacs": [
         "WAC 246-341-0600"
       ],
-      "complaint": "The complainant reported dissatisfaction with cafeteria menu options, parking availability, and the color of the waiting-room chairs.\n\nNo clinical safety, rights, treatment, or privacy concerns were described beyond general dissatisfaction with amenities."
+      "complaint": "The complainant reported dissatisfaction with cafeteria menu options, parking availability, and the color of the waiting-room chairs.\n\nNo clinical safety, rights, treatment, or privacy concerns were described beyond general dissatisfaction with amenities.",
+      "evidence": [
+        {
+          "title": "Amenities Feedback Form",
+          "filename": "amenities_feedback_form.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0600"
+          ],
+          "body_chars": 368
+        },
+        {
+          "title": "Facility Welcome Brochure Excerpt",
+          "filename": "welcome_brochure_excerpt.txt",
+          "linked_wac_ids": [
+            "WAC 246-341-0600"
+          ],
+          "body_chars": 258
+        }
+      ]
     }
   ]
 }

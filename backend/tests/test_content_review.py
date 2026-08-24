@@ -13,7 +13,7 @@ def test_flags_summary_shell_and_collaborator_block():
         "observations, and document review.\n\n"
         "Investigative findings (to be completed):\n"
         "[Document review]\n"
-        "Investigator collaborator notes (template — not findings):"
+        "Investigator collaborator notes (template; not findings):"
     )
     spans = find_removal_spans(text)
     assert spans

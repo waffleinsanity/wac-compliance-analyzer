@@ -174,6 +174,23 @@ def _add_process_line(doc: Document, line: str) -> None:
     if key in _BOLD_SUBHEADS:
         _add(doc, text, STYLE_BODY, bold=True, size_pt=SIZE_BODY)
         return
+    from app.services.evidence_log import strip_trailing_superscripts
+
+    body, marks = strip_trailing_superscripts(text)
+    if marks:
+        p = _new_para(doc, STYLE_BODY)
+        p.paragraph_format.left_indent = BODY_INDENT
+        run = p.add_run(body)
+        _set_run_font(run, size_pt=SIZE_BODY)
+        # Prefer Word superscript digits over Unicode marks for DOCX fidelity.
+        digits = marks.translate(str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789"))
+        sup = p.add_run(digits)
+        _set_run_font(sup, size_pt=SIZE_BODY)
+        try:
+            sup.font.superscript = True
+        except Exception:
+            pass
+        return
     _add(doc, text, STYLE_BODY, size_pt=SIZE_BODY, indent=True)
 
 
@@ -181,12 +198,20 @@ def build_investigation_docx(
     report: InvestigationReport | dict[str, Any],
     *,
     draft_label: str = "Working draft — for investigator review",
+    exhibits: list[Any] | None = None,
 ) -> bytes:
     """Build IR DOCX using blank template styles and DOH run formatting."""
     del draft_label
     if isinstance(report, dict):
         report = InvestigationReport.model_validate(report)
     report = sync_report_text(report)
+    if exhibits:
+        from app.services.evidence_log import annotate_process_with_exhibits
+
+        report.investigative_process = annotate_process_with_exhibits(
+            list(report.investigative_process or []),
+            exhibits,
+        )
 
     path = blank_docx_path()
     if not path.is_file():
@@ -243,11 +268,11 @@ def build_investigation_docx(
     _add_blank(doc, STYLE_BODY)
     _add_section_heading(doc, SUMMARY_HEADER)
     _add_blank(doc, STYLE_BODY)
-    from app.services.investigation import strip_collaborator_from_summary
+    from app.services.investigation import clean_summary_for_document
 
     _add(
         doc,
-        strip_collaborator_from_summary(report.summary_of_findings),
+        clean_summary_for_document(report.summary_of_findings),
         STYLE_BODY,
         size_pt=SIZE_BODY,
         indent=True,
@@ -328,7 +353,7 @@ def build_deficiency_cite_sheet(report: InvestigationReport | dict[str, Any]) ->
     return buf.getvalue()
 
 
-def build_sod_docx(report: InvestigationReport | dict[str, Any] | None = None) -> bytes:
+def build_sod_docx(report: InvestigationReport | dict[str, Any] | None = None, *, exhibits: list[Any] | None = None) -> bytes:
     """Facility-facing SOD: fill Investigation SOD Template.docx in place.
 
     Preserves landscape page setup, DOH logo header, Word list bullets, bold titles,
@@ -336,7 +361,7 @@ def build_sod_docx(report: InvestigationReport | dict[str, Any] | None = None) -
     """
     from app.services.sod_template import build_sod_docx_bytes
 
-    return build_sod_docx_bytes(report)
+    return build_sod_docx_bytes(report, exhibits=exhibits)
 
 
 def build_sod_identifier_key(report: InvestigationReport | dict[str, Any]) -> bytes:

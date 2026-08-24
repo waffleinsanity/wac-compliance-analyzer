@@ -7,9 +7,10 @@
  * - Allegations use full exact PDF duty language (Baseline shape; never "; see also" shortcuts)
  * - Compare starts with the two strongest duties; checkboxes add more
  * - Report Edit dropdowns (investigation type, priorities, actions) update the IR + Download
- * - Working-draft Download DOCX is always available; evidence attach is multi-file optional
+ * - Working-draft Download DOCX is always available; demo Load & draft attaches synthetic evidence exhibits
  * - Blank IR shell: data/templates/5. Investigation report.docx
  * - Peer / SOD policy guidance: data/examples/policy_guidance/ (desk manuals + samples)
+ * - Demo evidence texts: frontend/src/fixtures/localDemoEvidence.ts (uploaded on first demo case save)
  */
 
 export const CHOOSE_DEMO = 'Choose a demo…'

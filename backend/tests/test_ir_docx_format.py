@@ -99,7 +99,7 @@ def test_export_strips_collaborator_notes_from_summary():
     report = _sample_report()
     report.summary_of_findings = (
         "Pending investigation narrative.\n\n"
-        "Investigator collaborator notes (template — not findings):\n\n"
+        "Investigator collaborator notes (template; not findings):\n\n"
         "Areas of concern:\n"
         "- Staffing gaps under WAC 246-341-0410.\n\n"
         "[Human investigators complete evidentiary findings after interviews, "

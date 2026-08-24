@@ -13,6 +13,12 @@ import {
   type WACNode,
 } from '../api'
 import { normalizeReportAllegations } from '../allegationFormat'
+import {
+  applyDemoEvidenceToReport,
+  demoEvidenceFile,
+  demoEvidenceForScenario,
+  demoEvidenceNeedsWire,
+} from '../fixtures/localDemoEvidence'
 import { getLocalDemoById, LOCAL_DEMO_SCENARIOS } from '../fixtures/localQuickDraft'
 import type { WorkflowStep } from '../components/WorkflowStepper'
 import { canAccessAdmin, canEdit } from '../permissions'
@@ -179,6 +185,8 @@ export function useInvestigationWorkspace(opts: {
   const activeCaseIdRef = useRef(activeCaseId)
   const caseDetailRef = useRef(caseDetail)
   const busyRef = useRef(busy)
+  /** When set, attach demo exhibits after the next successful case create/save. */
+  const pendingDemoEvidenceId = useRef<string | null>(null)
 
   stepRef.current = step
   textRef.current = text
@@ -191,6 +199,63 @@ export function useInvestigationWorkspace(opts: {
   activeCaseIdRef.current = activeCaseId
   caseDetailRef.current = caseDetail
   busyRef.current = busy
+
+  const seedDemoEvidenceIfNeeded = async (
+    detail: CaseDetail,
+    demoId: string | null,
+    currentReport: InvestigationReport | null,
+  ) => {
+    if (!demoId) return { detail, report: currentReport }
+    const demo = getLocalDemoById(demoId)
+    if (!demo) {
+      pendingDemoEvidenceId.current = null
+      return { detail, report: currentReport }
+    }
+
+    let refreshed = detail
+    if ((detail.evidence || []).length === 0) {
+      const specs = demoEvidenceForScenario(demo)
+      for (const spec of specs) {
+        await api.uploadEvidence(detail.id, demoEvidenceFile(spec), {
+          title: spec.title,
+          linked_wac_ids: spec.linked_wac_ids || [],
+        })
+      }
+      refreshed = await api.getCase(detail.id)
+    }
+
+    pendingDemoEvidenceId.current = null
+    const baseReport = currentReport || refreshed.report
+    if (!baseReport) {
+      setCaseDetail(refreshed)
+      setCasesRefreshKey((k) => k + 1)
+      return { detail: refreshed, report: currentReport }
+    }
+
+    let reviewHits: Awaited<ReturnType<typeof api.reviewEvidence>>['hits'] = []
+    try {
+      const reviewed = await api.reviewEvidence(refreshed.id)
+      reviewHits = reviewed.hits || []
+    } catch {
+      reviewHits = []
+    }
+    const wired = applyDemoEvidenceToReport(
+      baseReport,
+      refreshed.evidence || [],
+      demo,
+      reviewHits,
+    )
+    const saved = await api.saveCaseDraft(
+      refreshed.id,
+      wired,
+      'Demo evidence linked to Document Review and SOD',
+    )
+    const nextReport = applyReport(wired)
+    setReport(nextReport)
+    setCaseDetail(saved)
+    setCasesRefreshKey((k) => k + 1)
+    return { detail: saved, report: nextReport }
+  }
 
   const loadWacs = useCallback(async () => {
     setWacs(await api.listWacs({ level: 'code' }))
@@ -214,8 +279,9 @@ export function useInvestigationWorkspace(opts: {
   const unlocked: Record<WorkflowStep, boolean> = {
     workspace: true,
     review: !!report,
-    evidence: !!report && Boolean(report.compare_cites_confirmed),
-    report: !!report && Boolean(report.compare_cites_confirmed),
+    // Documents and Evidence unlock once a draft exists (Compare confirm is not a gate).
+    report: !!report,
+    evidence: !!report,
   }
 
   const toggleFavorite = async (wacId: string) => {
@@ -236,8 +302,9 @@ export function useInvestigationWorkspace(opts: {
   const openCase = async (id: number): Promise<boolean> => {
     setBusy(true)
     setError('')
+    pendingDemoEvidenceId.current = null
     try {
-      const detail = await api.getCase(id)
+      let detail = await api.getCase(id)
       setActiveCaseId(detail.id)
       setCaseDetail(detail)
       setCaseId(detail.case_id_label || '')
@@ -247,7 +314,31 @@ export function useInvestigationWorkspace(opts: {
       setCredentialNumber(detail.credential_number || '')
       setSelectedCodes(detail.approved_wac_ids || [])
       if (detail.report) {
-        const nextReport = applyReport(withLegacyCompareConfirmed(detail.report))
+        let nextReport = applyReport(withLegacyCompareConfirmed(detail.report))!
+        const label = detail.case_id_label || ''
+        const demo = LOCAL_DEMO_SCENARIOS.find((d) => d.case_id === label)
+        if (
+          demo &&
+          demoEvidenceNeedsWire(nextReport, detail.evidence) &&
+          (detail.evidence || []).length > 0
+        ) {
+          let reviewHits: Awaited<ReturnType<typeof api.reviewEvidence>>['hits'] = []
+          try {
+            const reviewed = await api.reviewEvidence(detail.id)
+            reviewHits = reviewed.hits || []
+          } catch {
+            reviewHits = []
+          }
+          nextReport = applyReport(
+            applyDemoEvidenceToReport(nextReport, detail.evidence || [], demo, reviewHits),
+          )!
+          detail = await api.saveCaseDraft(
+            detail.id,
+            nextReport,
+            'Demo evidence linked to Document Review and SOD',
+          )
+          setCaseDetail(detail)
+        }
         setReport(nextReport)
         // Land on Compare so the draft is visible immediately. Documents preview can be
         // opened from the stepper; a blank Documents panel must not hide saved work.
@@ -301,6 +392,7 @@ export function useInvestigationWorkspace(opts: {
     setRecoverOffer(null)
     setSaveStatus({ state: 'idle' })
     lastSavedFp.current = ''
+    pendingDemoEvidenceId.current = null
     setActiveCaseId(null)
     setCaseDetail(null)
     setReport(null)
@@ -641,7 +733,7 @@ export function useInvestigationWorkspace(opts: {
       }
       return scan
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Privacy scan failed — check that the API is running')
+      setError(e instanceof Error ? e.message : 'Privacy scan failed. Check that the API is running.')
       return null
     }
   }, [])
@@ -708,13 +800,25 @@ export function useInvestigationWorkspace(opts: {
       setBusy(false)
       setProgress('Saving working draft to case…')
       try {
-        await ensureCaseSaved(drafted!, complaintText, {
+        const detail = await ensureCaseSaved(drafted!, complaintText, {
           approved_wac_ids: codes,
           case_id_label: overrides?.case_id ?? caseId,
           investigation_date: overrides?.investigation_date ?? investigationDate,
           facility_address: overrides?.facility_address ?? facilityAddress,
           credential_number: overrides?.credential_number ?? credentialNumber,
         })
+        if (pendingDemoEvidenceId.current) {
+          setProgress('Attaching demo evidence and Evidence Log cites…')
+          try {
+            await seedDemoEvidenceIfNeeded(detail, pendingDemoEvidenceId.current, drafted!)
+          } catch (evErr) {
+            setError(
+              evErr instanceof Error
+                ? `Draft saved, but demo evidence attach failed: ${evErr.message}`
+                : 'Draft saved, but demo evidence attach failed',
+            )
+          }
+        }
         setStep('review')
       } catch (saveErr) {
         setError(saveErr instanceof Error ? saveErr.message : 'Draft built, but case save failed')
@@ -820,6 +924,7 @@ export function useInvestigationWorkspace(opts: {
       return
     }
     setLocalDemoId(d.id)
+    pendingDemoEvidenceId.current = d.id
     setActiveCaseId(null)
     setCaseDetail(null)
     setReport(null)

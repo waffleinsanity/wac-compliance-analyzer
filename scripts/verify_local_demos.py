@@ -66,6 +66,20 @@ def main() -> int:
         codes = [c.replace("WAC ", "").replace("RCW ", "").strip() for c in sc["selected_wacs"]]
         print(f"\n=== {sid} ({len(codes)} codes) ===")
 
+        evidence = sc.get("evidence") or []
+        if len(evidence) < 2:
+            failures.append(f"{sid}: expected >=2 demo evidence exhibits, found {len(evidence)}")
+        else:
+            print(f"  evidence: {len(evidence)} exhibit(s)")
+            for ev in evidence:
+                title = (ev.get("title") or "").strip()
+                fname = (ev.get("filename") or "").strip()
+                chars = int(ev.get("body_chars") or 0)
+                if not title or not fname:
+                    failures.append(f"{sid}: evidence entry missing title/filename")
+                if chars < 80:
+                    failures.append(f"{sid}/{fname}: evidence body too short ({chars})")
+
         for field in (
             "investigation_type",
             "state_licensing_priority",

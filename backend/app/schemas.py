@@ -478,6 +478,29 @@ class SodFinding(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+class EvidenceLogRow(BaseModel):
+    """One editable row in the Investigation Evidence Log."""
+
+    exhibit_number: int = 1
+    description: str = ""
+    date_collected: str = ""
+    collected_by: str = ""
+    method: str = "Electronic upload"
+    electronic_location: str = ""
+    wac_codes: list[str] = Field(default_factory=list)
+    evidence_id: int | None = None
+
+
+class EvidenceLogDraft(BaseModel):
+    """Investigator-editable Evidence Log (fills Evidence Log.xlsx on export)."""
+
+    investigator_name: str = ""
+    case_numbers: str = ""
+    license_numbers: str = ""
+    facility_name: str = ""
+    rows: list[EvidenceLogRow] = Field(default_factory=list)
+
+
 class SodDeficiencyItem(BaseModel):
     """Optional Item #n split under one regulation."""
 
@@ -582,6 +605,8 @@ class InvestigationReport(BaseModel):
     confirmed_allegation_codes: list[str] = Field(default_factory=list)
     # Exhibit excerpts the investigator selected on the Evidence step (not statute quotes).
     evidence_review: list[EvidenceReviewHit] = Field(default_factory=list)
+    # Editable Evidence Log (header + rows). When set, export prefers this over raw uploads.
+    evidence_log: EvidenceLogDraft | None = None
     # Sister SOD draft (facility-facing); created with the IR after Compare
     sod: StatementOfDeficiency | None = None
 
@@ -661,6 +686,8 @@ class EvidenceOut(BaseModel):
     linked_wac_ids: list[str] = Field(default_factory=list)
     notes: str = ""
     created_at: datetime | None = None
+    # Stable Evidence Log ordinal (#1, #2, … by upload order).
+    exhibit_number: int | None = None
 
     class Config:
         from_attributes = True

@@ -29,7 +29,9 @@ import {
   quoteFailureLabel,
 } from '../investigatorLabels'
 import { normalizeAllegationLine, normalizeReportAllegations } from '../allegationFormat'
-import { findRemovalSpans, isFacilityPlaceholder, stripCollaboratorFromSummary } from '../contentReview'
+import { findRemovalSpans, isFacilityPlaceholder } from '../contentReview'
+import { cleanSummaryForDocument } from '../summaryFindingsFormat'
+import { SummaryFindingsView } from './SummaryFindingsView'
 import {
   FINDING_PHRASES,
   PROCESS_LABELS,
@@ -198,7 +200,7 @@ function buildPlainText(report: InvestigationReport): string {
     '',
     'Summary of Findings (Narrative overview of the results of investigation.)',
     '',
-    stripCollaboratorFromSummary(report.summary_of_findings),
+    cleanSummaryForDocument(report.summary_of_findings),
     '',
     'Conclusion/ Results of Investigation',
     '',
@@ -229,7 +231,7 @@ function groupAllegations(allegations: InvestigationAllegation[]) {
   }, {})
 }
 
-/** Section title (16pt bold) + parenthetical hint (12pt italic) — matches blank DOCX. */
+/** Section title (16pt bold) + parenthetical hint (12pt italic); matches blank DOCX. */
 function IrSectionHeading({ title, hint }: { title: string; hint: string }) {
   return (
     <p className="ir-section-heading">
@@ -288,8 +290,8 @@ function DocumentPreview({
   const byCode = Object.fromEntries(report.conclusions.map((c) => [c.wac_code, c]))
   const { determination, referral } = parseActionsFields(report)
   const editable = Boolean(canEdit && onChange)
-  // Document body never includes collaborator notes (in-app panel only).
-  const summaryForDoc = stripCollaboratorFromSummary(report.summary_of_findings)
+  // Document body never includes collaborator notes or legacy allegation pastes.
+  const summaryForDoc = cleanSummaryForDocument(report.summary_of_findings)
 
   const patch = (partial: Partial<InvestigationReport>) => {
     if (!onChange) return
@@ -377,8 +379,8 @@ function DocumentPreview({
       <div className="ir-doc-toolbar">
         <FileText className="h-3.5 w-3.5 shrink-0 text-ink-500" aria-hidden />
         <p className="min-w-0 text-[11px] leading-snug text-ink-500 dark:text-ink-400">
-          Structured preview (built-in blank layout). Download uses the selected IR template when
-          attached.
+          Document preview. Download opens the same report in Word using your selected template when
+          one is attached. Exhibit superscripts in Document Review match the Evidence Log (#1, #2, …).
         </p>
       </div>
       <div className="ir-doc-scroll">
@@ -481,11 +483,7 @@ function DocumentPreview({
             />
             {summaryForDoc ? (
               <div className="ir-body ir-indent">
-                <HighlightedProse
-                  text={summaryForDoc}
-                  paper
-                  className="text-[12pt] leading-[1.45] text-black"
-                />
+                <SummaryFindingsView text={summaryForDoc} report={report} paper />
               </div>
             ) : (
               <p className="ir-body ir-indent">—</p>
@@ -671,9 +669,9 @@ export function InvestigationReportEditor({
     setInfo('')
   }, [externalKey, initial])
 
-  // Persist-strip: if a legacy draft still embeds collaborator notes in Summary, drop them from state.
+  // Persist-strip: drop collaborator notes and legacy allegation pastes from Summary state.
   useEffect(() => {
-    const cleaned = stripCollaboratorFromSummary(report.summary_of_findings)
+    const cleaned = cleanSummaryForDocument(report.summary_of_findings)
     if (cleaned === (report.summary_of_findings || '').trim()) return
     setReport((prev) => ({ ...prev, summary_of_findings: cleaned }))
   }, [report.summary_of_findings])
@@ -740,7 +738,7 @@ export function InvestigationReportEditor({
       processFields.observations,
       processFields.interviews,
       processFields.documentReview,
-      stripCollaboratorFromSummary(report.summary_of_findings || ''),
+      cleanSummaryForDocument(report.summary_of_findings || ''),
       ...(report.conclusions || []).map((c) => c.result || ''),
     ]
     return blocks.some((block) => findRemovalSpans(block).length > 0)
@@ -828,7 +826,7 @@ export function InvestigationReportEditor({
         })),
       }))
     } catch {
-      /* assistive only — never blocks download */
+      /* assistive only; never blocks download */
     }
   }
 
@@ -977,10 +975,36 @@ export function InvestigationReportEditor({
       }
       const blob = await api.exportCasePack(id, true)
       downloadBlob(blob, `case_${id}_pack.zip`)
-      setInfo('Pack downloaded (IR + deficiency cite sheet).')
+      setInfo('Pack downloaded (IR, SOD, cite sheet, and Evidence Log).')
       await onCaseRefresh?.()
     } catch (e) {
       setExportError(e instanceof Error ? e.message : 'Pack export failed')
+    } finally {
+      setValidating(false)
+    }
+  }
+
+  const exportEvidenceLog = async () => {
+    if (!canExport) {
+      setExportError(
+        'Export, download, and copy require Editor or Administrator role. Your draft remains saved in the case record.',
+      )
+      return
+    }
+    setValidating(true)
+    setExportError('')
+    try {
+      const id = await resolveCaseId()
+      if (!id) {
+        setExportError('Could not save a case for download. Try Save, then download again.')
+        return
+      }
+      const blob = await api.exportEvidenceLog(id)
+      downloadBlob(blob, `Evidence_Log_${id}.xlsx`)
+      setInfo('Evidence Log downloaded. Superscript numbers in Document Review match log #1, #2, …')
+      await onCaseRefresh?.()
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : 'Evidence Log export failed')
     } finally {
       setValidating(false)
     }
@@ -1070,20 +1094,32 @@ export function InvestigationReportEditor({
               </button>
             )}
             {canExport ? (
-              <button
-                type="button"
-                className="btn-primary !h-8 !px-3 text-xs"
-                disabled={validating}
-                title={
-                  exportWarn
-                    ? 'Download working draft — review notes are not blockers'
-                    : 'Download Investigation Report DOCX'
-                }
-                onClick={() => void exportDocx()}
-              >
-                <Download className="h-3.5 w-3.5" />
-                {validating ? 'Preparing…' : 'Download'}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn-primary !h-8 !px-3 text-xs"
+                  disabled={validating}
+                  title={
+                    exportWarn
+                      ? 'Download working draft (review notes are not blockers)'
+                      : 'Download Investigation Report DOCX'
+                  }
+                  onClick={() => void exportDocx()}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {validating ? 'Preparing…' : 'Download'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary !h-8 !px-3 text-xs"
+                  disabled={validating || !caseId}
+                  title="Download Evidence Log.xlsx (exhibit #1, #2, … matching Document Review superscripts)"
+                  onClick={() => void exportEvidenceLog()}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Evidence Log
+                </button>
+              </>
             ) : (
               <span className="text-[11px] text-ink-500" title="Viewer: IR stays in the case record">
                 In-record only
@@ -1179,9 +1215,8 @@ export function InvestigationReportEditor({
 
       {hasRemovalHighlights && (
         <div className="border-l-2 border-amber-500 bg-amber-50/80 px-3 py-2 text-sm text-amber-950 dark:border-amber-600 dark:bg-amber-950/20 dark:text-amber-100">
-          Amber highlights mark assistive placeholders, seed sentences, and other text that is not
-          part of the IR format, your entries, or Compare selections. Delete or replace those spans
-          before submission.
+          Highlighted text still needs your review. Replace those passages with investigation findings
+          before treating this report as final.
         </div>
       )}
 
@@ -1193,11 +1228,12 @@ export function InvestigationReportEditor({
               {report.quote_integrity?.ok === false
                 ? `Statute wording needs a check (${report.quote_integrity.failures.length})`
                 : hasRemovalHighlights
-                  ? 'Highlighted assistive text must be removed or replaced before submission.'
+                  ? 'Highlighted text still needs your review before submission.'
                   : defensibility?.summary || 'A few review notes remain'}
             </p>
             <p className="text-xs text-ink-500 dark:text-ink-400">
-              You can still download a working draft. Fix wording before treating the IR as final.
+              You can still download a working draft. Finish wording before treating the report as
+              final.
             </p>
             {report.quote_integrity?.ok === false && topQuoteFailures.length > 0 && (
               <ul className="mt-1.5 space-y-1 border-t border-ink-200/70 pt-1.5 dark:border-ink-700">
@@ -1518,14 +1554,14 @@ export function InvestigationReportEditor({
             </section>
           )}
 
-          {/* Process — fixed DOH template labels; only body text is editable */}
+          {/* Process: fixed DOH template labels; only body text is editable */}
           <section>
             <h3 className="mb-1 flex items-center gap-2 font-display text-lg">
               <Search className="h-4 w-4 text-tide-600" /> Investigative Process Included
             </h3>
             <p className="mb-4 font-sans text-xs text-ink-400">
               Section labels match the blank Investigation Report. Edit the investigator narrative under
-              each heading — labels stay in the export.
+              each heading; labels stay in the export.
             </p>
             <div className="space-y-5">
               <div>
@@ -1588,7 +1624,8 @@ export function InvestigationReportEditor({
             </h3>
             <p className="mb-3 font-sans text-xs text-ink-400">
               Framework starter for authorized WAC/RCW selections. Complete the findings narrative
-              after investigation activities. Collaborator notes stay in this app only; they are not
+              after investigation activities. Green highlight marks exhibit findings linked to an
+              authorized allegation duty. Collaborator notes stay in this app only; they are not
               written into Form preview or DOCX export. Keep patient identifiers out of free-text
               pastes.
             </p>
@@ -1650,22 +1687,26 @@ export function InvestigationReportEditor({
               </div>
             ) : null}
 
-            <textarea
-              className="input min-h-[200px] font-serif leading-relaxed"
-              value={naIfEmpty(stripCollaboratorFromSummary(report.summary_of_findings))}
-              onChange={(e) =>
-                setReport((p) => ({
-                  ...p,
-                  summary_of_findings: stripCollaboratorFromSummary(e.target.value),
-                }))
+            <SummaryFindingsView
+              text={naIfEmpty(cleanSummaryForDocument(report.summary_of_findings))}
+              report={report}
+              editable={canEdit}
+              onChange={
+                canEdit
+                  ? (next) =>
+                      setReport((p) => ({
+                        ...p,
+                        summary_of_findings: cleanSummaryForDocument(next),
+                      }))
+                  : undefined
               }
             />
             <RemovalReviewHint
-              text={naIfEmpty(stripCollaboratorFromSummary(report.summary_of_findings))}
+              text={naIfEmpty(cleanSummaryForDocument(report.summary_of_findings))}
             />
           </section>
 
-          {/* Conclusions — DOH sentence with inline finding dropdown */}
+          {/* Conclusions: DOH sentence with inline finding dropdown */}
           <section>
             <h3 className="mb-1 flex items-center gap-2 font-display text-lg">
               <FileCheck className="h-4 w-4 text-tide-600" /> Conclusion / Results of Investigation
@@ -1736,7 +1777,7 @@ export function InvestigationReportEditor({
                               <input
                                 className="input"
                                 value={naIfEmpty(conclusion?.deficiency_details)}
-                                placeholder="Optional note — full cite language lives in SOD"
+                                placeholder="Optional note (full cite language lives in SOD)"
                                 onChange={(e) =>
                                   updateConclusion(idx, {
                                     deficiency_details: e.target.value,
@@ -1755,13 +1796,13 @@ export function InvestigationReportEditor({
             </div>
           </section>
 
-          {/* Actions — blank template dual content controls */}
+          {/* Actions: blank template dual content controls */}
           <section>
             <h3 className="mb-3 flex items-center gap-2 font-display text-lg">
               <Pencil className="h-4 w-4 text-tide-600" /> Actions
             </h3>
             <p className="mb-3 font-sans text-xs text-ink-400">
-              Determination and referral only — name SOD presence/absence; do not dump statute
+              Determination and referral only (name SOD presence/absence); do not dump statute
               citations here (they belong in the SOD).
             </p>
             <div className="grid gap-3 sm:grid-cols-1">
@@ -1844,6 +1885,7 @@ export function InvestigationReportEditor({
         <div className="xl:sticky xl:top-4 xl:self-start">
           <CaseAssistPanel
             caseDetail={caseDetail}
+            report={report}
             onRefresh={onCaseRefresh}
             onRestoreSnapshot={onRestoreSnapshot}
             onReportApplied={(detail) => {

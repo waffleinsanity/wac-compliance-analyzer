@@ -40,7 +40,7 @@ def test_collaborator_block_template_wording():
         areas_of_concern=["Timeline gaps need reconstruction."],
         investigation_methods=["Request policies tied to the authorized WAC."],
     )
-    assert "Investigator collaborator notes (template — not findings):" in block
+    assert "Investigator collaborator notes (template; not findings):" in block
     assert "Areas of concern:" in block
     assert "Suggested methods to begin or strengthen the investigation:" in block
     assert "Human investigators complete evidentiary findings" in block
@@ -68,7 +68,9 @@ def test_build_summary_excludes_collaborator_block():
     assert "Investigator collaborator notes" not in text
     assert "Areas of concern:" not in text
     assert "Suggested methods" not in text
-    assert "authorized for this investigation" in text
+    assert "authorized for this investigation" not in text
+    assert "Potential violation of WAC" not in text
+    assert "document review" in text.lower()
     assert "in compliance" not in text.lower()
     assert "out of compliance" not in text.lower()
 

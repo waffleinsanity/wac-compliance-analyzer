@@ -252,16 +252,55 @@ def _case_ir_template(db: Session, case: InvestigationCase) -> IrTemplateOut | N
 
 def _export_ir_bytes(db: Session, case: InvestigationCase, report: InvestigationReport) -> bytes:
     """Built-in blank or smart-fill against the case-bound custom template."""
+    from app.services.evidence_log import annotate_process_with_exhibits, exhibits_for_report
+
+    exhibits = exhibits_for_report(case, report)
+    if exhibits:
+        report = report.model_copy(deep=True)
+        report.investigative_process = annotate_process_with_exhibits(
+            list(report.investigative_process or []),
+            exhibits,
+        )
     template_path = resolve_case_template_path(db, case)
     if template_path is None:
-        return build_investigation_docx(report, draft_label=_draft_label(case))
+        return build_investigation_docx(
+            report, draft_label=_draft_label(case), exhibits=exhibits
+        )
     try:
         return smart_fill(template_path, report)
     except TemplateFillError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _export_sod_bytes(case: InvestigationCase, report: InvestigationReport) -> bytes:
+    from app.services.evidence_log import exhibits_for_report
+
+    return build_sod_docx(report, exhibits=exhibits_for_report(case, report))
+
+
+def _export_evidence_log_bytes(
+    db: Session,
+    case: InvestigationCase,
+    report: InvestigationReport,
+    user: User,
+) -> bytes:
+    from app.services.evidence_log import build_evidence_log_xlsx, exhibits_for_report
+
+    return build_evidence_log_xlsx(
+        case=case,
+        report=report,
+        user=user,
+        exhibits=exhibits_for_report(case, report),
+        db=db,
+    )
+
+
 def _detail(db: Session, case: InvestigationCase) -> CaseDetailOut:
+    from app.services.evidence_log import exhibits_for_report
+
+    report = report_for_case(db, case)
+    exhibits = exhibits_for_report(case, report)
+    by_id = {ex.evidence_id: ex.exhibit_no for ex in exhibits}
     evidence_out: list[EvidenceOut] = []
     for ev in case.evidence:
         evidence_out.append(
@@ -273,6 +312,7 @@ def _detail(db: Session, case: InvestigationCase) -> CaseDetailOut:
                 linked_wac_ids=parse_json_list(ev.linked_wac_ids),
                 notes=ev.notes or "",
                 created_at=ev.created_at,
+                exhibit_number=by_id.get(ev.id),
             )
         )
     comments_out = [
@@ -857,7 +897,7 @@ def preview_sod(
     assert_case_access(case, user)
     assert_case_not_trashed(case, action="previewing")
     report = _report_for_export(db, case)
-    content = build_sod_docx(report)
+    content = _export_sod_bytes(case, report)
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -881,11 +921,35 @@ def export_sod(
     assert_case_not_trashed(case, action="exporting")
     report = _report_for_export(db, case)
     _ = acknowledge_gaps
-    content = build_sod_docx(report)
+    content = _export_sod_bytes(case, report)
     filename = f"SOD_{case.case_id_label or case.id}.docx"
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{case_id}/export/evidence-log")
+def export_evidence_log(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Filled Evidence Log.xlsx from case uploads (same artifact as pack)."""
+    require_role_export(user)
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    assert_case_not_trashed(case, action="exporting")
+    report = _report_for_export(db, case)
+    try:
+        content = _export_evidence_log_bytes(db, case, report, user)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    filename = f"Evidence_Log_{case.case_id_label or case.id}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
@@ -936,8 +1000,12 @@ def export_pack(
     _ = acknowledge_gaps
 
     ir = _export_ir_bytes(db, case, report)
-    sod_bytes = build_sod_docx(report)
+    sod_bytes = _export_sod_bytes(case, report)
     cites = build_deficiency_cite_sheet(report)
+    try:
+        evidence_log = _export_evidence_log_bytes(db, case, report, user)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     _harvest_ir_style(db, case, report, user, trigger="export_pack")
     buf = BytesIO()
     label = case.case_id_label or case.id
@@ -945,6 +1013,7 @@ def export_pack(
         zf.writestr(f"IR_{label}.docx", ir)
         zf.writestr(f"SOD_{label}.docx", sod_bytes)
         zf.writestr(f"Deficiency_Cite_Sheet_{label}.docx", cites)
+        zf.writestr(f"Evidence_Log_{label}.xlsx", evidence_log)
     buf.seek(0)
     return StreamingResponse(
         buf,
@@ -1008,6 +1077,11 @@ async def upload_evidence(
     db.add(case)
     db.commit()
     db.refresh(ev)
+    from app.services.evidence_log import list_exhibits_for_case
+
+    db.expire(case, ["evidence"])
+    exhibits = list_exhibits_for_case(case)
+    exhibit_no = next((ex.exhibit_no for ex in exhibits if ex.evidence_id == ev.id), None)
     return EvidenceOut(
         id=ev.id,
         title=ev.title,
@@ -1016,6 +1090,7 @@ async def upload_evidence(
         linked_wac_ids=parse_json_list(ev.linked_wac_ids),
         notes=ev.notes or "",
         created_at=ev.created_at,
+        exhibit_number=exhibit_no,
     )
 
 
@@ -1150,20 +1225,54 @@ def apply_process_to_report(
             extract_document_date,
             extract_evidence_text,
             merge_exhibit_process_lines,
+            review_case_evidence,
         )
+        from app.services.investigation import merge_evidence_into_summary
+        from app.services.sod_draft import link_evidence_hits_to_sod
 
+        # Prefer investigator-selected Evidence-step hits; otherwise run duty RAG review.
+        selected_hits = [
+            h
+            for h in (report.evidence_review or [])
+            if getattr(h, "included_by_default", False)
+            or (isinstance(h, dict) and h.get("included_by_default"))
+        ]
+        if not selected_hits:
+            reviewed = review_case_evidence(case, report)
+            selected_hits = [h for h in reviewed if getattr(h, "included_by_default", False)]
+            if reviewed:
+                report.evidence_review = reviewed
+
+        process_hits = [
+            {
+                "evidence_id": ev.id,
+                "evidence_title": ev.title or ev.original_filename or f"document {ev.id}",
+                "document_date": extract_document_date(extract_evidence_text(ev)),
+                "excerpt": "",
+                "cite": "",
+                "included_by_default": True,
+            }
+            for ev in files
+        ]
         report.investigative_process = merge_exhibit_process_lines(
             process,
+            process_hits,
+            exhibits=files,
+        )
+        report.summary_of_findings = merge_evidence_into_summary(
+            report.summary_of_findings or "",
+            case.complaint_text or report.intake_details or "",
             [
                 {
-                    "evidence_id": ev.id,
-                    "evidence_title": ev.title or ev.original_filename or f"document {ev.id}",
-                    "document_date": extract_document_date(extract_evidence_text(ev)),
-                    "excerpt": "",
+                    "title": h["evidence_title"],
+                    "document_date": h["document_date"],
                 }
-                for ev in files
+                for h in process_hits
             ],
+            evidence_hits=selected_hits,
         )
+        if selected_hits:
+            report = link_evidence_hits_to_sod(report, selected_hits)
     else:
         report.investigative_process = process
     save_snapshot(db, case, report, user, note="Applied process/evidence assists into draft")

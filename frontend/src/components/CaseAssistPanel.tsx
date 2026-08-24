@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { FileUp, MessageSquare, Trash2 } from 'lucide-react'
+import { Download, FileUp, MessageSquare, Trash2 } from 'lucide-react'
 import {
   api,
   type CaseComment,
@@ -7,21 +7,29 @@ import {
   type CaseEvidence,
   type CaseProcessEntry,
   type DefensibilityResult,
+  type InvestigationReport,
 } from '../api'
 import { useAuth } from '../auth'
-import { canEdit, canReview } from '../permissions'
+import { canEdit, canExport, canReview } from '../permissions'
 import { caseStatusLabel } from '../investigatorLabels'
 import { PrivacyScreenBanner } from './PrivacyScreenBanner'
 import { DraftRecallMenu } from './DraftRecallMenu'
 
 type Props = {
   caseDetail: CaseDetail
+  report?: InvestigationReport | null
   onRefresh: () => Promise<void>
   onReportApplied?: (detail: CaseDetail) => void
   onRestoreSnapshot?: (snapshotId: number) => void
 }
 
-export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied, onRestoreSnapshot }: Props) {
+export function CaseAssistPanel({
+  caseDetail,
+  report = null,
+  onRefresh,
+  onReportApplied,
+  onRestoreSnapshot,
+}: Props) {
   const { user } = useAuth()
   const [defensibility, setDefensibility] = useState<DefensibilityResult | null>(null)
   const [comment, setComment] = useState('')
@@ -36,6 +44,7 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied, onRest
   const [info, setInfo] = useState('')
 
   const editable = canEdit(user?.role, user?.is_admin)
+  const exporter = canExport(user?.role, user?.is_admin)
   const reviewer = canReview(user?.role, user?.is_admin)
   const locked =
     !editable ||
@@ -96,7 +105,25 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied, onRest
     await run(async () => {
       const detail = await api.applyProcessToReport(caseDetail.id)
       onReportApplied?.(detail)
-      setInfo('Inserted process/exhibit assists into the draft — edit freely.')
+      setInfo('Inserted process/exhibit assists into the draft. Edit freely.')
+    })
+  }
+
+  const downloadEvidenceLog = async () => {
+    await run(async () => {
+      // Persist in-memory Evidence Log edits before export (parity with EvidenceLogEditor).
+      if (report && !locked) {
+        await api.saveCaseDraft(caseDetail.id, report, 'Evidence Log before download')
+      }
+      const blob = await api.exportEvidenceLog(caseDetail.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Evidence_Log_${caseDetail.case_id_label || caseDetail.id}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+      setInfo('Evidence Log downloaded. Superscripts in Document Review match log #1, #2, …')
+      await onRefresh()
     })
   }
 
@@ -119,9 +146,10 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied, onRest
   return (
     <div className="space-y-4 rounded-xl border border-ink-200/80 bg-card/60 p-4 dark:border-ink-700">
       <div>
-        <h3 className="font-display text-lg">Case assists</h3>
+        <h3 className="font-display text-lg">Case tools</h3>
         <p className="mt-1 text-xs text-ink-500">
-          Organize evidence and process notes. After files are attached, the Evidence step ranks exhibit language against allegation duties for you to select.
+          Attach exhibits and process notes for this case. Use Evidence to review materials against
+          the selected regulations.
         </p>
         <div className="mt-2 font-sans text-xs text-ink-600 dark:text-ink-300">
           Status: <span className="font-semibold">{caseStatusLabel(caseDetail.status)}</span>
@@ -218,11 +246,27 @@ export function CaseAssistPanel({ caseDetail, onRefresh, onReportApplied, onRest
                 }}
               />
             </label>
+            {exporter && caseDetail.evidence.length > 0 && (
+              <button
+                type="button"
+                className="btn-ghost ml-2 inline-flex !h-8 text-xs"
+                disabled={busy}
+                title="Download Evidence Log.xlsx"
+                onClick={() => void downloadEvidenceLog()}
+              >
+                <Download className="h-3.5 w-3.5" /> Evidence Log
+              </button>
+            )}
             <ul className="mt-2 space-y-1">
               {caseDetail.evidence.map((ev: CaseEvidence) => (
                 <li key={ev.id} className="flex items-start justify-between gap-2 rounded-lg border px-2 py-1.5 text-xs">
                   <div>
-                    <div className="font-medium">{ev.title}</div>
+                    <div className="font-medium">
+                      {ev.exhibit_number != null ? (
+                        <span className="mr-1.5 text-ink-400">#{ev.exhibit_number}</span>
+                      ) : null}
+                      {ev.title}
+                    </div>
                     <div className="text-ink-400">{ev.original_filename}</div>
                   </div>
                   <button

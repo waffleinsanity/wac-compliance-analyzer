@@ -61,9 +61,10 @@ def report_from_json(raw: str | None) -> InvestigationReport | None:
             report.investigative_process
         )
     # Collaborator notes are in-app only; never leave them in Summary document body.
-    from app.services.investigation import strip_collaborator_from_summary
+    # Also strip legacy Summary paragraphs that pasted allegation lines.
+    from app.services.investigation import clean_summary_for_document
 
-    report.summary_of_findings = strip_collaborator_from_summary(report.summary_of_findings)
+    report.summary_of_findings = clean_summary_for_document(report.summary_of_findings)
     return report
 
 
@@ -352,6 +353,50 @@ def hard_delete_case(db: Session, case: InvestigationCase) -> None:
         shutil.rmtree(case_path, ignore_errors=True)
 
 
+# Usernames created by backend/tests fixtures (never real investigators).
+TEST_HARNESS_USERNAMES: frozenset[str] = frozenset(
+    {
+        "accuracy_test",
+        "iso_editor_a",
+        "iso_editor_b",
+        "iso_admin",
+        "iso_pwd",
+        "iso_link_admin",
+        "iso_google_stray",
+        "viewer_test",
+        "lockout_test",
+    }
+)
+
+
+def purge_cases_owned_by_usernames(
+    db: Session,
+    usernames: frozenset[str] | set[str] | list[str] | None = None,
+) -> int:
+    """Hard-delete every case owned by the given users (DB row + on-disk folder).
+
+    Used to scrub pytest leftovers from a shared SQLite file. Defaults to
+    ``TEST_HARNESS_USERNAMES``. Does not delete the users themselves.
+    """
+    names = frozenset(usernames) if usernames is not None else TEST_HARNESS_USERNAMES
+    if not names:
+        return 0
+    owners = db.query(User).filter(User.username.in_(names)).all()
+    if not owners:
+        return 0
+    owner_ids = [u.id for u in owners]
+    rows = (
+        db.query(InvestigationCase)
+        .filter(InvestigationCase.owner_user_id.in_(owner_ids))
+        .all()
+    )
+    deleted = 0
+    for case in rows:
+        hard_delete_case(db, case)
+        deleted += 1
+    return deleted
+
+
 def purge_trashed_cases(db: Session) -> int:
     """Hard-delete cases that have been in trash longer than retention."""
     days = getattr(settings, "case_trash_retention_days", 7) or 7
@@ -448,12 +493,15 @@ def merge_process_activity_bullets(process: list[str], bullets: list[str]) -> li
 
 
 def evidence_exhibit_lines(items: list[CaseEvidence]) -> list[str]:
+    from app.services.evidence_log import append_exhibit_superscript, list_exhibits_for_case
     from app.services.evidence_review import (
         extract_document_date,
         extract_evidence_text,
         format_document_review_line,
     )
 
+    exhibits = list_exhibits_for_case(evidence_rows=items)
+    by_id = {ex.evidence_id: ex for ex in exhibits}
     lines: list[str] = []
     for ev in items:
         title = ev.title or ev.original_filename or f"document {ev.id}"
@@ -462,7 +510,11 @@ def evidence_exhibit_lines(items: list[CaseEvidence]) -> list[str]:
             dated = extract_document_date(extract_evidence_text(ev))
         except Exception:
             dated = ""
-        lines.append(format_document_review_line(title, dated))
+        line = format_document_review_line(title, dated)
+        ex = by_id.get(ev.id)
+        if ex:
+            line = append_exhibit_superscript(line, ex.exhibit_no)
+        lines.append(line)
     return lines
 
 

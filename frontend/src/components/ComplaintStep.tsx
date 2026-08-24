@@ -181,7 +181,7 @@ export function ComplaintStep({
                   type="button"
                   className="btn-ghost !px-2.5 !py-1 text-xs text-tide-700 dark:text-tide-300"
                   disabled={busy || !localDemoId}
-                  title="Admin only — fill complaint, metadata, and approved WACs"
+                  title="Admin only — fill complaint, metadata, and approved WACs (evidence attaches when you draft)"
                   onClick={onLoadLocalDemo}
                 >
                   <FlaskConical className="h-3.5 w-3.5" /> Load demo
@@ -190,7 +190,7 @@ export function ComplaintStep({
                   type="button"
                   className="btn-ghost !px-2.5 !py-1 text-xs text-tide-700 dark:text-tide-300"
                   disabled={busy || !localDemoId}
-                  title="Admin only — load demo and draft into Compare"
+                  title="Admin only — load demo, draft into Compare, and attach demo evidence exhibits"
                   onClick={onLoadLocalDemoAndDraft}
                 >
                   <Play className="h-3.5 w-3.5" /> Load & draft

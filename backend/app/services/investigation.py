@@ -187,16 +187,33 @@ def _suggest_process() -> list[str]:
 
 
 _SUMMARY_INTAKE_MAX_CHARS = 720
-_SUMMARY_SCOPE_BRIDGE = (
-    "This summary outlines how authorized WAC/RCW selections relate to the drafted "
-    "allegations; investigative findings will be completed after interviews, "
-    "observations, and document review."
+# Peer IRs put evidence narrative here (document review / interviews / observations),
+# not pasted allegation lines. Allegations stay in the Allegation section only.
+_SUMMARY_EVIDENCE_GUIDANCE = (
+    "This section summarizes how document review, interviews, and observations support or do not "
+    "support the authorized allegations under the selected WAC/RCW. Do not restate allegation lines "
+    "here; complete the narrative after evidentiary work."
 )
 _SUMMARY_FINDINGS_SHELL = (
     "Investigative findings (to be completed):\n"
     "[Document review]\n"
     "[Interviews]\n"
     "[Observations]"
+)
+_SUMMARY_DOC_PENDING = (
+    "[pending: how this record supports or does not support the authorized WAC duties]"
+)
+_SUMMARY_COMPLETE_HINT = (
+    "Add interview and observation findings as developed. Refine document-review paragraphs "
+    "after further evidentiary work when needed."
+)
+_ALLEGATION_COPY_PARA_RE = re.compile(
+    r"(?is)(?:^|\n\n)[^\n]*is authorized for this investigation because[^\n]*"
+    r"(?:\n\nThe corresponding allegation asserts:[^\n]*)?"
+)
+_SCOPE_BRIDGE_RE = re.compile(
+    r"(?is)(?:^|\n\n)This summary outlines how authorized WAC/RCW selections relate to the drafted "
+    r"allegations;[^\n]*"
 )
 
 
@@ -266,21 +283,153 @@ def _summary_intake_opener(intake_text: str) -> str:
     return _truncate_at_sentence_boundary(opener, _SUMMARY_INTAKE_MAX_CHARS)
 
 
-def _allegation_summary_paragraph(code: str, title: str, allegation_text: str) -> str:
-    code_clean = (code or "").replace("WAC ", "").replace("RCW ", "").strip()
-    prefix = cite_prefix(code_clean)
-    clean_title = _clean(title or code_clean).replace("—", " - ").replace("–", " - ")
-    allegation = normalize_allegation_line(allegation_text)
-    if allegation and not allegation.endswith("."):
-        allegation += "."
-    return (
-        f"{prefix} {code_clean}, {clean_title}, is authorized for this investigation "
-        f"because the complaint raises concerns within the scope of that section. "
-        f"The corresponding allegation asserts: {allegation}"
+def _summary_document_review_paragraph(
+    title: str,
+    document_date: str = "",
+    excerpt: str = "",
+) -> str:
+    """Peer-IR style document review sentence for Summary of Findings."""
+    from app.services.evidence_review import format_ir_summary_finding
+
+    return format_ir_summary_finding(title, document_date, excerpt)
+
+
+def strip_allegation_copies_from_summary(text: str | None) -> str:
+    """Remove legacy Summary paragraphs that pasted allegation lines."""
+    body = (text or "").strip()
+    if not body:
+        return ""
+    body = _ALLEGATION_COPY_PARA_RE.sub("", body)
+    body = _SCOPE_BRIDGE_RE.sub("", body)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    return body
+
+
+def clean_summary_for_document(text: str | None) -> str:
+    """Summary body for Form preview / Copy / DOCX: no collaborator notes, no pasted allegations."""
+    return strip_allegation_copies_from_summary(strip_collaborator_from_summary(text))
+
+
+def build_summary_of_findings(
+    intake_text: str,
+    allegations: list[InvestigationAllegation] | None = None,
+    investigator: InvestigatorResult | None = None,
+    *,
+    evidence_documents: list[dict[str, Any]] | None = None,
+    evidence_hits: list[dict[str, Any]] | list[Any] | None = None,
+) -> str:
+    """Framework starter for Summary of Findings — complaint opener + evidence narrative.
+
+    Peer examples narrate how records support or do not support authorized WAC duties.
+    When evidence review hits are available (same duty RAG path as Compare), populate
+    showed-paragraphs from exhibit excerpts. Allegation lines stay in the Allegation section.
+    """
+    del allegations, investigator
+    from app.services.evidence_review import (
+        consolidate_hits_by_evidence,
+        format_ir_summary_finding,
     )
 
+    sections: list[str] = [_summary_intake_opener(intake_text)]
+    # One Summary paragraph per exhibit (not one per cite hit).
+    consolidated = consolidate_hits_by_evidence(evidence_hits, included_only=True)
+    if consolidated:
+        for hit in consolidated:
+            sections.append(
+                format_ir_summary_finding(
+                    str(hit.get("evidence_title") or "document"),
+                    str(hit.get("document_date") or ""),
+                    str(hit.get("excerpt") or ""),
+                    cites=list(hit.get("cites") or []),
+                )
+            )
+        sections.append(_SUMMARY_COMPLETE_HINT)
+    else:
+        docs = list(evidence_documents or [])
+        if docs:
+            for doc in docs:
+                title = str(doc.get("title") or doc.get("evidence_title") or "document")
+                dated = str(doc.get("document_date") or doc.get("documentDate") or "")
+                excerpt = str(doc.get("excerpt") or "")
+                sections.append(_summary_document_review_paragraph(title, dated, excerpt))
+            if any(str(d.get("excerpt") or "").strip() for d in docs):
+                sections.append(_SUMMARY_COMPLETE_HINT)
+            else:
+                sections.append(
+                    "Complete each document-review paragraph with how the record supports or does not "
+                    "support the authorized allegations under the selected WAC/RCW. Add interview and "
+                    "observation findings as developed."
+                )
+        else:
+            sections.append(_SUMMARY_EVIDENCE_GUIDANCE)
+            sections.append(_SUMMARY_FINDINGS_SHELL)
+    return clean_summary_for_document("\n\n".join(sections))
 
-_COLLABORATOR_HEADER = "Investigator collaborator notes (template — not findings):"
+
+def merge_evidence_into_summary(
+    summary: str,
+    intake_text: str,
+    evidence_documents: list[dict[str, Any]],
+    *,
+    evidence_hits: list[dict[str, Any]] | list[Any] | None = None,
+) -> str:
+    """Refresh Summary from RAG-scored evidence hits (or title/date shells when no hits)."""
+    cleaned = clean_summary_for_document(summary)
+    # Keep a human opener if present; otherwise rebuild from intake.
+    opener = ""
+    if cleaned:
+        first = cleaned.split("\n\n", 1)[0].strip()
+        low = first.lower()
+        if "received a complaint" in low or low.startswith("the department of health"):
+            opener = first
+    if not opener:
+        opener = _summary_intake_opener(intake_text)
+    # Drop prior auto document-review stubs / shells; keep later human narrative if any.
+    remainder = cleaned
+    if opener and remainder.startswith(opener):
+        remainder = remainder[len(opener) :].lstrip()
+    remainder = re.sub(
+        r"(?is)^A review of the document titled[\s\S]*?(?=\n\nComplete each document-review|\n\nAdd interview and observation|\n\nInvestigative findings|\n\nThis section summarizes|$)",
+        "",
+        remainder,
+    ).strip()
+    remainder = re.sub(
+        r"(?is)^This section summarizes how document review[\s\S]*?(?=\n\nInvestigative findings|$)",
+        "",
+        remainder,
+    ).strip()
+    remainder = re.sub(
+        r"(?is)^Investigative findings \(to be completed\):[\s\S]*$",
+        "",
+        remainder,
+    ).strip()
+    remainder = re.sub(
+        r"(?is)^Complete each document-review paragraph[\s\S]*?(?=\n\n|$)",
+        "",
+        remainder,
+    ).strip()
+    remainder = re.sub(
+        r"(?is)^Add interview and observation findings[\s\S]*?(?=\n\n|$)",
+        "",
+        remainder,
+    ).strip()
+
+    rebuilt = build_summary_of_findings(
+        opener if "received a complaint" in opener.lower() else intake_text,
+        evidence_documents=evidence_documents,
+        evidence_hits=evidence_hits,
+    )
+    # If opener was already a full DOH sentence, prefer it as the first block.
+    if opener and "received a complaint" in opener.lower():
+        parts = rebuilt.split("\n\n", 1)
+        rebuilt = opener if len(parts) == 1 else f"{opener}\n\n{parts[1]}"
+    if remainder and _SUMMARY_DOC_PENDING not in remainder:
+        # Preserve investigator-authored narrative after the assistive shell.
+        rebuilt = f"{rebuilt}\n\n{remainder}"
+    return clean_summary_for_document(rebuilt)
+
+
+_COLLABORATOR_HEADER = "Investigator collaborator notes (template; not findings):"
 _COLLABORATOR_FOOTER = (
     "[Human investigators complete evidentiary findings after interviews, "
     "observations, and document review.]"
@@ -340,30 +489,6 @@ def strip_collaborator_from_summary(text: str | None) -> str:
         body,
     ).strip()
     return re.sub(r"\n{3,}", "\n\n", body).strip()
-
-
-def build_summary_of_findings(
-    intake_text: str,
-    allegations: list[InvestigationAllegation],
-    investigator: InvestigatorResult | None = None,
-) -> str:
-    """Framework starter for Summary of Findings — scope bridge and allegation mapping.
-
-    Collaborator assist stays on structured report fields for the in-app panel only.
-    Does not invent investigative outcomes; evidentiary findings remain human-owned.
-    """
-    del investigator  # Structured fields are set on the report separately.
-    sections: list[str] = [_summary_intake_opener(intake_text), _SUMMARY_SCOPE_BRIDGE]
-    for allegation in allegations:
-        sections.append(
-            _allegation_summary_paragraph(
-                allegation.wac_code,
-                allegation.wac_title or allegation.wac_code,
-                allegation.allegation_text,
-            )
-        )
-    sections.append(_SUMMARY_FINDINGS_SHELL)
-    return strip_collaborator_from_summary("\n\n".join(sections))
 
 
 def build_report_text(report: InvestigationReport) -> str:

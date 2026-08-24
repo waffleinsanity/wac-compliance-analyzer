@@ -101,15 +101,28 @@ export function formatDocumentReviewLine(input: {
   documentDate?: string
   excerpt?: string
   cite?: string
+  exhibitNumber?: number | null
 }): string {
   const title = displayEvidenceTitle(input.title)
   const dated = formatDocumentDate(input.documentDate)
-  return `The investigator reviewed "${title}" dated ${dated}.`
+  let line = `The investigator reviewed "${title}" dated ${dated}.`
+  const n = input.exhibitNumber
+  if (n && n > 0) {
+    const supers = String(n).replace(/\d/g, (d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(d)] || d)
+    if (!line.endsWith(supers)) line = `${line}${supers}`
+  }
+  return line
 }
 
 export function mergeDocumentReviewLines(
   process: string[],
-  documents: { title: string; documentDate?: string; excerpt?: string; cite?: string }[],
+  documents: {
+    title: string
+    documentDate?: string
+    excerpt?: string
+    cite?: string
+    exhibitNumber?: number | null
+  }[],
 ): string[] {
   const added = documents.map((d) => formatDocumentReviewLine(d))
   const src = (process || []).filter((p) => !isExhibitProcessLine(p))
@@ -129,13 +142,32 @@ export function mergeDocumentReviewLines(
 export function documentsFromEvidence(
   evidence: CaseEvidence[] | undefined,
   selectedHits: EvidenceReviewHit[],
-): { title: string; documentDate?: string; excerpt?: string; cite?: string }[] {
-  const byId = new Map<number, { title: string; documentDate?: string; excerpt: string; cite?: string }>()
+): {
+  title: string
+  documentDate?: string
+  excerpt?: string
+  cite?: string
+  exhibitNumber?: number | null
+  evidenceId?: number
+}[] {
+  const byId = new Map<
+    number,
+    {
+      title: string
+      documentDate?: string
+      excerpt: string
+      cite?: string
+      exhibitNumber?: number | null
+      evidenceId?: number
+    }
+  >()
   for (const ev of evidence || []) {
     byId.set(ev.id, {
       title: displayEvidenceTitle(ev.title || ev.original_filename || `document ${ev.id}`),
       documentDate: '',
       excerpt: '',
+      exhibitNumber: ev.exhibit_number ?? null,
+      evidenceId: ev.id,
     })
   }
   for (const hit of selectedHits) {
@@ -143,6 +175,7 @@ export function documentsFromEvidence(
       title: hit.evidence_title || 'document',
       documentDate: '',
       excerpt: '',
+      evidenceId: hit.evidence_id,
     }
     if (hit.document_date) row.documentDate = hit.document_date
     if ((hit.excerpt || '').length > row.excerpt.length) {
@@ -151,6 +184,7 @@ export function documentsFromEvidence(
     }
     if (hit.cite && !row.cite) row.cite = hit.cite
     if (!row.title) row.title = hit.evidence_title
+    row.evidenceId = hit.evidence_id
     byId.set(hit.evidence_id, row)
   }
   return [...byId.values()]

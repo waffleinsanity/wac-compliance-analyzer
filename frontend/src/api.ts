@@ -317,6 +317,25 @@ export type EvidenceReviewResponse = {
   message: string
 }
 
+export type EvidenceLogRow = {
+  exhibit_number: number
+  description: string
+  date_collected: string
+  collected_by: string
+  method: string
+  electronic_location: string
+  wac_codes: string[]
+  evidence_id?: number | null
+}
+
+export type EvidenceLogDraft = {
+  investigator_name: string
+  case_numbers: string
+  license_numbers: string
+  facility_name: string
+  rows: EvidenceLogRow[]
+}
+
 export type InvestigationReport = {
   title: string
   subtitle: string
@@ -365,6 +384,8 @@ export type InvestigationReport = {
   sod?: StatementOfDeficiency | null
   /** Investigator-selected exhibit excerpts (not statute quotes). */
   evidence_review?: EvidenceReviewHit[]
+  /** Editable Evidence Log (fills Evidence Log.xlsx on export). */
+  evidence_log?: EvidenceLogDraft | null
 }
 
 export type UserRole = 'admin' | 'editor' | 'viewer'
@@ -495,6 +516,8 @@ export type CaseEvidence = {
   linked_wac_ids: string[]
   notes: string
   created_at?: string | null
+  /** Stable Evidence Log ordinal (#1, #2, …). */
+  exhibit_number?: number | null
 }
 
 export type CaseProcessEntry = {
@@ -1049,6 +1072,24 @@ export const api = {
   exportCasePack: async (id: number, acknowledge_gaps = false) => {
     const token = getToken()
     const res = await fetch(`/api/cases/${id}/export/pack?acknowledge_gaps=${acknowledge_gaps}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      let detail: unknown = res.statusText
+      try {
+        const data = await res.json()
+        detail = data.detail ?? data
+      } catch {
+        /* ignore */
+      }
+      throw new Error(formatApiErrorDetail(detail, res.statusText))
+    }
+    return res.blob()
+  },
+  exportEvidenceLog: async (id: number) => {
+    const token = getToken()
+    const res = await fetch(`/api/cases/${id}/export/evidence-log`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })

@@ -31,6 +31,46 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.08.24.3',
+    buildTag: '2026.08.24.3',
+    date: '2026-08-24',
+    title: 'Pytest cases stay out of the live case list',
+    summary:
+      'Backend tests copy the live SQLite DB into a temp workspace and write cases only there. A purge helper removes leftover harness-owned cases from the live DB (accuracy_test / iso_* users).',
+    highlights: [
+      'conftest redirects SQLITE_PATH and CASES_DIR before app import',
+      'purge_cases_owned_by_usernames + scripts/purge_test_harness_cases.py',
+      'Session scrub of harness cases on the temp DB',
+    ],
+    areas: ['cases', 'platform'],
+  },
+  {
+    id: '2026.08.24.2',
+    buildTag: '2026.08.24.2',
+    date: '2026-08-24',
+    title: 'Evidence merge keeps Summary document-clean',
+    summary:
+      'Saving Evidence selections into Summary of Findings strips legacy Investigator Collaborator blocks before rewriting document-review paragraphs, so Form preview and Copy stay free of in-app notes. Evidence step copy drops internal ranking jargon.',
+    highlights: [
+      'mergeEvidenceIntoSummary strips collaborator notes before rebuild',
+      'Evidence step help uses investigator language only (no RAG jargon)',
+    ],
+    areas: ['investigation'],
+  },
+  {
+    id: '2026.08.24.1',
+    buildTag: '2026.08.24.1',
+    date: '2026-08-24',
+    title: 'SOD Documents tab puts the draft first',
+    summary:
+      'Statement of Deficiencies help chrome is collapsed into a single How this works detail so the preview and deficiency editor are visible without scrolling past repeated yellow/amber instructions.',
+    highlights: [
+      'How this works detail: yellow verify, amber seeds, Findings included human-owned',
+      'One-line amber seed count when stubs remain; Download SOD stays in the header',
+    ],
+    areas: ['investigation'],
+  },
+  {
     id: '2026.08.20.2',
     buildTag: '2026.08.20.2',
     date: '2026-08-20',

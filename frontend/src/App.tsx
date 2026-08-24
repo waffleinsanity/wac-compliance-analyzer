@@ -40,6 +40,7 @@ import { PrivacyGate } from './components/PrivacyGate'
 import { RelatedStatutesPanel } from './components/RelatedStatutesPanel'
 import { ResizeHandle } from './components/ResizeHandle'
 import { SodEditor } from './components/SodEditor'
+import { EvidenceLogEditor } from './components/EvidenceLogEditor'
 import { LOCAL_DEMO_SCENARIOS } from './fixtures/localQuickDraft'
 import { ReviewStep } from './components/ReviewStep'
 import { EvidenceStep } from './components/EvidenceStep'
@@ -69,7 +70,7 @@ export default function App() {
   const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [showCasesDrawer, setShowCasesDrawer] = useState(false)
   const [tab, setTab] = useState<MainTab>('analysis')
-  const [docSurface, setDocSurface] = useState<'ir' | 'sod'>('ir')
+  const [docSurface, setDocSurface] = useState<'ir' | 'sod' | 'evidence_log'>('ir')
 
   const ws = useInvestigationWorkspace({
     userRole: user?.role,
@@ -552,7 +553,7 @@ export default function App() {
                 <div
                   className={
                     step === 'report'
-                      ? 'min-h-0 flex-1 overflow-y-auto'
+                      ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
                       : 'min-h-0 flex-1 overflow-y-auto p-3 pb-20 sm:p-4 lg:p-5 lg:pb-5'
                   }
                 >
@@ -674,13 +675,14 @@ export default function App() {
                       fallbackTitle="Documents failed to render this draft"
                       onReset={() => setStep('review')}
                     >
-                    <div className="flex min-h-0 flex-col gap-3">
-                      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-ink-200 px-3 pt-2 dark:border-ink-700 sm:px-4 lg:px-5">
+                    <div className="flex h-full min-h-0 flex-col">
+                      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-ink-200 bg-card/95 px-3 pt-2 backdrop-blur-sm dark:border-ink-700 sm:px-4 lg:px-5">
                         <div className="flex flex-wrap gap-0">
                           {(
                             [
                               ['ir', 'Investigation Report'],
                               ['sod', 'Statement of Deficiencies'],
+                              ['evidence_log', 'Evidence Log'],
                             ] as const
                           ).map(([id, label]) => (
                             <button
@@ -696,6 +698,12 @@ export default function App() {
                               {id === 'sod' && (
                                 <span className="ml-1 text-[10px] font-normal text-ink-400">
                                   {(report?.sod?.deficiencies || []).length || '—'}
+                                </span>
+                              )}
+                              {id === 'evidence_log' && (
+                                <span className="ml-1 text-[10px] font-normal text-ink-400">
+                                  {(report?.evidence_log?.rows || caseDetail?.evidence || []).length ||
+                                    '—'}
                                 </span>
                               )}
                             </button>
@@ -720,6 +728,7 @@ export default function App() {
                         )}
                         </div>
                       </div>
+                      <div className="min-h-0 flex-1 overflow-y-auto">
                       {docSurface === 'ir' ? (
                         <InvestigationReportEditor
                           report={report}
@@ -739,9 +748,11 @@ export default function App() {
                           canEdit={userCanEdit}
                           canExport={userCanExport}
                         />
-                      ) : (
+                      ) : docSurface === 'sod' ? (
                         <SodEditor
                           report={report}
+                          onReportChange={setReport}
+                          canEdit={userCanEdit}
                           canExport={userCanExport}
                           busy={busy}
                           activeCaseId={activeCaseId}
@@ -750,7 +761,23 @@ export default function App() {
                             return detail.id
                           }}
                         />
+                      ) : (
+                        <EvidenceLogEditor
+                          report={report}
+                          caseDetail={caseDetail}
+                          caseId={activeCaseId}
+                          canEdit={userCanEdit}
+                          canExport={userCanExport}
+                          busy={busy}
+                          onReportChange={setReport}
+                          onCaseRefresh={refreshCaseDetail}
+                          onEnsureCase={async (reportPayload) => {
+                            const detail = await ensureCaseSaved(reportPayload)
+                            return detail.id
+                          }}
+                        />
                       )}
+                      </div>
                     </div>
                     </PanelErrorBoundary>
                   )}
