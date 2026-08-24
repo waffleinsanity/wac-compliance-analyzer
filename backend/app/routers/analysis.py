@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.auth import get_admin_user, get_current_user, get_editor_user
@@ -216,6 +217,21 @@ def ingest(
     _: User = Depends(get_admin_user),
 ):
     return wac_store.ingest(db, force=force)
+
+
+@router.get("/templates/investigation-sod-template")
+def get_investigation_sod_template(_: User = Depends(get_current_user)):
+    """Official Investigation SOD Template.docx bytes (same file as Export SOD)."""
+    from app.services.sod_template import read_blank_sod_template_bytes
+
+    content = read_blank_sod_template_bytes()
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": 'inline; filename="Investigation SOD Template.docx"',
+        },
+    )
 
 
 @router.get("/templates")

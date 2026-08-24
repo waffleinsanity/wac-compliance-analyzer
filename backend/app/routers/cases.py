@@ -594,6 +594,7 @@ def rebuild_draft(
     case.complaint_text = _apply_privacy_to_complaint(case, case.complaint_text or "")
 
     existing = report_from_json(case.current_report_json) if case.current_report_json else None
+    prior_sod = existing.sod if existing else None
     if existing:
         save_snapshot(
             db,
@@ -603,7 +604,6 @@ def rebuild_draft(
             note="Auto-snapshot before rebuild (investigator edits may be overwritten)",
         )
 
-    prior_sod = existing.sod if existing else None
     report = build_investigation_report(
         db=db,
         complaint_text=case.complaint_text,
@@ -614,14 +614,11 @@ def rebuild_draft(
         facility_address=case.facility_address or None,
         credential_number=case.credential_number or None,
     )
-    # Preserve investigator SOD edits (findings / Based on) across rebuild when cites match.
-    if prior_sod:
-        from app.services.ir_format import sync_report_text
+    if prior_sod is not None:
+        report.sod = prior_sod
         from app.services.sod_draft import attach_sod_to_report
 
-        report.sod = prior_sod
         attach_sod_to_report(report)
-        sync_report_text(report)
     save_snapshot(db, case, report, user, note="Rebuilt from approved WACs")
     db.refresh(case)
     return _detail(db, case)
@@ -834,6 +831,42 @@ def export_docx(
     )
 
 
+@router.post("/preview/sod-from-report")
+def preview_sod_from_report(
+    report: InvestigationReport,
+    user: User = Depends(get_current_user),
+):
+    """Filled Investigation SOD Template.docx (same fill as Export SOD) for on-screen preview."""
+    del user
+    content = build_sod_docx(report)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": 'inline; filename="SOD_preview.docx"'},
+    )
+
+
+@router.post("/{case_id}/preview/sod")
+def preview_sod(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Filled Investigation SOD Template.docx for the case (same fill as Export SOD)."""
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    assert_case_not_trashed(case, action="previewing")
+    report = _report_for_export(db, case)
+    content = build_sod_docx(report)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'inline; filename="SOD_{case.case_id_label or case.id}_preview.docx"'
+        },
+    )
+
+
 @router.post("/{case_id}/export/sod")
 def export_sod(
     case_id: int,
@@ -841,7 +874,7 @@ def export_sod(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Facility-facing Statement of Deficiency DOCX (POC column blank)."""
+    """Facility-facing SOD: Investigation SOD Template.docx filled from the IR."""
     require_role_export(user)
     case = get_case_or_404(db, case_id)
     assert_case_access(case, user)

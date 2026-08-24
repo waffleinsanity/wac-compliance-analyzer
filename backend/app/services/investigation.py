@@ -28,6 +28,7 @@ from app.schemas import (
     WACComparison,
 )
 from app.services.investigator_llm import CodeInvestigation, InvestigatorResult, run_investigator
+from app.services.sod_draft import attach_sod_to_report
 from app.services.quote_verify import repair_allegation_text_from_store, verify_report_quotes
 from app.services.ir_blank import TITLE as IR_TITLE
 from app.services.ir_format import build_report_plain_text, sync_report_text
@@ -40,7 +41,6 @@ from app.services.template_corpus import (
 )
 from app.services.guidance_corpus import load_guidance_corpus
 from app.services.ir_learning import learned_preamble, preferred_connector_for
-from app.services.sod_draft import attach_sod_to_report
 from app.services.wac_scope import (
     MAX_ALLEGATION_CLAUSES,
     MAX_ALLEGATION_DRAFT_CLAUSES,
@@ -625,8 +625,6 @@ def build_investigation_report(
         llm_model=investigator.llm_model,
         llm_error=investigator.llm_error,
     )
-    # Sister SOD skeleton from Compare duty options (exact PDF duties).
-    attach_sod_to_report(report)
     sync_report_text(report)
 
     selected_codes = [n.code for n in code_nodes]
@@ -677,6 +675,8 @@ def build_investigation_report(
         a.quote_ok = next(
             (c.quote_ok for c in report.comparisons if c.code == a.wac_code), True
         )
+
+    attach_sod_to_report(report)
 
     report.duration_ms = (time.perf_counter() - started) * 1000
     return report

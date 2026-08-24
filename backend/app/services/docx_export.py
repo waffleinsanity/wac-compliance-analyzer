@@ -1,4 +1,4 @@
-"""DOCX export for Investigation Reports — blank template styles + DOH run formatting."""
+"""DOCX export for Investigation Reports - blank template styles + DOH run formatting."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_UNDERLINE
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_UNDERLINE
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
@@ -30,17 +30,6 @@ from app.services.ir_format import (
     facility_header_lines,
     sync_report_text,
 )
-from app.services.sod_blank import (
-    DISCLAIMER,
-    DOH_CONTACT_LINES,
-    HEADER_LABELS,
-    TABLE_HEADERS,
-    TITLE as SOD_TITLE,
-    cover_letter_paragraphs,
-    format_findings_column,
-    poc_instruction_paragraphs,
-)
-
 
 STYLE_TITLE = "No Spacing"
 STYLE_HEADER = "Header"
@@ -339,168 +328,19 @@ def build_deficiency_cite_sheet(report: InvestigationReport | dict[str, Any]) ->
     return buf.getvalue()
 
 
-def build_sod_docx(report: InvestigationReport | dict[str, Any]) -> bytes:
-    """Facility-facing SOD pack: cover letter, report table, POC instructions.
+def build_sod_docx(report: InvestigationReport | dict[str, Any] | None = None) -> bytes:
+    """Facility-facing SOD: fill Investigation SOD Template.docx in place.
 
-    Page order matches peer BHA samples: cover letter, Statement of Deficiency Report,
-    then Plan of Correction Instructions. Identifier key is omitted. POC column stays blank.
+    Preserves landscape page setup, DOH logo header, Word list bullets, bold titles,
+    DRAFT watermark, and spacing from the blank. Identifier key is omitted.
     """
-    if isinstance(report, InvestigationReport):
-        data = report.model_dump()
-    else:
-        data = report
-    sod = data.get("sod") or {}
-    fi = data.get("facility_info") or {}
+    from app.services.sod_template import build_sod_docx_bytes
 
-    facility_name = (sod.get("facility_name") or fi.get("facility_address") or "").strip()
-    facility_address = (sod.get("facility_address") or fi.get("facility_address") or "").strip()
-    administrator = (sod.get("administrator") or "").strip()
-    dates = (
-        sod.get("investigation_dates")
-        or fi.get("investigation_dates")
-        or data.get("investigation_date")
-        or ""
-    )
-    investigator = (sod.get("investigator_number") or "").strip()
-    poc = int(sod.get("poc_due_days") or 14)
-    case_id = sod.get("case_id") or data.get("case_id") or ""
-    license_no = sod.get("credential_number") or fi.get("credential_number") or ""
-    services = (sod.get("agency_services_type") or "").strip()
-    inspection = (sod.get("inspection_type") or "Investigation").strip() or "Investigation"
-
-    doc = Document()
-    for section in doc.sections:
-        section.top_margin = Inches(0.75)
-        section.bottom_margin = Inches(0.75)
-        section.left_margin = Inches(0.75)
-        section.right_margin = Inches(0.75)
-
-    def _p(text: str, *, bold: bool = False, size: float = 12.0, center: bool = False) -> None:
-        para = doc.add_paragraph()
-        if center:
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = para.add_run(text)
-        run.font.size = Pt(size)
-        run.font.name = "Arial"
-        run.bold = bold
-
-    def _page_break() -> None:
-        para = doc.add_paragraph()
-        run = para.add_run()
-        run.add_break(WD_BREAK.PAGE)
-
-    for line in cover_letter_paragraphs(
-        facility_name=facility_name,
-        facility_address=facility_address,
-        administrator=administrator,
-        completed_on=dates,
-        investigator_number=investigator,
-        poc_due_days=poc,
-    ):
-        if not line:
-            doc.add_paragraph()
-            continue
-        _p(line, bold=line.startswith("STATE OF WASHINGTON") or line.startswith("DEPARTMENT OF HEALTH"))
-
-    _page_break()
-    _p(SOD_TITLE, bold=True, size=14.0, center=True)
-    doc.add_paragraph()
-    for contact in DOH_CONTACT_LINES:
-        _p(contact)
-    doc.add_paragraph()
-
-    meta = doc.add_table(rows=4, cols=2)
-    meta.style = "Table Grid"
-    meta_rows = [
-        (
-            f"{HEADER_LABELS['agency']}\n{facility_name or 'N/A'}\n{facility_address or 'N/A'}",
-            f"{HEADER_LABELS['administrator']}\n{administrator or 'N/A'}",
-        ),
-        (
-            f"{HEADER_LABELS['inspection_type']}\n{inspection}",
-            f"{HEADER_LABELS['investigation_start']}\n{dates or 'N/A'}",
-        ),
-        (
-            f"{HEADER_LABELS['investigator_number']}\n{investigator or 'N/A'}",
-            f"{HEADER_LABELS['case_number']}\n{case_id or 'N/A'}",
-        ),
-        (
-            f"{HEADER_LABELS['license_number']}\n{license_no or 'N/A'}",
-            f"{HEADER_LABELS['services_type']}\n{services or 'N/A'}",
-        ),
-    ]
-    for i, (left, right) in enumerate(meta_rows):
-        meta.rows[i].cells[0].text = left
-        meta.rows[i].cells[1].text = right
-    for row in meta.rows:
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.font.size = Pt(11)
-                    run.font.name = "Arial"
-
-    doc.add_paragraph()
-    _p(DISCLAIMER)
-    doc.add_paragraph()
-
-    table = doc.add_table(rows=1, cols=3)
-    table.style = "Table Grid"
-    hdr = table.rows[0].cells
-    hdr[0].text = TABLE_HEADERS[0]
-    hdr[1].text = TABLE_HEADERS[1]
-    hdr[2].text = TABLE_HEADERS[2]
-    for cell in hdr:
-        for paragraph in cell.paragraphs:
-            for run in paragraph.runs:
-                run.bold = True
-                run.font.size = Pt(11)
-                run.font.name = "Arial"
-
-    deficiencies = sod.get("deficiencies") or []
-    if not deficiencies:
-        row = table.add_row().cells
-        row[0].text = "N/A"
-        row[1].text = (
-            "No deficiency blocks drafted yet. Confirm Compare duties and complete Findings included."
-        )
-        row[2].text = ""
-    else:
-        for d in deficiencies:
-            row = table.add_row().cells
-            cite_parts = [
-                (d.get("regulation_cite") or "").strip(),
-                (d.get("regulation_text") or "").strip(),
-            ]
-            row[0].text = "\n\n".join(p for p in cite_parts if p)
-            row[1].text = format_findings_column(d)
-            row[2].text = ""
-            for cell in row:
-                for paragraph in cell.paragraphs:
-                    for run in paragraph.runs:
-                        run.font.size = Pt(11)
-                        run.font.name = "Arial"
-
-    _page_break()
-    for line in poc_instruction_paragraphs():
-        heading = line in {
-            "Plan of Correction Instructions",
-            "Introduction",
-            "Descriptive Content",
-            "Completion Dates",
-            "Continued Monitoring",
-            "Checklist:",
-            "Approval of POC",
-            "Questions?",
-        }
-        _p(line, bold=heading)
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
+    return build_sod_docx_bytes(report)
 
 
 def build_sod_identifier_key(report: InvestigationReport | dict[str, Any]) -> bytes:
-    """Internal-only identifier key — do not include in facility-facing packs by default."""
+    """Internal-only identifier key - do not include in facility-facing packs by default."""
     if isinstance(report, InvestigationReport):
         data = report.model_dump()
     else:
@@ -508,7 +348,7 @@ def build_sod_identifier_key(report: InvestigationReport | dict[str, Any]) -> by
     sod = data.get("sod") or {}
     doc = Document()
     t = doc.add_paragraph()
-    r = t.add_run("SOD Identifier Key (INTERNAL — do not send to facility)")
+    r = t.add_run("SOD Identifier Key (INTERNAL - do not send to facility)")
     r.bold = True
     r.font.size = Pt(14)
     for entry in sod.get("identifier_key") or []:

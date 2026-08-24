@@ -987,6 +987,65 @@ export const api = {
     }
     return res.blob()
   },
+  /** Blank Investigation SOD Template.docx (unfilled). Prefer previewFilledSodReport for UI. */
+  fetchInvestigationSodTemplate: async () => {
+    const token = getToken()
+    const res = await fetch('/api/templates/investigation-sod-template', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      let detail: unknown = res.statusText
+      try {
+        const data = await res.json()
+        detail = data.detail ?? data
+      } catch {
+        /* ignore */
+      }
+      throw new Error(formatApiErrorDetail(detail, res.statusText))
+    }
+    return res.blob()
+  },
+  /** Filled SOD DOCX from an in-memory report (same fill as Export SOD). */
+  previewFilledSodReport: async (report: InvestigationReport) => {
+    const token = getToken()
+    const res = await fetch('/api/cases/preview/sod-from-report', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(report),
+    })
+    if (!res.ok) {
+      let detail: unknown = res.statusText
+      try {
+        const data = await res.json()
+        detail = data.detail ?? data
+      } catch {
+        /* ignore */
+      }
+      throw new Error(formatApiErrorDetail(detail, res.statusText))
+    }
+    return res.blob()
+  },
+  previewCaseSod: async (id: number) => {
+    const token = getToken()
+    const res = await fetch(`/api/cases/${id}/preview/sod`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      let detail: unknown = res.statusText
+      try {
+        const data = await res.json()
+        detail = data.detail ?? data
+      } catch {
+        /* ignore */
+      }
+      throw new Error(formatApiErrorDetail(detail, res.statusText))
+    }
+    return res.blob()
+  },
   exportCasePack: async (id: number, acknowledge_gaps = false) => {
     const token = getToken()
     const res = await fetch(`/api/cases/${id}/export/pack?acknowledge_gaps=${acknowledge_gaps}`, {

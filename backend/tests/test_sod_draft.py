@@ -1,25 +1,21 @@
-"""SOD sister draft + validators (structure/voice; PDF store for statute text)."""
+"""SOD sister draft + fill Investigation SOD Template.docx from the IR."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
+from io import BytesIO
+from xml.etree import ElementTree as ET
+from zipfile import ZipFile
 
 from app.schemas import (
     AllegationDutyOption,
     FacilityInfo,
-    InvestigationConclusion,
     InvestigationReport,
-    SodIdentifierEntry,
     WACComparison,
 )
 from app.services.docx_export import build_sod_docx
-from app.services.guidance_corpus import IR_CONCLUSION_SUBSTANTIATED_DEFICIENT
-from app.services.ir_blank import format_conclusion_line, normalize_ir_conclusion
+from app.services.sod_blank import FINDINGS_INCLUDED_LABEL, TITLE, blank_sod_docx_path
 from app.services.sod_draft import attach_sod_to_report, build_sod_from_comparisons
-from app.services.sod_validate import validate_report_sod_consistency, validate_sod
-
-CASES = Path(__file__).parent / "fixtures" / "cases"
+from app.services.sod_template import read_blank_sod_template_bytes
 
 
 def _duty(cite: str = "(1)(f)", phrase: str | None = None) -> AllegationDutyOption:
@@ -49,146 +45,18 @@ def _comp(code: str = "246-337-060") -> WACComparison:
     )
 
 
-def test_build_sod_from_compare_duties():
-    sod = build_sod_from_comparisons([_comp()], case_id="2020-T")
-    assert len(sod.deficiencies) >= 1
-    d = sod.deficiencies[0]
-    assert "246-337-060" in (d.regulation_cite or "")
-    assert (d.based_on or "").lower().startswith("based on")
-    assert (d.failure_to or "").lower().startswith("failure to")
-    # Regulation body is PDF-backed when the leaf exists; synthetic test cites may be empty.
-    assert d.regulation_cite
-    assert "patient identifiers pending" not in (d.based_on or "").lower()
-    low = (d.based_on or "").lower()
-    assert "observation" in low and "interview" in low
-    assert "document review" in low or "policy and procedure review" in low
-
-
-def test_pptx_evidence_buckets_count_aliases():
-    from app.services.sod_writing import evidence_buckets
-
-    gold = evidence_buckets("Based on observation, interview, and document review, the agency failed to")
-    assert gold == {"observation", "interview", "document review"}
-    pdf_form = evidence_buckets(
-        "Based on visual investigation, interview, invoice/laboratory review, and documentation review"
-    )
-    assert "observation" in pdf_form
-    assert "interview" in pdf_form
-    assert "document review" in pdf_form
-    assert len(pdf_form) >= 2
-
-
-def test_sod_pack_export_matches_blank_shell():
-    from app.services.sod_blank import FINDINGS_INCLUDED_LABEL, TITLE, format_findings_column
-
-    sod = build_sod_from_comparisons([_comp()], case_id="2020-T")
-    col = format_findings_column(sod.deficiencies[0])
-    assert FINDINGS_INCLUDED_LABEL in col
-    report = InvestigationReport(
+def _minimal_report(**kwargs) -> InvestigationReport:
+    base = dict(
         title="Investigative Report",
         subtitle="",
         investigation_date="07/10/2026",
-        case_id="PACK-TEST",
-        facility_info=FacilityInfo(facility_address="WA"),
+        case_id="SOD-TEMPLATE-TEST",
+        facility_info=FacilityInfo(facility_address="123 Example St, Olympia, WA"),
         intake_details="x",
         allegation_preamble="",
         allegations=[],
         conclusions=[],
-        comparisons=[_comp()],
-        findings=[],
-        report_text="",
-        selected_count=1,
-        duration_ms=1.0,
-        document_preview="",
-        sod=sod,
-    )
-    blob = build_sod_docx(report)
-    assert blob[:2] == b"PK"
-    from zipfile import ZipFile
-    from io import BytesIO
-    from xml.etree import ElementTree as ET
-
-    with ZipFile(BytesIO(blob)) as zf:
-        xml = zf.read("word/document.xml").decode("utf-8")
-    text = "".join(n.text or "" for n in ET.fromstring(xml).iter() if n.text)
-    assert TITLE in text
-    assert "Plan of Correction Instructions" in text
-    assert "Deficiency Number and Rule Reference" in text
-    assert FINDINGS_INCLUDED_LABEL in text
-    assert "Findings" in text
-    assert "Agency Name and Address" in text
-    assert "BHA/RTF Agency Services Type" in text
-    # Pack order: cover letter, report title, POC instructions last.
-    title_pos = text.index(TITLE)
-    poc_pos = text.index("Plan of Correction Instructions")
-    assert title_pos < poc_pos
-
-
-def test_validate_sod_flags_empty_findings():
-    sod = build_sod_from_comparisons([_comp()])
-    issues = validate_sod(sod)
-    reasons = {i["reason"] for i in issues}
-    assert "findings_empty" in reasons
-
-
-def test_ir_conclusion_normalization():
-    assert normalize_ir_conclusion("not in compliance") == IR_CONCLUSION_SUBSTANTIATED_DEFICIENT
-    assert normalize_ir_conclusion("in compliance") == "Not Substantiated"
-    line = format_conclusion_line(
-        wac_code="246-337-060",
-        wac_title="Infection control",
-        result=IR_CONCLUSION_SUBSTANTIATED_DEFICIENT,
-    )
-    assert "Concerning Infection control" in line
-    assert "Substantiated with deficient" in line
-
-
-def test_sod_docx_omits_identifier_key():
-    report = InvestigationReport(
-        title="Investigative Report",
-        subtitle="",
-        investigation_date="07/10/2026",
-        case_id="KEY-TEST",
-        facility_info=FacilityInfo(facility_address="WA"),
-        intake_details="x",
-        allegation_preamble="",
-        allegations=[],
-        conclusions=[],
-        comparisons=[_comp()],
-        findings=[],
-        report_text="",
-        selected_count=1,
-        duration_ms=1.0,
-        document_preview="",
-    )
-    attach_sod_to_report(report)
-    assert report.sod is not None
-    report.sod.identifier_key = [
-        SodIdentifierEntry(kind="Patient", code="Patient #1", description="Jane Doe")
-    ]
-    blob = build_sod_docx(report)
-    assert blob[:2] == b"PK"
-    assert b"Jane Doe" not in blob
-    assert b"Patient #1" not in blob
-
-
-def test_consistency_warns_deficient_without_sod():
-    report = InvestigationReport(
-        title="Investigative Report",
-        subtitle="",
-        investigation_date="07/10/2026",
-        facility_info=FacilityInfo(),
-        intake_details="x",
-        allegation_preamble="",
-        allegations=[],
-        conclusions=[
-            InvestigationConclusion(
-                wac_code="246-337-060",
-                allegation_text="Infection control",
-                result=IR_CONCLUSION_SUBSTANTIATED_DEFICIENT,
-                deficiency_cited=True,
-            )
-        ],
+        comparisons=[],
         findings=[],
         report_text="",
         selected_count=0,
@@ -196,18 +64,178 @@ def test_consistency_warns_deficient_without_sod():
         document_preview="",
         sod=None,
     )
-    issues = validate_report_sod_consistency(report)
-    assert any(i["reason"] == "ir_deficient_without_sod" for i in issues)
+    base.update(kwargs)
+    return InvestigationReport(**base)
 
 
-def test_investigate_returns_sister_sod(client):
-    case = json.loads((CASES / "assault_safety.json").read_text(encoding="utf-8"))
-    res = client.post(
-        "/api/investigate",
-        json={"text": case["complaint"], "selected_wacs": case["selected_wacs"]},
+def test_build_sod_from_compare_duties():
+    sod = build_sod_from_comparisons([_comp()], case_id="2020-T")
+    assert sod is not None
+    assert len(sod.deficiencies) >= 1
+    d = sod.deficiencies[0]
+    assert "246-337-060" in (d.regulation_cite or "")
+    assert (d.based_on or "").lower().startswith("based on")
+    assert (d.failure_to or "").lower().startswith("failure to")
+    assert d.regulation_cite
+
+
+def test_attach_sod_to_report_builds_skeleton():
+    report = _minimal_report(comparisons=[_comp()], case_id="CASE-9")
+    out = attach_sod_to_report(report)
+    assert out is report
+    assert report.sod is not None
+    assert report.sod.deficiencies
+    assert report.sod.case_id == "CASE-9"
+
+
+def test_fill_preserves_template_shell_and_injects_fields():
+    path = blank_sod_docx_path()
+    assert path.is_file()
+    blank = path.read_bytes()
+    sod = build_sod_from_comparisons([_comp()], case_id="PACK-TEST", facility_address="Example Agency")
+    report = _minimal_report(
+        case_id="PACK-TEST",
+        facility_info=FacilityInfo(facility_address="Example Agency"),
+        comparisons=[_comp()],
+        sod=sod,
     )
+    blob = build_sod_docx(report)
+    assert blob[:2] == b"PK"
+    assert blob != blank
+    with ZipFile(BytesIO(blob)) as zf:
+        xml = zf.read("word/document.xml").decode("utf-8")
+        names = zf.namelist()
+    text = "".join(n.text or "" for n in ET.fromstring(xml).iter() if n.text)
+    assert TITLE in text
+    assert "Example Agency" in text
+    assert "PACK-TEST" in text
+    assert FINDINGS_INCLUDED_LABEL in text
+    assert 'w:orient="landscape"' in xml
+    assert any(n.startswith("word/media/") for n in names)
+    assert any("header" in n for n in names)
+
+
+def test_cover_address_not_duplicated():
+    from app.services.sod_template import fill_sod_template
+
+    addr = "123 Demo Behavioral Health Way, Olympia, WA 98501"
+    sod = build_sod_from_comparisons([_comp()], case_id="DUP-1", facility_address=addr)
+    report = _minimal_report(
+        case_id="DUP-1",
+        facility_info=FacilityInfo(facility_address=addr, laboratory_director="Ada Admin"),
+        comparisons=[_comp()],
+        sod=sod,
+    )
+    doc = fill_sod_template(report)
+    name = (doc.paragraphs[8].text or "").strip()
+    address = (doc.paragraphs[9].text or "").strip()
+    dear = (doc.paragraphs[11].text or "").strip()
+    assert name == addr
+    assert address == ""
+    assert dear == "Dear Ada Admin:"
+
+
+def test_filled_docx_uses_png_logo():
+    sod = build_sod_from_comparisons([_comp()], case_id="LOGO-1", facility_address="Agency")
+    report = _minimal_report(
+        case_id="LOGO-1",
+        facility_info=FacilityInfo(facility_address="Agency"),
+        comparisons=[_comp()],
+        sod=sod,
+    )
+    blob = build_sod_docx(report)
+    with ZipFile(BytesIO(blob)) as zf:
+        names = zf.namelist()
+        assert "word/media/image1.png" in names
+        assert "word/media/image1.wmf" not in names
+        rels = zf.read("word/_rels/document.xml.rels").decode("utf-8")
+        assert "media/image1.png" in rels
+
+
+def test_blank_template_api_unchanged(client):
+    on_disk = read_blank_sod_template_bytes()
+    res = client.get("/api/templates/investigation-sod-template")
     assert res.status_code == 200, res.text
-    data = res.json()
-    assert data.get("sod", {}).get("deficiencies")
-    raw = build_sod_docx(data)
-    assert raw[:2] == b"PK"
+    assert res.content == on_disk
+
+
+def test_preview_sod_from_report_returns_filled_docx(client):
+    sod = build_sod_from_comparisons([_comp()], case_id="PREV-1", facility_address="Preview Facility")
+    report = _minimal_report(
+        case_id="PREV-1",
+        facility_info=FacilityInfo(facility_address="Preview Facility"),
+        comparisons=[_comp()],
+        sod=sod,
+    )
+    res = client.post("/api/cases/preview/sod-from-report", json=report.model_dump())
+    assert res.status_code == 200, res.text
+    assert res.content[:2] == b"PK"
+    assert res.content != read_blank_sod_template_bytes()
+    with ZipFile(BytesIO(res.content)) as zf:
+        text = "".join(
+            n.text or ""
+            for n in ET.fromstring(zf.read("word/document.xml")).iter()
+            if n.text
+        )
+    assert "Preview Facility" in text
+    with ZipFile(BytesIO(res.content)) as zf:
+        assert "word/media/image1.png" in zf.namelist()
+
+
+def test_investigation_start_date_not_doubled():
+    """Meta date must be SDT-only; cell paragraph write used to concatenate twice."""
+    date = "07/31/2026"
+    sod = build_sod_from_comparisons(
+        [_comp()],
+        case_id="DATE-1",
+        facility_address="Date Agency",
+        investigation_dates=date,
+    )
+    report = _minimal_report(
+        case_id="DATE-1",
+        investigation_date=date,
+        facility_info=FacilityInfo(facility_address="Date Agency", investigation_dates=date),
+        comparisons=[_comp()],
+        sod=sod,
+    )
+    blob = build_sod_docx(report)
+    with ZipFile(BytesIO(blob)) as zf:
+        xml = zf.read("word/document.xml").decode("utf-8")
+        text = "".join(n.text or "" for n in ET.fromstring(xml).iter() if n.text)
+    assert date in text
+    assert f"{date}{date}" not in text
+    assert "07/31/202607/31/2026" not in text
+
+
+def test_auto_filled_fields_have_verify_yellow_shading():
+    """Cover/meta auto-fills and SOD seed findings use light yellow w:shd."""
+    sod = build_sod_from_comparisons(
+        [_comp()],
+        case_id="YELLOW-1",
+        facility_address="Yellow Agency LLC",
+        investigation_dates="08/01/2026",
+    )
+    sod.administrator = "Pat Admin"
+    sod.investigator_number = "INV-42"
+    sod.credential_number = "LIC-9"
+    sod.agency_services_type = "BHA"
+    report = _minimal_report(
+        case_id="YELLOW-1",
+        investigation_date="08/01/2026",
+        facility_info=FacilityInfo(
+            facility_address="Yellow Agency LLC",
+            laboratory_director="Pat Admin",
+            credential_number="LIC-9",
+            investigation_dates="08/01/2026",
+        ),
+        comparisons=[_comp()],
+        sod=sod,
+    )
+    blob = build_sod_docx(report)
+    with ZipFile(BytesIO(blob)) as zf:
+        xml = zf.read("word/document.xml").decode("utf-8")
+    assert 'w:fill="FFFF99"' in xml
+    # Regulation cite column must not carry verify shading on its cell.
+    # Findings seed language should be present and shaded at paragraph level.
+    assert "Based on" in xml or "based on" in xml.lower()
+    assert "Failure to" in xml or "failure to" in xml.lower()

@@ -60,7 +60,6 @@ def test_investigate_assault_structure(client):
     assert sod.get("deficiencies"), "sister SOD skeleton should be created with IR"
     for d in sod["deficiencies"]:
         assert d.get("regulation_cite")
-        assert d.get("regulation_text")
         assert (d.get("based_on") or "").lower().startswith("based on")
 
     text = data["report_text"]

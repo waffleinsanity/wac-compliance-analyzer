@@ -693,9 +693,9 @@ export default function App() {
                               onClick={() => setDocSurface(id)}
                             >
                               {label}
-                              {id === 'sod' && (report.sod?.deficiencies?.length ?? 0) > 0 && (
-                                <span className="ml-1 font-mono text-[10px] text-ink-400">
-                                  {report.sod!.deficiencies!.length}
+                              {id === 'sod' && (
+                                <span className="ml-1 text-[10px] font-normal text-ink-400">
+                                  {(report?.sod?.deficiencies || []).length || '—'}
                                 </span>
                               )}
                             </button>
@@ -742,12 +742,9 @@ export default function App() {
                       ) : (
                         <SodEditor
                           report={report}
-                          onReportChange={setReport}
-                          canEdit={userCanEdit}
                           canExport={userCanExport}
                           busy={busy}
                           activeCaseId={activeCaseId}
-                          evidence={caseDetail?.evidence || []}
                           onEnsureCase={async (reportPayload) => {
                             const detail = await ensureCaseSaved(reportPayload)
                             return detail.id

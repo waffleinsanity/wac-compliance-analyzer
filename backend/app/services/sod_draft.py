@@ -160,6 +160,10 @@ def attach_sod_to_report(report: InvestigationReport) -> InvestigationReport:
         credential_number=getattr(fi, "credential_number", "") or "",
         investigation_dates=getattr(fi, "investigation_dates", "") or report.investigation_date,
     )
+    # Seed Dear/administrator from IR laboratory director when unset.
+    director = (getattr(fi, "laboratory_director", "") or "").strip()
+    if director and not sod.administrator:
+        sod.administrator = director
     # Preserve investigator-edited findings when regenerating same cites
     if report.sod and report.sod.deficiencies:
         prior = {d.regulation_cite: d for d in report.sod.deficiencies if d.regulation_cite}
@@ -187,7 +191,7 @@ def attach_sod_to_report(report: InvestigationReport) -> InvestigationReport:
         sod.identifier_key = report.sod.identifier_key or []
         sod.notes = report.sod.notes or ""
         sod.facility_name = report.sod.facility_name or sod.facility_name
-        sod.administrator = report.sod.administrator or ""
+        sod.administrator = report.sod.administrator or sod.administrator
         sod.investigator_number = report.sod.investigator_number or ""
         sod.agency_services_type = report.sod.agency_services_type or ""
         sod.inspection_type = report.sod.inspection_type or sod.inspection_type

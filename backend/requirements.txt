@@ -17,4 +17,5 @@ scikit-learn==1.6.1
 aiofiles==24.1.0
 email-validator==2.2.0
 google-auth==2.38.0
+mammoth==1.8.0
 pytest==8.3.5

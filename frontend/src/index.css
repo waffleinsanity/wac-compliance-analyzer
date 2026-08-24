@@ -416,71 +416,71 @@
     color: #000;
   }
 
-  /* SOD pack paper (same desk/page as IR; table layout from blank) */
-  .sod-doc-page .sod-body {
-    margin: 0;
-    font-size: 11pt;
-    font-weight: 400;
-    line-height: 1.4;
-    color: #000;
+  /* Investigation SOD Template preview (docx-preview renders the same .docx as download) */
+  .sod-docx-preview-shell {
+    padding: 1rem 0.75rem 1.5rem;
+    overflow: auto;
+    background: #d4d8df;
   }
-  .sod-meta-table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
+  .dark .sod-docx-preview-shell {
+    background: #2a3038;
   }
-  .sod-meta-table td {
-    width: 50%;
-    vertical-align: top;
-    border: 1px solid #1a1f27;
-    padding: 0.35rem 0.45rem;
-    font-size: 10pt;
-    line-height: 1.35;
-    color: #000;
+  .sod-docx-preview-host {
+    margin: 0 auto;
+    max-width: 100%;
   }
-  .sod-meta-label {
-    display: block;
-    font-weight: 700;
-    margin-bottom: 0.15rem;
+  .sod-docx-preview-host .sod-docx-preview-wrapper {
+    background: transparent;
+    padding: 0;
+    counter-reset: sod-page;
   }
-  .sod-meta-value {
-    display: block;
-    font-weight: 400;
-  }
-  .sod-def-table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-  }
-  .sod-def-table th,
-  .sod-def-table td {
-    border: 1px solid #1a1f27;
-    vertical-align: top;
-    padding: 0.4rem 0.45rem;
-    font-size: 10pt;
-    line-height: 1.35;
-    color: #000;
-  }
-  .sod-def-table th {
-    font-weight: 700;
-    text-align: left;
-    background: #f5f2ea;
-  }
-  .sod-def-table th:nth-child(1),
-  .sod-def-table td:nth-child(1) {
-    width: 28%;
-  }
-  .sod-def-table th:nth-child(2),
-  .sod-def-table td:nth-child(2) {
-    width: 44%;
-  }
-  .sod-def-table th:nth-child(3),
-  .sod-def-table td:nth-child(3) {
-    width: 28%;
-  }
-  .sod-poc-blank {
-    min-height: 4.5rem;
+  /* Each landscape Word page: paper stays light; clear gap + label so splits are obvious */
+  .sod-docx-preview-host .sod-docx-preview-wrapper > section.sod-docx-preview {
+    counter-increment: sod-page;
+    position: relative;
+    margin: 0 auto 2.75rem;
     background: #fffef9;
+    box-shadow:
+      0 0 0 1px rgba(26, 31, 39, 0.1),
+      0 4px 6px rgba(26, 31, 39, 0.06),
+      0 14px 36px rgba(26, 31, 39, 0.16);
+  }
+  .dark .sod-docx-preview-host .sod-docx-preview-wrapper > section.sod-docx-preview {
+    background: #fffef9;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.35),
+      0 4px 8px rgba(0, 0, 0, 0.25),
+      0 16px 40px rgba(0, 0, 0, 0.4);
+  }
+  .sod-docx-preview-host,
+  .sod-docx-preview-host * {
+    color: #000;
+  }
+  .dark .sod-docx-preview-host,
+  .dark .sod-docx-preview-host * {
+    color: #000;
+  }
+  /* Page labels sit in the shell gap (not on paper); keep readable in light and dark */
+  .sod-docx-preview-host .sod-docx-preview-wrapper > section.sod-docx-preview::after {
+    content: 'Page ' counter(sod-page);
+    position: absolute;
+    left: 50%;
+    bottom: -1.65rem;
+    transform: translateX(-50%);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #4a5563;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .sod-docx-preview-host .sod-docx-preview-wrapper > section.sod-docx-preview:not(:last-child)::after {
+    content: 'Page break · Page ' counter(sod-page);
+  }
+  .dark .sod-docx-preview-host .sod-docx-preview-wrapper > section.sod-docx-preview::after {
+    color: #c5ccd6;
   }
 
   /* Status marks — rectangular, not pill clusters */
