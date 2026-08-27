@@ -329,17 +329,11 @@ def _is_verb_led_duty(phrase: str) -> bool:
     return bool(candidates & _STATUTE_VERB_STARTERS)
 
 
-def _complete_list_intro_duty(text: str) -> str:
-    """Strip hanging list-intro tails (' for:', ' whose:', ' including:') to a complete gerund clause.
-
-    The result remains a contiguous prefix of the source node text (sole-source safe).
-    Prefer ``_compose_list_intro_leaf_duty`` when a concrete leaf topic exists — stripping
-    ``for:`` alone drops the specific WAC item the allegation should cite.
-    """
+def _strip_hanging_list_tail(text: str) -> str:
+    """Drop trailing list-intro hangers (for: / that: / the following:) for compact joins."""
     body = normalize_statute_text(_clean(text))
     if not body:
         return ""
-    # Drop trailing relative/prepositional hangers that introduce nested children.
     trimmed = re.sub(
         r"\s+(?:for|whose|which|that|including|with|of|to)\s*:?\s*$",
         "",
@@ -352,6 +346,20 @@ def _complete_list_intro_duty(text: str) -> str:
         trimmed,
         flags=re.IGNORECASE,
     )
+    return _strip_list_edge_punct(trimmed)
+
+
+def _complete_list_intro_duty(text: str) -> str:
+    """Strip hanging list-intro tails (' for:', ' whose:', ' including:') to a complete gerund clause.
+
+    The result remains a contiguous prefix of the source node text (sole-source safe).
+    Prefer ``_compose_list_intro_leaf_duty`` when a concrete leaf topic exists — stripping
+    ``for:`` alone drops the specific WAC item the allegation should cite.
+    """
+    body = normalize_statute_text(_clean(text))
+    if not body:
+        return ""
+    trimmed = _strip_hanging_list_tail(body)
     trimmed = _strip_list_edge_punct(_strip_duty_leadins(trimmed))
     if not trimmed or _is_incomplete_duty_phrase(trimmed):
         return ""
@@ -434,6 +442,19 @@ def _lowercase_join_leaf(leaf: str) -> str:
     return body[0].lower() + body[1:]
 
 
+def _node_embeds_nested_children(text: str) -> bool:
+    """True when node text includes nested (a)/(i)/(A) markers beyond its own clause."""
+    body = normalize_statute_text(text)
+    if not body:
+        return False
+    if _looks_like_container(body):
+        return True
+    own = own_clause_text(body)
+    if not own or len(own) + 8 >= len(body):
+        return False
+    return bool(_CHILD_MARKER_RE.search(body[len(own) :]))
+
+
 def _compose_list_intro_leaf_duty(sub: ScopedSubsection) -> str:
     """Exact WAC duty for a bare-noun leaf under its nearest hanging parent intro.
 
@@ -443,10 +464,19 @@ def _compose_list_intro_leaf_duty(sub: ScopedSubsection) -> str:
     Parent and leaf stay separate store nodes; the composed string is exact
     language from both. Never paraphrased.
     """
-    leaf = _strip_list_edge_punct(normalize_statute_text(sub.text or ""))
+    raw = normalize_statute_text(sub.text or "")
+    # Parent containers embed child markers; join only the node's own clause.
+    if _node_embeds_nested_children(raw):
+        leaf = _strip_list_edge_punct(own_clause_text(raw) or raw)
+    else:
+        leaf = _strip_list_edge_punct(raw)
     leaf = re.sub(r"(?:;?\s*(?:and|or))+$", "", leaf, flags=re.IGNORECASE).strip()
     if not leaf:
         return ""
+    if _is_hanging_list_intro(leaf) or leaf.rstrip().endswith(":"):
+        stripped = _strip_hanging_list_tail(leaf)
+        if stripped:
+            leaf = stripped
     # Already a complete verb-led duty on the leaf itself — no parent join needed.
     if _is_verb_led_duty(leaf) and not _is_incomplete_duty_phrase(leaf):
         return ""
@@ -473,6 +503,8 @@ def _compose_list_intro_leaf_duty(sub: ScopedSubsection) -> str:
     if not phrase:
         return ""
     if not _is_verb_led_duty(phrase) or _is_incomplete_duty_phrase(phrase):
+        return ""
+    if _node_embeds_nested_children(phrase):
         return ""
     return phrase
 
@@ -1896,29 +1928,40 @@ def _duty_phrase_for_option(sub: ScopedSubsection) -> str:
     if composed:
         return composed
 
+    own = own_clause_text(src.text) or ""
+    # Hanging / container parents: own-clause only (never dump nested (A)/(i) children).
+    if own and (_is_hanging_list_intro(own) or _node_embeds_nested_children(src.text)):
+        completed = _complete_list_intro_duty(own)
+        if completed and _is_verb_led_duty(completed) and not _is_incomplete_duty_phrase(completed):
+            return completed
+        stripped = _strip_hanging_list_tail(own)
+        if stripped and _is_verb_led_duty(stripped) and not _is_incomplete_duty_phrase(stripped):
+            return stripped
+        # Parent noun clause under a hanging ancestor was already tried via compose.
+        return ""
+
     # Promoted / rewritten draft text on ``sub`` (contiguous prefix of the store node).
     drafted = _strip_list_edge_punct(normalize_statute_text(sub.text or ""))
     store_body = normalize_statute_text(src.text or "")
     if (
         drafted
+        and not _node_embeds_nested_children(drafted)
         and _is_verb_led_duty(drafted)
         and not _is_incomplete_duty_phrase(drafted)
         and drafted.lower() in store_body.lower()
     ):
         return drafted
 
-    # Hanging parent list intros: only the completed verb clause (no bare "for:").
-    if _is_hanging_list_intro(own_clause_text(src.text) or src.text):
-        completed = _complete_list_intro_duty(own_clause_text(src.text) or src.text)
-        if completed and _is_verb_led_duty(completed) and not _is_incomplete_duty_phrase(completed):
-            return completed
-        return ""
-
-    completed = _complete_list_intro_duty(own_clause_text(src.text) or src.text)
+    completed = _complete_list_intro_duty(own or src.text)
     if completed and _is_verb_led_duty(completed) and not _is_incomplete_duty_phrase(completed):
         return completed
     phrase = duty_phrase_from_subsection(src, max_chars=DUTY_MAX_CHARS)
-    if phrase and _is_verb_led_duty(phrase) and not _is_incomplete_duty_phrase(phrase):
+    if (
+        phrase
+        and not _node_embeds_nested_children(phrase)
+        and _is_verb_led_duty(phrase)
+        and not _is_incomplete_duty_phrase(phrase)
+    ):
         return phrase
     return ""
 
@@ -1972,7 +2015,12 @@ def allegation_has_shortcut(text: str) -> bool:
 
 
 def build_duty_option_from_label(code: str, label: str) -> dict[str, Any] | None:
-    """PDF-backed duty option for a user-picked subsection (Compare full-code outline)."""
+    """PDF-backed duty option for a user-picked subsection (Compare full-code outline).
+
+    Every store-backed subsection must resolve so Compare outline Add works for
+    parents and leaves alike. Phrases stay own-clause / composed leaf text — never
+    a nested child dump that repeats deeper outline rows.
+    """
     code = code.replace("WAC ", "").replace("RCW ", "").strip()
     label = sanitize_subsection_label((label or "").strip())
     if not label:
@@ -1981,13 +2029,23 @@ def build_duty_option_from_label(code: str, label: str) -> dict[str, Any] | None
     if not sub:
         return None
     phrase = _duty_phrase_for_option(sub)
+    if not phrase or _node_embeds_nested_children(phrase):
+        own = own_clause_text(sub.text) or normalize_statute_text(sub.text)
+        completed = _complete_list_intro_duty(own) if own else ""
+        if completed and len(completed.strip()) >= 8:
+            phrase = completed
+        else:
+            stripped = _strip_hanging_list_tail(own) if own else ""
+            if stripped and len(stripped.strip()) >= 8:
+                phrase = stripped
+            elif own and len(own.strip()) >= 8:
+                phrase = own.strip().rstrip(" ;,")
+            else:
+                phrase = duty_phrase_from_subsection(sub, max_chars=DUTY_MAX_CHARS)
+                if phrase and _node_embeds_nested_children(phrase):
+                    phrase = _strip_hanging_list_tail(own_clause_text(phrase) or phrase)
+    phrase = _strip_list_edge_punct(phrase or "")
     if not phrase:
-        phrase = duty_phrase_from_subsection(sub, max_chars=DUTY_MAX_CHARS)
-    if not phrase:
-        own = own_clause_text(sub.text)
-        if own and len(own.strip()) >= 8:
-            phrase = own.strip().rstrip(" ;,")
-    if not phrase or len(phrase.strip()) < 8:
         return None
     prefix = cite_prefix(code)
     return {

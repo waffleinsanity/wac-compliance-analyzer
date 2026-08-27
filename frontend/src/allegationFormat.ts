@@ -99,6 +99,39 @@ export function sanitizeSubsectionLabel(label: string): string {
   return cleaned.join('') || raw
 }
 
+/** True when ``ancestor`` is a proper cite-prefix of ``descendant`` (e.g. (4)(g) ⊂ (4)(g)(iii)). */
+export function subsectionLabelNests(ancestor: string, descendant: string): boolean {
+  const a = sanitizeSubsectionLabel(ancestor)
+  const d = sanitizeSubsectionLabel(descendant)
+  return Boolean(a && d && d.startsWith(a) && d.length > a.length)
+}
+
+/**
+ * Keep at most one cite per nested branch: selecting a leaf drops ancestors and
+ * descendants so allegation duties do not repeat the same WAC prose.
+ */
+export function pruneNestedDutyCites(
+  selectedCites: string[],
+  toggledCite: string,
+  citeToLabel: (cite: string) => string,
+  adding: boolean,
+): string[] {
+  const toggledLabel = sanitizeSubsectionLabel(citeToLabel(toggledCite))
+  if (!adding) {
+    return selectedCites.filter((c) => c !== toggledCite)
+  }
+  const kept = selectedCites.filter((cite) => {
+    if (cite === toggledCite) return false
+    const label = sanitizeSubsectionLabel(citeToLabel(cite))
+    if (!label || !toggledLabel) return true
+    if (subsectionLabelNests(label, toggledLabel)) return false
+    if (subsectionLabelNests(toggledLabel, label)) return false
+    return true
+  })
+  kept.push(toggledCite)
+  return kept
+}
+
 function finiteVerbToInfinitive(word: string): string | null {
   const lower = (word || '').replace(/[.,;:()[\]"']+/g, '').toLowerCase()
   if (!lower) return null

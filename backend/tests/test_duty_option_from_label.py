@@ -25,6 +25,22 @@ def test_build_duty_option_unknown_label_returns_none(store_ready):
     assert build_duty_option_from_label("246-341-0410", "(99)") is None
 
 
+def test_build_duty_option_nested_parents_are_compact(store_ready):
+    """Outline picks for parents must not dump nested (i)/(A) children into the phrase."""
+    parent = build_duty_option_from_label("246-341-0410", "(4)(g)")
+    mid = build_duty_option_from_label("246-341-0410", "(4)(g)(iii)")
+    leaf = build_duty_option_from_label("246-341-0410", "(4)(g)(iii)(C)")
+    assert parent and mid and leaf
+    assert "quality management" in parent["duty_phrase"].lower()
+    assert "(i)" not in parent["duty_phrase"]
+    assert "(iii)" not in parent["duty_phrase"]
+    assert "following" not in mid["duty_phrase"].lower()
+    assert "(A)" not in mid["duty_phrase"]
+    assert "critical incidents" in leaf["duty_phrase"].lower()
+    assert "substantiated complaints" in leaf["duty_phrase"].lower()
+    assert "(A)" not in leaf["duty_phrase"]
+
+
 def test_duty_option_api(client):
     resp = client.post(
         "/api/investigate/duty-option",
@@ -35,3 +51,15 @@ def test_duty_option_api(client):
     assert body["label"] == "(2)"
     assert body["picked_from_outline"] is True
     assert "delegate" in body["duty_phrase"].lower()
+
+
+def test_duty_option_api_nested_leaf(client):
+    resp = client.post(
+        "/api/investigate/duty-option",
+        json={"code": "246-341-0410", "label": "(4)(g)(iii)(C)"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["label"] == "(4)(g)(iii)(C)"
+    assert "critical incidents" in body["duty_phrase"].lower()
+    assert "(A)" not in body["duty_phrase"]

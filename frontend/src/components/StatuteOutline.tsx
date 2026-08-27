@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { Plus, Check } from 'lucide-react'
+import { sanitizeSubsectionLabel } from '../allegationFormat'
 import { outlineItemFullLabel, parseStatuteOutline } from '../statuteOutline'
 
 type Props = {
@@ -10,6 +11,17 @@ type Props = {
   onToggleDuty?: (fullLabel: string) => void
   busy?: boolean
   pendingLabel?: string | null
+}
+
+function labelIsSelected(selectedLabels: Set<string> | undefined, fullLabel: string): boolean {
+  if (!selectedLabels?.size) return false
+  const want = sanitizeSubsectionLabel(fullLabel)
+  if (!want) return false
+  if (selectedLabels.has(fullLabel) || selectedLabels.has(want)) return true
+  for (const label of selectedLabels) {
+    if (sanitizeSubsectionLabel(label) === want) return true
+  }
+  return false
 }
 
 export function StatuteOutline({
@@ -37,8 +49,10 @@ export function StatuteOutline({
       {outline.lead ? <p className="statute-outline-lead">{outline.lead}</p> : null}
       {outline.items.map((item, i) => {
         const fullLabel = outlineItemFullLabel(outline.items, i)
-        const selected = selectedLabels?.has(fullLabel) ?? false
-        const pending = pendingLabel === fullLabel
+        const selected = labelIsSelected(selectedLabels, fullLabel)
+        const pending =
+          pendingLabel != null &&
+          sanitizeSubsectionLabel(pendingLabel) === sanitizeSubsectionLabel(fullLabel)
         return (
           <div
             key={`${fullLabel}-${i}`}

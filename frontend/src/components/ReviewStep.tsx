@@ -11,7 +11,7 @@ import type {
 } from '../api'
 import { api } from '../api'
 import { quoteFailureLabel } from '../investigatorLabels'
-import { composeAllegationFromDuties, allegationHasShortcut, normalizeAllegationLine } from '../allegationFormat'
+import { composeAllegationFromDuties, allegationHasShortcut, normalizeAllegationLine, pruneNestedDutyCites, sanitizeSubsectionLabel } from '../allegationFormat'
 import { applicationStrengthFromMatch } from '../applicationStrength'
 import { ApplicationStrengthBadge } from './ApplicationStrengthBadge'
 import { IrTemplatePicker } from './IrTemplatePicker'
@@ -158,6 +158,7 @@ export function ReviewStep({
   const [showFullCode, setShowFullCode] = useState(false)
   const [outlineBusy, setOutlineBusy] = useState(false)
   const [pendingOutlineLabel, setPendingOutlineLabel] = useState<string | null>(null)
+  const [outlineError, setOutlineError] = useState<string | null>(null)
   const total = comparisons.length
   const active = comparisons[activeIdx] || null
 
@@ -313,20 +314,22 @@ export function ReviewStep({
   const toggleDuty = (comparison: WACComparison, cite: string) => {
     const key = comparison.wac_id || comparison.code
     const opts = dutyOptsFor(comparison)
+    const labelFor = (c: string) => {
+      const opt = opts.find((o) => o.cite === c)
+      return opt?.label || dutyLabelFromCite(c, comparison.code)
+    }
     setSelectedDuties((prev) => {
-      const current = new Set(prev[key] || starterCitesFor(comparison))
-      if (current.has(cite)) {
-        if (current.size <= 1) return prev
-        current.delete(cite)
-      } else {
-        current.add(cite)
+      const current = prev[key] || starterCitesFor(comparison)
+      const adding = !current.includes(cite)
+      if (!adding && current.length <= 1) return prev
+      const ordered = pruneNestedDutyCites(current, cite, labelFor, adding)
+      // Preserve option order, then any residual cites.
+      const byOpts = opts.map((o) => o.cite).filter((c) => ordered.includes(c))
+      for (const c of ordered) {
+        if (!byOpts.includes(c)) byOpts.push(c)
       }
-      const ordered = opts.map((o) => o.cite).filter((c) => current.has(c))
-      for (const c of current) {
-        if (!ordered.includes(c)) ordered.push(c)
-      }
-      applyDutySelection(comparison, ordered, opts)
-      return { ...prev, [key]: ordered }
+      applyDutySelection(comparison, byOpts, opts)
+      return { ...prev, [key]: byOpts }
     })
   }
 
@@ -334,14 +337,20 @@ export function ReviewStep({
     if (!report || !onReportChange || outlineBusy) return
     const key = codeKey(comparison)
     let opts = dutyOptsFor(comparison)
-    const existing = opts.find((o) => o.label === fullLabel)
+    const want = sanitizeSubsectionLabel(fullLabel)
+    const existing = opts.find((o) => sanitizeSubsectionLabel(o.label) === want)
     const current = selectedDuties[key] || starterCitesFor(comparison)
+    const labelFor = (c: string) => {
+      const opt = opts.find((o) => o.cite === c)
+      return opt?.label || dutyLabelFromCite(c, comparison.code)
+    }
 
     if (existing && current.includes(existing.cite)) {
       if (current.length <= 1) return
-      const ordered = current.filter((c) => c !== existing.cite)
+      const ordered = pruneNestedDutyCites(current, existing.cite, labelFor, false)
       setSelectedDuties((prev) => ({ ...prev, [key]: ordered }))
       applyDutySelection(comparison, ordered, opts)
+      setOutlineError(null)
       return
     }
 
@@ -349,27 +358,33 @@ export function ReviewStep({
     if (!opt) {
       setOutlineBusy(true)
       setPendingOutlineLabel(fullLabel)
+      setOutlineError(null)
       try {
         opt = await api.resolveDutyOption({ code: comparison.code, label: fullLabel })
-      } catch {
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not add that subsection from the approved code text.'
+        setOutlineError(message)
         return
       } finally {
         setOutlineBusy(false)
         setPendingOutlineLabel(null)
       }
-      if (!opts.some((o) => o.label === opt!.label)) {
+      if (!opts.some((o) => sanitizeSubsectionLabel(o.label) === sanitizeSubsectionLabel(opt!.label))) {
         opts = [...opts, opt!]
       }
     }
 
-    const nextSet = new Set(current)
-    nextSet.add(opt.cite)
-    const ordered = opts.map((o) => o.cite).filter((c) => nextSet.has(c))
-    for (const c of nextSet) {
-      if (!ordered.includes(c)) ordered.push(c)
+    const ordered = pruneNestedDutyCites(current, opt.cite, labelFor, true)
+    const byOpts = opts.map((o) => o.cite).filter((c) => ordered.includes(c))
+    for (const c of ordered) {
+      if (!byOpts.includes(c)) byOpts.push(c)
     }
-    setSelectedDuties((prev) => ({ ...prev, [key]: ordered }))
-    applyDutySelection(comparison, ordered, opts)
+    setSelectedDuties((prev) => ({ ...prev, [key]: byOpts }))
+    applyDutySelection(comparison, byOpts, opts)
+    setOutlineError(null)
   }
 
   useEffect(() => {
@@ -431,6 +446,7 @@ export function ReviewStep({
     const target = comparisons[next]
     setShowPdf(opts?.openPdf === true || target?.quote_ok === false)
     setShowFullCode(false)
+    setOutlineError(null)
   }
 
   const goPrev = () => goTo(activeIdx - 1)
@@ -508,7 +524,8 @@ export function ReviewStep({
     const labels = new Set<string>()
     for (const cite of activeSelectedCites) {
       const opt = activeDutyOpts.find((o) => o.cite === cite)
-      labels.add(opt?.label || dutyLabelFromCite(cite, active.code))
+      const label = sanitizeSubsectionLabel(opt?.label || dutyLabelFromCite(cite, active.code))
+      if (label) labels.add(label)
     }
     return labels
   }, [active, activeSelectedCites, activeDutyOpts])
@@ -933,13 +950,20 @@ export function ReviewStep({
                     {showFullCode ? 'Hide full code text' : 'Show full selected code text'}
                   </button>
                   {showFullCode && (
-                    <StatuteOutline
-                      text={active.wac_text || active.wac_summary || ''}
-                      selectedLabels={selectedOutlineLabels}
-                      onToggleDuty={(label) => void toggleOutlineDuty(active, label)}
-                      busy={busy || outlineBusy}
-                      pendingLabel={pendingOutlineLabel}
-                    />
+                    <div className="space-y-2">
+                      {outlineError ? (
+                        <p className="font-sans text-xs text-rose-700 dark:text-rose-300" role="alert">
+                          {outlineError}
+                        </p>
+                      ) : null}
+                      <StatuteOutline
+                        text={active.wac_text || active.wac_summary || ''}
+                        selectedLabels={selectedOutlineLabels}
+                        onToggleDuty={(label) => void toggleOutlineDuty(active, label)}
+                        busy={busy || outlineBusy}
+                        pendingLabel={pendingOutlineLabel}
+                      />
+                    </div>
                   )}
                 </div>
               )}
