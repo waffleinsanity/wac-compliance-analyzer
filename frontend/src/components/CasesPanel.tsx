@@ -220,26 +220,28 @@ export function CasesPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-ink-200/70 px-3 py-3 dark:border-ink-700">
+      <div className="flex items-center justify-between gap-2 border-b border-ink-200/70 px-2.5 py-1.5 dark:border-ink-700">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <FolderOpen className="h-4 w-4 shrink-0 text-tide-600" /> Cases
+          <h2
+            className="flex items-center gap-1.5 text-[13px] font-semibold"
+            title="Save and resume IR drafts"
+          >
+            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-tide-600" /> Cases
           </h2>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Save and resume IR drafts</p>
         </div>
         <div className="flex shrink-0 gap-1">
-          <button type="button" className="btn-ghost !h-8 !w-8 !px-0" onClick={() => void load()} title="Refresh">
+          <button type="button" className="btn-ghost !h-7 !w-7 !px-0" onClick={() => void load()} title="Refresh">
             <RefreshCw className={clsx('h-3.5 w-3.5', busy && 'animate-spin')} />
           </button>
           {canEdit && view === 'active' && (
-            <button type="button" className="btn-secondary !h-8 !px-2 text-xs" onClick={onNewCase}>
+            <button type="button" className="btn-secondary !h-7 !px-2 text-[11px]" onClick={onNewCase}>
               <Plus className="h-3.5 w-3.5" /> New
             </button>
           )}
         </div>
       </div>
 
-      <div className="space-y-2 border-b border-ink-200/60 px-3 py-2.5 dark:border-ink-700">
+      <div className="space-y-1.5 border-b border-ink-200/60 px-2.5 py-2 dark:border-ink-700">
         <div className="flex gap-1">
           {(
             [
@@ -259,7 +261,7 @@ export function CasesPanel({
                   setStatusFilter('all')
                 }}
                 className={clsx(
-                  'inline-flex min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition',
+                  'inline-flex min-w-0 flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium transition',
                   active
                     ? 'bg-tide-500/12 text-tide-800 ring-1 ring-tide-500/30 dark:text-tide-200'
                     : 'text-ink-500 hover:bg-ink-100/70 dark:hover:bg-ink-800/50',
@@ -275,13 +277,13 @@ export function CasesPanel({
         </div>
 
         <label className="relative block">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by title or case ID…"
-            className="input !h-8 pl-8 !text-xs"
+            className="input !h-7 pl-7 !text-[11px]"
             aria-label="Search cases"
           />
         </label>
@@ -337,142 +339,137 @@ export function CasesPanel({
 
       {error && <p className="px-3 py-2 text-xs text-rose-600">{error}</p>}
 
-      <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
+      <ul className="min-h-0 flex-1 divide-y divide-ink-200/50 overflow-y-auto dark:divide-ink-800/80">
         {filtered.map((c) => {
           const left = view === 'trash' ? daysLeftInTrash(c.trashed_at) : null
           const acting = actionId === c.id
-          const displayTitle = c.title?.trim() || 'Untitled'
+          const displayTitle = c.title?.trim() || c.case_id_label?.trim() || `Case ${c.id}`
           const when = relativeUpdated(c.updated_at)
           const selected = activeCaseId === c.id && view === 'active'
+          const label = (c.case_id_label || '').trim()
+          const showLabel = Boolean(label && label.toLowerCase() !== displayTitle.toLowerCase())
           const meta =
             view === 'trash' && left != null
               ? `Deletes in ${left} day${left === 1 ? '' : 's'}`
               : [
-                  c.case_id_label || `Case ${c.id}`,
+                  showLabel ? label : null,
                   `${c.approved_wac_count} WAC${c.approved_wac_count === 1 ? '' : 's'}`,
-                  c.has_report ? 'has draft' : null,
+                  c.has_report ? 'IR' : null,
                   when,
                 ]
                   .filter(Boolean)
                   .join(' · ')
+          const tip = [displayTitle, caseStatusLabel(c.status), meta].filter(Boolean).join(' · ')
+
+          const actions = !canEdit ? null : view === 'active' ? (
+            <>
+              <button
+                type="button"
+                className="btn-ghost !h-5 !w-5 !px-0"
+                title="Archive"
+                disabled={acting}
+                onClick={() => archiveCase(c)}
+              >
+                <Archive className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                className="btn-ghost !h-5 !w-5 !px-0 text-rose-600 hover:text-rose-700"
+                title="Move to trash"
+                disabled={acting}
+                onClick={() => trashCase(c)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </>
+          ) : view === 'archived' ? (
+            <>
+              <button
+                type="button"
+                className="btn-ghost !h-5 !w-5 !px-0"
+                title="Restore"
+                disabled={acting}
+                onClick={() => restoreCase(c)}
+              >
+                <ArchiveRestore className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                className="btn-ghost !h-5 !w-5 !px-0 text-rose-600 hover:text-rose-700"
+                title="Move to trash"
+                disabled={acting}
+                onClick={() => trashCase(c)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </>
+          ) : view === 'trash' ? (
+            <>
+              <button
+                type="button"
+                className="btn-ghost !h-5 !w-5 !px-0"
+                title="Restore"
+                disabled={acting}
+                onClick={() => restoreCase(c)}
+              >
+                <RotateCcw className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                className="btn-ghost !h-5 !w-5 !px-0 text-rose-600 hover:text-rose-700"
+                title="Delete forever"
+                disabled={acting}
+                onClick={() => purgeCase(c)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </>
+          ) : null
 
           return (
-            <li key={c.id} className="group">
+            <li key={c.id}>
               <div
                 className={clsx(
-                  'border-l-2 px-3 py-2.5 transition',
+                  'border-l-2 px-1.5 py-0.5 transition',
                   selected
                     ? 'border-tide-600 bg-tide-500/8'
                     : 'border-transparent hover:bg-ink-50 dark:hover:bg-ink-800/40',
                 )}
               >
-                <div className="flex items-start gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (view === 'trash') return
-                      onOpenCase(c.id)
-                    }}
-                    disabled={view === 'trash'}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (view === 'trash') return
+                    onOpenCase(c.id)
+                  }}
+                  disabled={view === 'trash'}
+                  title={tip}
+                  className={clsx(
+                    'flex w-full min-w-0 items-center gap-1 text-left',
+                    view === 'trash' && 'cursor-default',
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-tight text-ink-900 dark:text-ink-50">
+                    {displayTitle}
+                  </span>
+                  <span
                     className={clsx(
-                      'min-w-0 flex-1 text-left',
-                      view === 'trash' && 'cursor-default',
+                      'status-chip shrink-0 !gap-0 !border-l !px-1 !py-0 text-[9px] capitalize leading-none',
+                      statusChipClass(c.status),
                     )}
                   >
-                    <span
-                      className="block truncate text-[13px] font-semibold leading-snug text-ink-900 dark:text-ink-50"
-                      title={displayTitle}
-                    >
-                      {displayTitle}
-                    </span>
-                    <span className="mt-1 block truncate text-[11px] leading-snug text-ink-400" title={meta}>
-                      {meta}
-                    </span>
-                  </button>
-
-                  <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
-                    {canEdit && view === 'active' && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn-ghost !h-7 !w-7 !px-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
-                          title="Archive"
-                          disabled={acting}
-                          onClick={() => archiveCase(c)}
-                        >
-                          <Archive className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-ghost !h-7 !w-7 !px-0 text-rose-600 hover:text-rose-700 opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
-                          title="Move to trash"
-                          disabled={acting}
-                          onClick={() => trashCase(c)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
-                    {canEdit && view === 'archived' && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn-ghost !h-7 !w-7 !px-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
-                          title="Restore"
-                          disabled={acting}
-                          onClick={() => restoreCase(c)}
-                        >
-                          <ArchiveRestore className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-ghost !h-7 !w-7 !px-0 text-rose-600 hover:text-rose-700 opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
-                          title="Move to trash"
-                          disabled={acting}
-                          onClick={() => trashCase(c)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
-                    {canEdit && view === 'trash' && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn-ghost !h-7 !w-7 !px-0"
-                          title="Restore"
-                          disabled={acting}
-                          onClick={() => restoreCase(c)}
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-ghost !h-7 !w-7 !px-0 text-rose-600 hover:text-rose-700"
-                          title="Delete forever"
-                          disabled={acting}
-                          onClick={() => purgeCase(c)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
-                    <span
-                      className={clsx(
-                        'status-chip !px-1.5 !py-0 text-[10px] capitalize',
-                        statusChipClass(c.status),
-                      )}
-                    >
-                      {caseStatusLabel(c.status)}
-                    </span>
-                  </div>
-                </div>
+                    {caseStatusLabel(c.status)}
+                  </span>
+                </button>
+                {actions ? (
+                  <div className="flex items-center gap-0.5 pt-0.5">{actions}</div>
+                ) : null}
               </div>
             </li>
           )
         })}
         {!filtered.length && !busy && (
-          <li className="px-2 py-8 text-center text-xs text-ink-400">
+          <li className="px-2 py-6 text-center text-xs text-ink-400">
             {query.trim()
               ? 'No cases match that search.'
               : view === 'archived'

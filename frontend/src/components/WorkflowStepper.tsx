@@ -66,7 +66,7 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
   return (
     <nav
       aria-label="Investigation workflow"
-      className="flex w-full flex-wrap items-center gap-x-4 gap-y-1.5"
+      className="flex w-full flex-wrap items-center gap-x-3 gap-y-1"
     >
       <ol className="flex min-w-0 flex-1 items-baseline gap-0">
         {STEPS.map((s, idx) => {
@@ -84,25 +84,25 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
                   aria-label={`${s.label}: ${s.hint}`}
                   aria-current={active ? 'step' : undefined}
                   className={clsx(
-                    'group flex items-baseline gap-1.5 px-0.5 py-1 text-left transition',
+                    'group flex items-baseline gap-1 px-0.5 py-0.5 text-left transition',
                     canGo ? 'hover:opacity-90' : 'cursor-not-allowed opacity-40',
                   )}
                 >
                   <span
                     className={clsx(
-                      'font-mono text-[10px] tabular-nums',
+                      'font-mono text-[9px] tabular-nums',
                       active ? 'text-tide-700 dark:text-tide-300' : 'text-ink-400',
                     )}
                   >
                     {done && !active ? (
-                      <Check className="inline h-3 w-3" strokeWidth={2.5} aria-hidden />
+                      <Check className="inline h-2.5 w-2.5" strokeWidth={2.5} aria-hidden />
                     ) : (
                       String(idx + 1).padStart(2, '0')
                     )}
                   </span>
                   <span
                     className={clsx(
-                      'font-display text-sm tracking-tight lg:text-[15px]',
+                      'font-display text-[13px] tracking-tight lg:text-sm',
                       active
                         ? 'border-b-2 border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
                         : done
@@ -115,7 +115,7 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
                 </button>
               </li>
               {idx < STEPS.length - 1 && (
-                <li aria-hidden className="mx-2 flex items-center text-ink-300 dark:text-ink-600 lg:mx-3">
+                <li aria-hidden className="mx-1.5 flex items-center text-ink-300 dark:text-ink-600 lg:mx-2">
                   <span className="text-[10px]">/</span>
                 </li>
               )}
@@ -125,12 +125,12 @@ export function WorkflowStepper({ step, onStepChange, unlocked, context }: Props
       </ol>
 
       {meta.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1" aria-label="Case context">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5" aria-label="Case context">
           {meta.map((item) => (
             <span
               key={item.key}
               className={clsx(
-                'font-sans text-[11px]',
+                'font-sans text-[10px]',
                 item.tone === 'ready' && 'text-tide-800 dark:text-tide-300',
                 item.tone === 'warn' && 'text-cedar-600 dark:text-[#d4a574]',
                 item.tone === 'neutral' && 'text-ink-500 dark:text-ink-400',

@@ -388,19 +388,21 @@ export function SodEditor({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 sm:px-4 lg:px-5">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 px-2.5 sm:px-3 lg:px-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-            <h2 className="font-display text-xl tracking-tight text-ink-900 dark:text-ink-50 sm:text-2xl">
-              Statement of Deficiencies
-            </h2>
-            <p className="font-sans text-[11px] text-ink-500 dark:text-ink-400">
+          <h2
+            className="font-display flex min-w-0 flex-wrap items-baseline gap-x-2 text-lg text-ink-900 dark:text-ink-50"
+            title="Sister Statement of Deficiencies draft. Regulation text is PDF-store backed from Compare."
+          >
+            <span className="compare-meta !normal-case tracking-wide">Step 3 · Documents</span>
+            <span>Statement of Deficiencies</span>
+            <span className="font-sans text-[11px] font-normal text-ink-500">
               {(sod.deficiencies || []).length} deficienc
               {(sod.deficiencies || []).length === 1 ? 'y' : 'ies'}
-            </p>
-          </div>
-          <details className="mt-1 max-w-2xl">
+            </span>
+          </h2>
+          <details className="mt-0.5 max-w-2xl">
             <summary className="cursor-pointer font-sans text-[11px] font-medium text-ink-500 hover:text-ink-700 dark:text-ink-400 dark:hover:text-ink-200">
               How this works
             </summary>
@@ -430,7 +432,7 @@ export function SodEditor({
             <button
               type="button"
               className={clsx(
-                'inline-flex items-center gap-1.5 border-b-2 px-2.5 py-1.5 font-medium transition',
+                'inline-flex items-center gap-1.5 border-b-2 px-2 py-1 font-medium transition',
                 viewMode === 'preview'
                   ? 'border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
                   : 'border-transparent text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
@@ -444,7 +446,7 @@ export function SodEditor({
             <button
               type="button"
               className={clsx(
-                'inline-flex items-center gap-1.5 border-b-2 px-2.5 py-1.5 font-medium transition',
+                'inline-flex items-center gap-1.5 border-b-2 px-2 py-1 font-medium transition',
                 viewMode === 'edit'
                   ? 'border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
                   : 'border-transparent text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
@@ -460,7 +462,7 @@ export function SodEditor({
           {canExport ? (
             <button
               type="button"
-              className="btn-primary !h-8 !px-3 text-xs"
+              className="btn-primary !h-7 !px-2.5 text-xs"
               disabled={busy || exporting}
               onClick={() => void exportSod()}
             >
@@ -478,13 +480,13 @@ export function SodEditor({
       </div>
 
       {error && (
-        <div className="border-l-2 border-rose-600 bg-rose-50 px-3 py-2.5 text-sm text-rose-950 dark:bg-rose-950/40 dark:text-rose-100">
+        <div className="border-l-2 border-rose-600 bg-rose-50 px-2.5 py-1.5 text-xs text-rose-950 dark:bg-rose-950/40 dark:text-rose-100">
           {error}
         </div>
       )}
 
       {seedCount > 0 && (
-        <div className="border-l-2 border-amber-500 bg-amber-50/80 px-3 py-2 text-sm text-amber-950 dark:border-amber-600 dark:bg-amber-950/20 dark:text-amber-100">
+        <div className="border-l-2 border-amber-500 bg-amber-50/80 px-2.5 py-1 text-xs text-amber-950 dark:border-amber-600 dark:bg-amber-950/20 dark:text-amber-100">
           {seedCount} amber seed{seedCount === 1 ? '' : 's'} still need narrative (Based on /
           Failure to / findings stubs).
         </div>

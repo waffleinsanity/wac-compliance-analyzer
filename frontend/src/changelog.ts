@@ -31,6 +31,47 @@ export type ChangelogEntry = {
 
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    id: '2026.08.24.5',
+    buildTag: '2026.08.24.5',
+    date: '2026-08-24',
+    title: 'Workflow chrome densified so documents stay visible',
+    summary:
+      'App shell, step rail, Documents sub-tabs, and Compare / Evidence / IR / SOD / Evidence Log headers use a single compact row. Amber review banners and Case tools collapse by default so the IR preview appears sooner on smaller screens.',
+    highlights: [
+      'Shorter app header; subtitle only on large widths',
+      'Step N · Name compact titles across Intake-style steps',
+      'IR review banners and Case tools are collapsible one-line cues',
+    ],
+    areas: ['investigation'],
+  },
+  {
+    id: '2026.08.24.4',
+    buildTag: '2026.08.24.4',
+    date: '2026-08-24',
+    title: 'Intake header is a single compact toolbar row',
+    summary:
+      'Step 1 Intake drops the large title and helper paragraph so the complaint editor and demo controls share one short bar. Guidance stays on hover and in the textarea placeholder.',
+    highlights: [
+      'Step label + Complaint on one line',
+      'Case metadata strip loses the extra instructional line',
+    ],
+    areas: ['investigation'],
+  },
+  {
+    id: '2026.08.24.4',
+    buildTag: '2026.08.24.4',
+    date: '2026-08-24',
+    title: 'IR/SOD superscripts open evidence in the pack',
+    summary:
+      'Document references in Summary of Findings use superscript links with excerpt tooltips. Export pack includes evidence/ files plus Evidence_Index.html so unzipped IR and SOD Word hyperlinks open exhibits offline.',
+    highlights: [
+      'Superscript hyperlinks in IR/SOD DOCX (relative evidence/ paths + Word tooltips)',
+      'Pack zip: evidence/Exhibit_NN_* + Evidence_Index.html (Excel log kept as secondary)',
+      'In-app Summary superscript opens the exhibit; hover shows duty-matched excerpt',
+    ],
+    areas: ['investigation'],
+  },
+  {
     id: '2026.08.24.3',
     buildTag: '2026.08.24.3',
     date: '2026-08-24',

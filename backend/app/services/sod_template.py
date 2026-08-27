@@ -52,8 +52,13 @@ def read_blank_sod_template_bytes() -> bytes:
     return path.read_bytes()
 
 
-def _set_paragraph_text(paragraph, text: str) -> None:
-    """Set paragraph text; trailing Unicode superscripts become Word superscript runs."""
+def _set_paragraph_text(
+    paragraph,
+    text: str,
+    *,
+    cites_by_no: dict[int, Any] | None = None,
+) -> None:
+    """Set paragraph text; trailing Unicode superscripts become Word superscript hyperlinks."""
     text = text if text is not None else ""
     from app.services.evidence_log import strip_trailing_superscripts
 
@@ -68,12 +73,32 @@ def _set_paragraph_text(paragraph, text: str) -> None:
     if not marks:
         return
     digits = marks.translate(str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789"))
-    for run in list(paragraph.runs[1:]):
-        run.text = ""
-    # Keep only first run as body; add a fresh superscript run
     while len(paragraph.runs) > 1:
         r = paragraph.runs[-1]
         r._r.getparent().remove(r._r)
+    if cites_by_no:
+        from app.services.evidence_cite import add_superscript_hyperlink
+
+        for dig in digits:
+            try:
+                n = int(dig)
+            except ValueError:
+                continue
+            cite = cites_by_no.get(n)
+            if cite:
+                add_superscript_hyperlink(
+                    paragraph,
+                    dig,
+                    cite.pack_relpath,
+                    tooltip=cite.tooltip,
+                )
+            else:
+                sup = paragraph.add_run(dig)
+                try:
+                    sup.font.superscript = True
+                except Exception:
+                    pass
+        return
     sup = paragraph.add_run(digits)
     try:
         sup.font.superscript = True
@@ -214,6 +239,7 @@ def _set_findings_cell_with_verify(
     deficiency: dict[str, Any] | Any,
     *,
     exhibit_by_id: dict | None = None,
+    cites_by_no: dict[int, Any] | None = None,
 ) -> None:
     """Write findings as separate paragraphs; yellow-shade seed Based on / Failure to only."""
     d = deficiency
@@ -227,7 +253,7 @@ def _set_findings_cell_with_verify(
     while len(cell.paragraphs) < len(blocks):
         cell.add_paragraph()
     for i, block in enumerate(blocks):
-        _set_paragraph_text(cell.paragraphs[i], block)
+        _set_paragraph_text(cell.paragraphs[i], block, cites_by_no=cites_by_no)
         if _findings_block_needs_verify(block):
             _paragraph_verify_shading(cell.paragraphs[i])
     for extra in cell.paragraphs[len(blocks) :]:
@@ -338,12 +364,18 @@ def fill_sod_template(
     exhibits: list[Any] | None = None,
 ) -> Document:
     """Open Investigation SOD Template.docx and fill case / deficiency fields."""
+    from app.services.evidence_cite import build_evidence_cites
     from app.services.evidence_log import exhibit_map_by_id
+    from app.schemas import InvestigationReport as IRSchema
 
     data = _report_dict(report)
     sod = _ensure_sod_payload(data)
     fi = data.get("facility_info") or {}
     exhibit_by_id = exhibit_map_by_id(exhibits) if exhibits else {}
+    cites_by_no: dict[int, Any] = {}
+    if exhibits and report is not None:
+        ir = report if isinstance(report, IRSchema) else IRSchema.model_validate(data)
+        cites_by_no = {c.exhibit_no: c for c in build_evidence_cites(ir, exhibits)}
 
     facility_name = (sod.get("facility_name") or "").strip()
     facility_address = (sod.get("facility_address") or fi.get("facility_address") or "").strip()
@@ -457,7 +489,12 @@ def fill_sod_template(
             ]
             # Column 0 = PDF-backed statute authority: never yellow-shade.
             _set_unique_cell_text(row[0], "\n\n".join(p for p in cite_parts if p))
-            _set_findings_cell_with_verify(row[1], d, exhibit_by_id=exhibit_by_id or None)
+            _set_findings_cell_with_verify(
+                row[1],
+                d,
+                exhibit_by_id=exhibit_by_id or None,
+                cites_by_no=cites_by_no or None,
+            )
             _set_unique_cell_text(row[2], "")
 
     return doc

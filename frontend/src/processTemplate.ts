@@ -118,50 +118,33 @@ export function packProcessFields(fields: ProcessFields): string[] {
   ]
 }
 
-/** IR Guidance conclusion options (normalize desk-manual typo citied → cited). */
-export const IR_CONCLUSION_OPTIONS = [
-  'Substantiated with deficient practice or condition cited',
-  'Substantiated with no current deficient practice or condition cited',
-  'Not Substantiated',
-  'Pending Investigation',
-] as const
+/** Blank DOCX conclusion choices (peer completed IRs use the same voice). */
+export const IR_CONCLUSION_OPTIONS = ['not in compliance', 'in compliance'] as const
 
 /** Selectable outcomes (empty = Choose an item.). */
-export const FINDING_PHRASES = [
-  'Substantiated with deficient practice or condition cited',
-  'Substantiated with no current deficient practice or condition cited',
-  'Not Substantiated',
-] as const
+export const FINDING_PHRASES = ['not in compliance', 'in compliance'] as const
 
-export type FindingPhrase = (typeof IR_CONCLUSION_OPTIONS)[number] | ''
+export type FindingPhrase = (typeof FINDING_PHRASES)[number] | ''
 
 export function normalizeIrConclusion(result: string): FindingPhrase {
   const r = (result || '').trim()
-  if ((IR_CONCLUSION_OPTIONS as readonly string[]).includes(r)) {
-    return r as FindingPhrase
-  }
   const low = r.toLowerCase()
-  if (low.includes('no current deficient')) {
-    return 'Substantiated with no current deficient practice or condition cited'
-  }
-  if (low.includes('deficient practice or condition cited')) {
-    return 'Substantiated with deficient practice or condition cited'
+  if (low === 'in compliance' || low === 'not in compliance') {
+    return low as FindingPhrase
   }
   if (
-    low === 'not substantiated' ||
-    low === 'unsubstantiated' ||
-    low === 'in compliance'
+    low === '' ||
+    low === 'pending' ||
+    low === 'pending investigation' ||
+    low === 'choose an item.'
   ) {
-    return 'Not Substantiated'
+    return ''
   }
-  if (
-    low === 'substantiated' ||
-    low === 'out of compliance' ||
-    low === 'not in compliance'
-  ) {
-    return 'Substantiated with deficient practice or condition cited'
-  }
-  if (low === 'pending investigation' || low === 'pending') return 'Pending Investigation'
+  // Legacy IR Guidance drafts → blank compliance voice.
+  if (low.includes('no current deficient')) return 'in compliance'
+  if (low.includes('deficient practice or condition cited')) return 'not in compliance'
+  if (low === 'not substantiated' || low === 'unsubstantiated') return 'in compliance'
+  if (low === 'substantiated' || low === 'out of compliance') return 'not in compliance'
   return ''
 }
 
@@ -176,6 +159,21 @@ export function findingPhraseToResult(phrase: FindingPhrase): string {
 }
 
 export function conclusionDeficiencyCited(result: string): boolean {
-  const o = normalizeIrConclusion(result).toLowerCase()
-  return o.includes('deficient practice or condition cited') && !o.includes('no current')
+  return normalizeIrConclusion(result) === 'not in compliance'
+}
+
+/** Peer/blank conclusion sentence (dropdown sits on the compliance phrase). */
+export function formatConclusionSentence(
+  wacCode: string,
+  wacTitle: string,
+  finding: FindingPhrase,
+): { before: string; after: string } {
+  const code = (wacCode || '').replace(/^WAC\s+/i, '').replace(/^RCW\s+/i, '').trim()
+  const prefix = code.startsWith('71.') ? 'RCW' : 'WAC'
+  const title = (wacTitle || '').trim()
+  const titleBit = title ? ` ${title}` : ''
+  return {
+    before: 'Allegation: The investigator found the facility ',
+    after: ` with ${prefix} ${code}${titleBit}.`,
+  }
 }

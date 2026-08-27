@@ -80,19 +80,16 @@ def allegation_export_line(
 def conclusion_export_lines(report: InvestigationReport) -> list[str]:
     conclusions_by_code = {c.wac_code: c for c in report.conclusions}
     lines: list[str] = []
-    for i, a in enumerate(report.allegations, start=1):
+    for a in report.allegations:
         c = conclusions_by_code.get(a.wac_code)
-        line = format_conclusion_line(
-            wac_code=a.wac_code,
-            wac_title=a.wac_title or "",
-            result=c.result if c else "Pending Investigation",
-            deficiency_details=(c.deficiency_details if c and c.deficiency_cited else "") or "",
+        lines.append(
+            format_conclusion_line(
+                wac_code=a.wac_code,
+                wac_title=a.wac_title or "",
+                result=c.result if c else "Pending Investigation",
+                deficiency_details=(c.deficiency_details if c and c.deficiency_cited else "") or "",
+            )
         )
-        # Number conclusions to match allegation list in peer IRs / template UI
-        if line.lower().startswith("allegation:"):
-            lines.append(f"{i}. {line}")
-        else:
-            lines.append(f"{i}. Allegation: {line}")
     return lines
 
 

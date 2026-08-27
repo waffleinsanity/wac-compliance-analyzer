@@ -75,6 +75,8 @@ def _sample_report(**overrides) -> InvestigationReport:
 
 
 def _case_with_evidence(db, user: User, *, title: str = "Policy.pdf") -> InvestigationCase:
+    from app.config import settings
+
     report = _sample_report()
     case = InvestigationCase(
         owner_user_id=user.id,
@@ -91,12 +93,23 @@ def _case_with_evidence(db, user: User, *, title: str = "Policy.pdf") -> Investi
     db.add(case)
     db.commit()
     db.refresh(case)
+    rel = f"{case.id}/evidence/test_{title}"
+    dest = settings.cases_dir / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Plain-text bytes keep tests free of PDF tooling while still packing a real file.
+    if title.lower().endswith(".pdf"):
+        dest.write_bytes(b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n")
+    else:
+        dest.write_text(
+            "Staff must follow supervision procedures for patient safety.\n",
+            encoding="utf-8",
+        )
     ev = CaseEvidence(
         case_id=case.id,
         title=title,
         original_filename=title,
-        stored_path=f"{case.id}/evidence/test_{title}",
-        content_type="application/pdf",
+        stored_path=rel.replace("\\", "/"),
+        content_type="application/pdf" if title.lower().endswith(".pdf") else "text/plain",
         linked_wac_ids=dumps_list(["246-341-0600"]),
         notes="",
         uploaded_by=user.id,
@@ -146,6 +159,8 @@ def test_export_pack_includes_evidence_log(client, db, auth_user):
     assert any(n.startswith("Evidence_Log_") and n.endswith(".xlsx") for n in names)
     assert any(n.startswith("IR_") and n.endswith(".docx") for n in names)
     assert any(n.startswith("SOD_") and n.endswith(".docx") for n in names)
+    assert "Evidence_Index.html" in names
+    assert any(n.startswith("evidence/") for n in names)
 
 
 def test_export_evidence_log_standalone(client, db, auth_user):
@@ -271,6 +286,48 @@ def test_ir_docx_has_superscript_vert_align(db, auth_user):
     raw = build_investigation_docx(report, exhibits=exhibits)
     xml = _docx_xml(raw)
     assert 'w:val="superscript"' in xml
+    # Pack-relative hyperlink target for offline navigation.
+    with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+        rels = zf.read("word/_rels/document.xml.rels").decode("utf-8")
+    assert "evidence/Exhibit_01_" in rels
+    assert 'TargetMode="External"' in rels
+
+
+def test_summary_annotate_and_pack_includes_evidence_files(client, db, auth_user):
+    from app.services.evidence_cite import (
+        annotate_summary_with_exhibit_cites,
+        build_evidence_cites,
+        build_evidence_index_html,
+        pack_exhibit_relpath,
+    )
+
+    case = _case_with_evidence(db, auth_user)
+    exhibits = list_exhibits_for_case(case)
+    report = _sample_report(
+        summary_of_findings=(
+            "The Department of Health (DOH) received a complaint alleging concerns.\n\n"
+            'Review of a document titled "Policy", dated August 1, 2026, showed '
+            "Staff must follow supervision procedures."
+        )
+    )
+    cites = build_evidence_cites(report, exhibits)
+    assert cites and cites[0].pack_relpath.startswith("evidence/Exhibit_01_")
+    annotated = annotate_summary_with_exhibit_cites(report.summary_of_findings, cites)
+    assert annotated.rstrip().endswith("¹") or "¹" in annotated
+    index = build_evidence_index_html(cites, case_label="EL-2026-1")
+    assert 'id="exhibit-1"' in index
+    assert pack_exhibit_relpath(exhibits[0]) in index
+
+    case.current_report_json = report.model_dump_json()
+    db.add(case)
+    db.commit()
+    res = client.post(f"/api/cases/{case.id}/export/pack")
+    assert res.status_code == 200, res.text
+    with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
+        names = zf.namelist()
+    assert any(n.startswith("evidence/") for n in names)
+    assert "Evidence_Index.html" in names
+    assert any(n.startswith("IR_") for n in names)
 
 
 def test_sod_docx_has_superscript_when_evidence_linked(db, auth_user):

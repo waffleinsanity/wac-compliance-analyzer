@@ -335,34 +335,22 @@ def build_summary_of_findings(
     consolidated = consolidate_hits_by_evidence(evidence_hits, included_only=True)
     if consolidated:
         for hit in consolidated:
-            sections.append(
-                format_ir_summary_finding(
-                    str(hit.get("evidence_title") or "document"),
-                    str(hit.get("document_date") or ""),
-                    str(hit.get("excerpt") or ""),
-                    cites=list(hit.get("cites") or []),
-                )
+            para = format_ir_summary_finding(
+                str(hit.get("evidence_title") or "document"),
+                str(hit.get("document_date") or ""),
+                str(hit.get("excerpt") or ""),
             )
-        sections.append(_SUMMARY_COMPLETE_HINT)
+            if para:
+                sections.append(para)
     else:
         docs = list(evidence_documents or [])
-        if docs:
-            for doc in docs:
-                title = str(doc.get("title") or doc.get("evidence_title") or "document")
-                dated = str(doc.get("document_date") or doc.get("documentDate") or "")
-                excerpt = str(doc.get("excerpt") or "")
-                sections.append(_summary_document_review_paragraph(title, dated, excerpt))
-            if any(str(d.get("excerpt") or "").strip() for d in docs):
-                sections.append(_SUMMARY_COMPLETE_HINT)
-            else:
-                sections.append(
-                    "Complete each document-review paragraph with how the record supports or does not "
-                    "support the authorized allegations under the selected WAC/RCW. Add interview and "
-                    "observation findings as developed."
-                )
-        else:
-            sections.append(_SUMMARY_EVIDENCE_GUIDANCE)
-            sections.append(_SUMMARY_FINDINGS_SHELL)
+        for doc in docs:
+            title = str(doc.get("title") or doc.get("evidence_title") or "document")
+            dated = str(doc.get("document_date") or doc.get("documentDate") or "")
+            excerpt = str(doc.get("excerpt") or "")
+            para = _summary_document_review_paragraph(title, dated, excerpt)
+            if para:
+                sections.append(para)
     return clean_summary_for_document("\n\n".join(sections))
 
 
@@ -389,7 +377,7 @@ def merge_evidence_into_summary(
     if opener and remainder.startswith(opener):
         remainder = remainder[len(opener) :].lstrip()
     remainder = re.sub(
-        r"(?is)^A review of the document titled[\s\S]*?(?=\n\nComplete each document-review|\n\nAdd interview and observation|\n\nInvestigative findings|\n\nThis section summarizes|$)",
+        r"(?is)^Review of (?:a |the )?document titled[\s\S]*?(?=\n\nComplete each document-review|\n\nAdd interview and observation|\n\nInvestigative findings|\n\nThis section summarizes|$)",
         "",
         remainder,
     ).strip()
@@ -423,9 +411,6 @@ def merge_evidence_into_summary(
     if opener and "received a complaint" in opener.lower():
         parts = rebuilt.split("\n\n", 1)
         rebuilt = opener if len(parts) == 1 else f"{opener}\n\n{parts[1]}"
-    if remainder and _SUMMARY_DOC_PENDING not in remainder:
-        # Preserve investigator-authored narrative after the assistive shell.
-        rebuilt = f"{rebuilt}\n\n{remainder}"
     return clean_summary_for_document(rebuilt)
 
 

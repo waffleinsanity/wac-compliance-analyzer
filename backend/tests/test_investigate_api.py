@@ -28,7 +28,7 @@ def test_investigate_assault_structure(client):
     summary = (data.get("summary_of_findings") or "").strip()
     assert summary, "expected Summary of Findings framework starter"
     assert "Department of Health" in summary
-    assert "Investigative findings (to be completed)" in summary
+    assert "Investigative findings (to be completed)" not in summary
     assert "…" not in summary
     assert "..." not in summary
     # Summary narrates evidence vs allegations; WAC cites and allegation lines stay elsewhere.
@@ -82,8 +82,8 @@ def test_investigate_assault_structure(client):
     assert "Document Review" in text
     assert "Summary of Findings" in text
     assert "Conclusion/ Results of Investigation" in text
-    assert "Concerning" in text
-    assert "Pending Investigation" in text
+    assert "The investigator found the facility" in text
+    assert "Choose an item." in text
     assert "Actions:" in text
     assert "Regulatory Framework:" not in text
     process = data.get("investigative_process") or []

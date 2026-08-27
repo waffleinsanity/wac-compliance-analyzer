@@ -89,54 +89,56 @@ export function WACSelectionPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="space-y-3 border-b border-ink-200 p-3 dark:border-ink-700">
-        <p className="font-sans text-[11px] leading-snug text-ink-500 dark:text-ink-400">
-          Only codes you approve here enter the Investigation Report. Research and related hits are
-          not authorization.
+      <div className="space-y-2 border-b border-ink-200 p-2.5 dark:border-ink-700">
+        <p
+          className="font-sans text-[10px] leading-snug text-ink-500 dark:text-ink-400"
+          title="Only codes you approve here enter the Investigation Report. Research and related hits are not authorization."
+        >
+          Only approved codes enter the report.
         </p>
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
-            className="input pl-8 !h-9 text-sm"
+            className="input pl-7 !h-8 text-xs"
             placeholder="Search codes…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
-              className="btn-ghost btn-sm !h-7 !px-2"
+              className="btn-ghost btn-sm !h-6 !px-1.5 !text-[11px]"
               onClick={() =>
                 onSelectionChange([...new Set([...selectedCodes, ...allFiltered.map((c) => c.id)])])
               }
             >
-              <CheckSquare className="mr-1 h-3.5 w-3.5" />
+              <CheckSquare className="mr-1 h-3 w-3" />
               All
             </button>
             <button
               type="button"
-              className="btn-ghost btn-sm !h-7 !px-2"
+              className="btn-ghost btn-sm !h-6 !px-1.5 !text-[11px]"
               onClick={() => onSelectionChange([])}
             >
-              <Square className="mr-1 h-3.5 w-3.5" />
+              <Square className="mr-1 h-3 w-3" />
               None
             </button>
             <button
               type="button"
               className={clsx(
-                'btn-sm !h-7 !px-2',
+                'btn-sm !h-6 !px-1.5',
                 showOnlyFavorites ? 'btn-default' : 'btn-ghost',
               )}
               onClick={() => setShowOnlyFavorites(!showOnlyFavorites)}
               title="Show only favorites"
             >
-              <Star className={clsx('h-3.5 w-3.5', showOnlyFavorites && 'fill-current')} />
+              <Star className={clsx('h-3 w-3', showOnlyFavorites && 'fill-current')} />
             </button>
           </div>
           {selectedCodes.length > 0 && (
-            <p className="font-mono text-[11px] tabular-nums text-ink-500">
+            <p className="font-mono text-[10px] tabular-nums text-ink-500">
               {selectedCodes.length} selected
             </p>
           )}
@@ -144,7 +146,7 @@ export function WACSelectionPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="space-y-1 p-2">
+        <div className="space-y-0.5 p-1.5">
           {groupedCodes.map(({ key, label, codes }) => {
             const ids = codes.map((c) => c.id)
             const selectedInSection = ids.filter((id) => selectedCodes.includes(id)).length
@@ -152,8 +154,8 @@ export function WACSelectionPanel({
             const open = expandedSections.has(key)
             return (
               <div key={key}>
-                <div className="flex cursor-pointer items-center gap-2 border-b border-ink-100 px-2 py-2.5 hover:bg-ink-50/80 dark:border-ink-800 dark:hover:bg-ink-800/40">
-                  <button type="button" className="flex flex-1 items-center gap-2 text-left" onClick={() => toggleExpansion(key)}>
+                <div className="flex cursor-pointer items-center gap-1.5 border-b border-ink-100 px-1.5 py-1.5 hover:bg-ink-50/80 dark:border-ink-800 dark:hover:bg-ink-800/40">
+                  <button type="button" className="flex flex-1 items-center gap-1.5 text-left" onClick={() => toggleExpansion(key)}>
                     {open ? <ChevronDown className="h-3.5 w-3.5 text-tide-600" /> : <ChevronRight className="h-3.5 w-3.5 text-ink-400" />}
                     <input
                       type="checkbox"

@@ -263,8 +263,9 @@ def link_evidence_hits_to_sod(
             note = format_sod_document_finding(
                 str(row.get("evidence_title") or "document"),
                 str(row.get("excerpt") or ""),
-                cites=list(row.get("cites") or []),
             )
+            if not note:
+                continue
             link_evidence_to_finding(
                 report.sod,
                 deficiency_id=d.id,

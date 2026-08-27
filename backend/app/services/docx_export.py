@@ -155,7 +155,12 @@ def _norm_label(line: str) -> str:
     return re.sub(r"\s+", " ", (line or "").strip().rstrip(":").lower())
 
 
-def _add_process_line(doc: Document, line: str) -> None:
+def _add_process_line(
+    doc: Document,
+    line: str,
+    *,
+    cites_by_no: dict[int, Any] | None = None,
+) -> None:
     text = (line or "").rstrip()
     key = _norm_label(text)
     if key in _UNDERLINE_LABELS:
@@ -180,16 +185,25 @@ def _add_process_line(doc: Document, line: str) -> None:
     if marks:
         p = _new_para(doc, STYLE_BODY)
         p.paragraph_format.left_indent = BODY_INDENT
-        run = p.add_run(body)
-        _set_run_font(run, size_pt=SIZE_BODY)
-        # Prefer Word superscript digits over Unicode marks for DOCX fidelity.
-        digits = marks.translate(str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789"))
-        sup = p.add_run(digits)
-        _set_run_font(sup, size_pt=SIZE_BODY)
-        try:
-            sup.font.superscript = True
-        except Exception:
-            pass
+        if cites_by_no:
+            from app.services.evidence_cite import write_body_with_exhibit_hyperlinks
+
+            write_body_with_exhibit_hyperlinks(
+                p,
+                text,
+                cites_by_no,
+                set_run_font=lambda run: _set_run_font(run, size_pt=SIZE_BODY),
+            )
+        else:
+            run = p.add_run(body)
+            _set_run_font(run, size_pt=SIZE_BODY)
+            digits = marks.translate(str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789"))
+            sup = p.add_run(digits)
+            _set_run_font(sup, size_pt=SIZE_BODY)
+            try:
+                sup.font.superscript = True
+            except Exception:
+                pass
         return
     _add(doc, text, STYLE_BODY, size_pt=SIZE_BODY, indent=True)
 
@@ -205,12 +219,26 @@ def build_investigation_docx(
     if isinstance(report, dict):
         report = InvestigationReport.model_validate(report)
     report = sync_report_text(report)
+    cites_by_no: dict[int, Any] = {}
     if exhibits:
+        from app.services.evidence_cite import (
+            annotate_summary_with_exhibit_cites,
+            build_evidence_cites,
+        )
         from app.services.evidence_log import annotate_process_with_exhibits
 
+        report = report.model_copy(deep=True)
         report.investigative_process = annotate_process_with_exhibits(
             list(report.investigative_process or []),
             exhibits,
+        )
+        cites = build_evidence_cites(report, exhibits)
+        cites_by_no = {c.exhibit_no: c for c in cites}
+        from app.services.investigation import clean_summary_for_document
+
+        report.summary_of_findings = annotate_summary_with_exhibit_cites(
+            clean_summary_for_document(report.summary_of_findings),
+            cites,
         )
 
     path = blank_docx_path()
@@ -263,21 +291,36 @@ def build_investigation_docx(
     _add_section_heading(doc, PROCESS_HEADER)
     _add_blank(doc, STYLE_BODY)
     for step in report.investigative_process or []:
-        _add_process_line(doc, str(step))
+        _add_process_line(doc, str(step), cites_by_no=cites_by_no or None)
 
     _add_blank(doc, STYLE_BODY)
     _add_section_heading(doc, SUMMARY_HEADER)
     _add_blank(doc, STYLE_BODY)
     from app.services.investigation import clean_summary_for_document
 
-    _add(
-        doc,
-        clean_summary_for_document(report.summary_of_findings),
-        STYLE_BODY,
-        size_pt=SIZE_BODY,
-        indent=True,
-    )
-    _add_blank(doc, STYLE_BODY)
+    summary = clean_summary_for_document(report.summary_of_findings)
+    if cites_by_no:
+        from app.services.evidence_cite import write_body_with_exhibit_hyperlinks
+
+        for para_text in [p for p in summary.split("\n\n") if p.strip()] or [summary]:
+            p = _new_para(doc, STYLE_BODY)
+            p.paragraph_format.left_indent = BODY_INDENT
+            write_body_with_exhibit_hyperlinks(
+                p,
+                para_text,
+                cites_by_no,
+                set_run_font=lambda run: _set_run_font(run, size_pt=SIZE_BODY),
+            )
+            _add_blank(doc, STYLE_BODY)
+    else:
+        _add(
+            doc,
+            summary,
+            STYLE_BODY,
+            size_pt=SIZE_BODY,
+            indent=True,
+        )
+        _add_blank(doc, STYLE_BODY)
 
     _add(doc, CONCLUSION_HEADER.strip(), STYLE_BODY, bold=True, size_pt=SIZE_SECTION)
     _add_blank(doc, STYLE_BODY)

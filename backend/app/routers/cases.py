@@ -1009,11 +1009,31 @@ def export_pack(
     _harvest_ir_style(db, case, report, user, trigger="export_pack")
     buf = BytesIO()
     label = case.case_id_label or case.id
+    from app.services.evidence_cite import (
+        build_evidence_cites,
+        build_evidence_index_html,
+        pack_exhibit_relpath,
+        read_evidence_bytes,
+    )
+    from app.services.evidence_log import exhibits_for_report
+
+    exhibits = exhibits_for_report(case, report)
+    evidence_cites = build_evidence_cites(report, exhibits)
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(f"IR_{label}.docx", ir)
         zf.writestr(f"SOD_{label}.docx", sod_bytes)
         zf.writestr(f"Deficiency_Cite_Sheet_{label}.docx", cites)
         zf.writestr(f"Evidence_Log_{label}.xlsx", evidence_log)
+        zf.writestr(
+            "Evidence_Index.html",
+            build_evidence_index_html(evidence_cites, case_label=str(label)),
+        )
+        for ex in exhibits:
+            try:
+                payload = read_evidence_bytes(ex.evidence)
+            except FileNotFoundError:
+                continue
+            zf.writestr(pack_exhibit_relpath(ex), payload)
     buf.seek(0)
     return StreamingResponse(
         buf,
@@ -1149,6 +1169,40 @@ def review_evidence_against_report(
         scanned_count=scanned,
         skipped_images=skipped,
         message=message,
+    )
+
+
+@router.get("/{case_id}/evidence/{evidence_id}/file")
+def download_evidence_file(
+    case_id: int,
+    evidence_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Stream an exhibit file for in-app superscript links / offline pack parity."""
+    case = get_case_or_404(db, case_id)
+    assert_case_access(case, user)
+    ev = (
+        db.query(CaseEvidence)
+        .filter(CaseEvidence.id == evidence_id, CaseEvidence.case_id == case_id)
+        .first()
+    )
+    if not ev:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    from app.services.evidence_cite import read_evidence_bytes
+    from app.services.evidence_review import evidence_file_path
+
+    path = evidence_file_path(ev)
+    try:
+        data = read_evidence_bytes(ev)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Evidence file missing on disk") from exc
+    name = ev.original_filename or path.name or f"exhibit_{evidence_id}"
+    media = ev.content_type or "application/octet-stream"
+    return Response(
+        content=data,
+        media_type=media,
+        headers={"Content-Disposition": f'inline; filename="{name}"'},
     )
 
 

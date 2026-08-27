@@ -1,11 +1,14 @@
 """Summary of Findings is evidence narrative, not allegation copies."""
 
 from app.schemas import InvestigationAllegation
+from app.services.evidence_review import is_summary_evidence_paragraph
 from app.services.investigation import (
     build_summary_of_findings,
     merge_evidence_into_summary,
     strip_allegation_copies_from_summary,
 )
+
+CANONICAL_PREFIX = 'Review of a document titled "'
 
 
 def test_summary_does_not_copy_allegation_text():
@@ -27,8 +30,9 @@ def test_summary_does_not_copy_allegation_text():
     assert "Potential violation of WAC" not in summary
     assert "is authorized for this investigation because" not in summary
     assert "received a complaint" in summary.lower()
-    assert "document review" in summary.lower() or "Complete each document-review" in summary
-    assert "Investigative findings (to be completed)" in summary
+    assert "Investigative findings (to be completed)" not in summary
+    assert "Complete each document-review" not in summary
+    assert "Add interview and observation findings" not in summary
 
 
 def test_strip_removes_legacy_allegation_paragraphs():
@@ -70,7 +74,7 @@ def test_clean_summary_for_document_strips_collaborator_and_allegation_paste():
     assert clean_summary_for_document(block) == ""
 
 
-def test_merge_evidence_adds_document_review_voice():
+def test_merge_evidence_skips_empty_excerpt_shells():
     base = (
         "The Department of Health (DOH) received a complaint alleging uncredentialed care.\n\n"
         "WAC 246-341-0510 is authorized for this investigation because Selected.\n\n"
@@ -81,13 +85,10 @@ def test_merge_evidence_adds_document_review_voice():
         "Anonymous complainant reported uncredentialed counseling.",
         [{"title": "Personnel file extract", "document_date": "January 15, 2025"}],
     )
-    assert "A review of the document titled" in merged
-    assert "Personnel file extract" in merged
-    assert "January 15, 2025" in merged
-    assert "supports or does not support" in merged or "[pending:" in merged
+    assert CANONICAL_PREFIX not in merged
+    assert "Personnel file extract" not in merged
     assert "corresponding allegation asserts" not in merged
     assert "Potential violation of WAC" not in merged
-    assert "Investigative findings (to be completed)" not in merged
 
 
 def test_merge_evidence_hits_populate_showed_excerpt():
@@ -111,12 +112,14 @@ def test_merge_evidence_hits_populate_showed_excerpt():
             }
         ],
     )
-    assert "A review of the document titled" in merged
-    assert "Policy Manual" in merged
-    assert "day-to-day operation" in merged
-    assert "[pending:" not in merged
-    assert "Potential violation" not in merged
-    assert "Related to WAC 246-341-0410(1)" in merged
+    assert merged.startswith("The Department of Health")
+    finding = merged.split("\n\n", 1)[1]
+    assert finding.startswith(CANONICAL_PREFIX)
+    assert 'Policy Manual", dated March 1, 2025, showed' in finding
+    assert "day-to-day operation" in finding
+    assert is_summary_evidence_paragraph(finding)
+    assert "Related to" not in merged
+    assert "WAC 246-341-0410" not in merged
 
 
 def test_one_summary_paragraph_per_evidence_document():
@@ -152,15 +155,11 @@ def test_one_summary_paragraph_per_evidence_document():
         },
     ]
     merged = merge_evidence_into_summary(base, base, [], evidence_hits=hits)
-    review_paras = [
-        p for p in merged.split("\n\n") if p.startswith("A review of the document titled")
-    ]
+    review_paras = [p for p in merged.split("\n\n") if is_summary_evidence_paragraph(p)]
     assert len(review_paras) == 2
     safety = next(p for p in review_paras if "Patient Safety Policy" in p)
-    assert "increase supervision" in safety
-    assert "documented within one hour" in safety
-    assert "WAC 246-341-0410(1)" in safety
-    assert "WAC 246-341-0600(1)" in safety
+    assert "increase supervision" in safety or "documented within one hour" in safety
+    assert 'dated July 15, 2026, showed' in safety
     timeline = next(p for p in review_paras if "Unit Incident Timeline" in p)
     assert "Separation of the patients was delayed" in timeline
 
@@ -169,15 +168,15 @@ def test_format_ir_and_sod_finding_voice():
     from app.services.evidence_review import format_ir_summary_finding, format_sod_document_finding
 
     ir = format_ir_summary_finding(
-        "Crisis Intervention",
-        "March 11, 2020",
-        "Patient #1 was told by Staff A that services were confidential",
+        "Agency Staff/Intern Requirements",
+        "7/2019",
+        "all clients received care from qualified staff",
         cites=["WAC 246-341-0425(1)"],
     )
-    assert ir.startswith('A review of the document titled "Crisis Intervention"')
-    assert "dated March 11, 2020" in ir
-    assert "showed Patient #1 was told" in ir
-    assert "Related to WAC 246-341-0425(1)" in ir
+    assert ir == (
+        'Review of a document titled "Agency Staff/Intern Requirements", '
+        "dated 7/2019, showed all clients received care from qualified staff."
+    )
 
     sod = format_sod_document_finding(
         "Crisis Intervention",
@@ -186,4 +185,59 @@ def test_format_ir_and_sod_finding_voice():
     )
     assert sod.startswith('Review of the document titled, "Crisis Intervention", showed')
     assert "Patient #1 was told" in sod
-    assert "Related to WAC 246-341-0425(1)" in sod
+    assert "Related to" not in sod
+
+    assert format_ir_summary_finding("Empty", "", "") == ""
+    assert format_sod_document_finding("Empty", "") == ""
+
+
+def test_list_markers_become_seamless_prose():
+    """Policy a./b./9./bullet outlines must not appear in Summary findings."""
+    from app.services.evidence_review import format_ir_summary_finding, format_sod_document_finding
+
+    clinical = format_ir_summary_finding(
+        "Clinical Records General Documentation Requirements Policy",
+        "June 1, 2020",
+        (
+            "a. An age-appropriate psychosocial history "
+            "b. Assessment of risk to self and others "
+            "c. Treatment recommendations "
+            "9. Any allergies or adverse reactions "
+            "10. Current medications. Related to WAC 246-341-0640(1)(c)(ii)."
+        ),
+    )
+    assert clinical.startswith(
+        'Review of a document titled "Clinical Records General Documentation Requirements Policy", '
+        "dated June 1, 2020, showed "
+    )
+    assert "a." not in clinical
+    assert "b." not in clinical
+    assert "c." not in clinical
+    assert "9." not in clinical
+    assert "10." not in clinical
+    assert "Related to" not in clinical
+    assert "WAC 246-341-0640" not in clinical
+    assert "age-appropriate psychosocial history" in clinical
+    assert "Assessment of risk" in clinical or "assessment of risk" in clinical
+    assert "and" in clinical
+
+    sentinel = format_ir_summary_finding(
+        "Sentinel Events Policy",
+        "June 1, 2020",
+        (
+            "Some sentinel events include but are not limited to: "
+            "• Client death • Client dies by suicide • Allegations of abuse"
+        ),
+    )
+    assert "•" not in sentinel
+    assert "client death" in sentinel.lower()
+    assert "client dies by suicide" in sentinel.lower()
+    assert sentinel.startswith('Review of a document titled "Sentinel Events Policy"')
+
+    sod = format_sod_document_finding(
+        "Clinical Records",
+        "a. Psychosocial history b. Risk assessment c. Treatment plan",
+    )
+    assert "a." not in sod
+    assert "b." not in sod
+    assert "psychosocial history" in sod.lower()

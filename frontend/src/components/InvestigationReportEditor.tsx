@@ -37,6 +37,7 @@ import {
   PROCESS_LABELS,
   conclusionDeficiencyCited,
   findingPhraseToResult,
+  formatConclusionSentence,
   normalizeIrConclusion,
   packProcessFields,
   resultToFindingPhrase,
@@ -143,12 +144,10 @@ function AllegationBadge({ a }: { a: InvestigationAllegation }) {
 }
 
 function findingSelectClass(phrase: FindingPhrase) {
-  if (phrase === 'Substantiated with deficient practice or condition cited')
+  if (phrase === 'not in compliance')
     return 'border-rose-400/50 bg-rose-50 text-rose-900 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-100'
-  if (phrase === 'Not Substantiated')
+  if (phrase === 'in compliance')
     return 'border-emerald-400/50 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100'
-  if (phrase === 'Substantiated with no current deficient practice or condition cited')
-    return 'border-amber-400/50 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100'
   return 'border-ink-300/60 bg-ink-50 text-ink-800 dark:border-ink-600 dark:bg-ink-900/40 dark:text-ink-100'
 }
 
@@ -206,13 +205,13 @@ function buildPlainText(report: InvestigationReport): string {
     '',
   )
   const byCode = Object.fromEntries(report.conclusions.map((c) => [c.wac_code, c]))
-  report.allegations.forEach((a, i) => {
+  report.allegations.forEach((a) => {
     const c = byCode[a.wac_code]
     const result = c?.result || 'Pending Investigation'
-    const finding = displayFinding(normalizeIrConclusion(result))
-    const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-    const topic = (a.wac_title || a.wac_code).split(/[—–-]/)[0].trim() || a.wac_code
-    let line = `${i + 1}. Allegation: Concerning ${topic} (${instrument} ${a.wac_code}): ${finding}.`
+    const finding = normalizeIrConclusion(result)
+    const mid = displayFinding(finding)
+    const { before, after } = formatConclusionSentence(a.wac_code, a.wac_title || '', finding)
+    let line = `${before}${mid}${after}`
     if (c?.deficiency_details && conclusionDeficiencyCited(result)) {
       line += ` ${c.deficiency_details}`
     }
@@ -281,10 +280,14 @@ function DocumentPreview({
   report,
   onChange,
   canEdit = false,
+  caseId = null,
+  evidence = [],
 }: {
   report: InvestigationReport
   onChange?: (next: InvestigationReport) => void
   canEdit?: boolean
+  caseId?: number | null
+  evidence?: CaseDetail['evidence']
 }) {
   const fi = report.facility_info
   const byCode = Object.fromEntries(report.conclusions.map((c) => [c.wac_code, c]))
@@ -380,7 +383,8 @@ function DocumentPreview({
         <FileText className="h-3.5 w-3.5 shrink-0 text-ink-500" aria-hidden />
         <p className="min-w-0 text-[11px] leading-snug text-ink-500 dark:text-ink-400">
           Document preview. Download opens the same report in Word using your selected template when
-          one is attached. Exhibit superscripts in Document Review match the Evidence Log (#1, #2, …).
+          one is attached. Exhibit superscripts in Document Review and Summary link to evidence files
+          in Export pack (hover for excerpt). Evidence Log.xlsx remains available as a secondary sheet.
         </p>
       </div>
       <div className="ir-doc-scroll">
@@ -483,7 +487,13 @@ function DocumentPreview({
             />
             {summaryForDoc ? (
               <div className="ir-body ir-indent">
-                <SummaryFindingsView text={summaryForDoc} report={report} paper />
+                <SummaryFindingsView
+                  text={summaryForDoc}
+                  report={report}
+                  paper
+                  caseId={caseId}
+                  evidence={evidence}
+                />
               </div>
             ) : (
               <p className="ir-body ir-indent">—</p>
@@ -491,21 +501,25 @@ function DocumentPreview({
           </div>
           <div className="mb-4 space-y-2">
             <p className="ir-section-title">Conclusion/ Results of Investigation</p>
-            <ol className="ir-allegation-list">
+            <div className="space-y-2">
               {report.allegations.map((a) => {
                 const c = byCode[a.wac_code]
                 const idx = report.conclusions.findIndex((x) => x.wac_code === a.wac_code)
                 const result = c?.result || 'Pending Investigation'
                 const finding = resultToFindingPhrase(result)
-                const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-                const topic = (a.wac_title || a.wac_code).split(/[—–-]/)[0].trim() || a.wac_code
+                const { before, after } = formatConclusionSentence(
+                  a.wac_code,
+                  a.wac_title || '',
+                  finding,
+                )
+                const mid = displayFinding(finding)
                 const extra =
                   c?.deficiency_details && conclusionDeficiencyCited(result)
                     ? ` ${c.deficiency_details}`
                     : ''
                 return (
-                  <li key={`conc-preview-${a.wac_code}`} className="whitespace-pre-wrap">
-                    Allegation: Concerning {topic} ({instrument} {a.wac_code}):{' '}
+                  <p key={`conc-preview-${a.wac_code}`} className="ir-body whitespace-pre-wrap">
+                    {before}
                     {editable && idx >= 0 ? (
                       <select
                         className="ir-inline-select max-w-full"
@@ -534,21 +548,22 @@ function DocumentPreview({
                           </option>
                         ))}
                       </select>
-                    ) : findRemovalSpans(result).length || findRemovalSpans(displayFinding(finding)).length ? (
+                    ) : findRemovalSpans(result).length || findRemovalSpans(mid).length ? (
                       <HighlightedProse
-                        text={displayFinding(finding) || result}
+                        text={mid}
                         inline
                         paper
                         className="text-[12pt] leading-[1.45] text-black"
                       />
                     ) : (
-                      displayFinding(finding)
+                      mid
                     )}
-                    .{extra}
-                  </li>
+                    {after}
+                    {extra}
+                  </p>
                 )
               })}
-            </ol>
+            </div>
           </div>
           <div className="space-y-2">
             <p className="ir-section-title">Actions:</p>
@@ -1019,23 +1034,24 @@ export function InvestigationReportEditor({
   return (
     <div className="flex min-h-0 w-full flex-col">
       {/* Flush under Intake / Compare / Documents; outside the padded scroll pane */}
-      <div className="sticky top-0 z-10 shrink-0 border-b border-ink-200 bg-card px-3 py-2 dark:border-ink-700 sm:px-4">
-        <p className="compare-meta mb-1">Step 3 · Documents</p>
+      <div className="sticky top-0 z-10 shrink-0 border-b border-ink-200 bg-card px-3 py-1.5 dark:border-ink-700 sm:px-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-              <h2 className="font-display text-xl tracking-tight text-ink-900 dark:text-ink-50 sm:text-2xl">
-                Investigative Report
-              </h2>
-              {statusMeta.length > 0 && (
-                <p
-                  className="font-sans text-[11px] text-ink-500 dark:text-ink-400"
-                  title={defensibility?.summary || undefined}
-                >
-                  {statusMeta.join(' · ')}
-                </p>
-              )}
-            </div>
+            <h2
+              className="font-display flex min-w-0 flex-wrap items-baseline gap-x-2 text-lg text-ink-900 dark:text-ink-50"
+              title="Preview and edit the Investigation Report. Download DOCX when ready."
+            >
+              <span className="compare-meta !normal-case tracking-wide">Step 3 · Documents</span>
+              <span>Investigation Report</span>
+            </h2>
+            {statusMeta.length > 0 && (
+              <p
+                className="mt-0.5 font-sans text-[10px] text-ink-500 dark:text-ink-400"
+                title={defensibility?.summary || undefined}
+              >
+                {statusMeta.join(' · ')}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -1047,7 +1063,7 @@ export function InvestigationReportEditor({
               <button
                 type="button"
                 className={clsx(
-                  'inline-flex items-center gap-1.5 border-b-2 px-2.5 py-1.5 font-medium transition',
+                  'inline-flex items-center gap-1.5 border-b-2 px-2 py-1 font-medium transition',
                   viewMode === 'preview'
                     ? 'border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
                     : 'border-transparent text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
@@ -1061,7 +1077,7 @@ export function InvestigationReportEditor({
               <button
                 type="button"
                 className={clsx(
-                  'inline-flex items-center gap-1.5 border-b-2 px-2.5 py-1.5 font-medium transition',
+                  'inline-flex items-center gap-1.5 border-b-2 px-2 py-1 font-medium transition',
                   viewMode === 'edit'
                     ? 'border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
                     : 'border-transparent text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
@@ -1076,7 +1092,7 @@ export function InvestigationReportEditor({
 
             <button
               type="button"
-              className="btn-ghost !h-8 !px-2.5 text-xs"
+              className="btn-ghost !h-7 !px-2 text-xs"
               onClick={onBack}
               title="Back to Compare"
             >
@@ -1086,7 +1102,7 @@ export function InvestigationReportEditor({
             {canEdit && (
               <button
                 type="button"
-                className="btn-secondary !h-8 !px-3 text-xs"
+                className="btn-secondary !h-7 !px-2.5 text-xs"
                 disabled={saving || (!caseId && !onEnsureCase)}
                 onClick={() => void saveDraft()}
               >
@@ -1097,7 +1113,7 @@ export function InvestigationReportEditor({
               <>
                 <button
                   type="button"
-                  className="btn-primary !h-8 !px-3 text-xs"
+                  className="btn-primary !h-7 !px-2.5 text-xs"
                   disabled={validating}
                   title={
                     exportWarn
@@ -1111,7 +1127,7 @@ export function InvestigationReportEditor({
                 </button>
                 <button
                   type="button"
-                  className="btn-secondary !h-8 !px-3 text-xs"
+                  className="btn-secondary !h-7 !px-2.5 text-xs"
                   disabled={validating || !caseId}
                   title="Download Evidence Log.xlsx (exhibit #1, #2, … matching Document Review superscripts)"
                   onClick={() => void exportEvidenceLog()}
@@ -1126,7 +1142,7 @@ export function InvestigationReportEditor({
               </span>
             )}
             <details className="relative">
-              <summary className="btn-ghost !h-8 !px-2 text-xs marker:content-none [&::-webkit-details-marker]:hidden">
+              <summary className="btn-ghost !h-7 !px-2 text-xs marker:content-none [&::-webkit-details-marker]:hidden">
                 More
               </summary>
               <div className="absolute right-0 z-30 mt-1 min-w-[11rem] rounded-md border border-ink-200 bg-card p-1 dark:border-ink-700">
@@ -1186,12 +1202,12 @@ export function InvestigationReportEditor({
         </div>
       </div>
 
-      <div className="space-y-2 p-3 sm:p-4 lg:space-y-3 lg:p-5">
-      <details className="border-b border-ink-200 px-0 py-2 dark:border-ink-700">
-        <summary className="cursor-pointer font-sans text-xs font-medium text-ink-600 dark:text-ink-300">
+      <div className="space-y-1.5 p-2.5 sm:p-3 lg:space-y-2 lg:p-4">
+      <details className="border-b border-ink-200 px-0 py-1 dark:border-ink-700">
+        <summary className="cursor-pointer font-sans text-[11px] font-medium text-ink-600 dark:text-ink-300">
           IR template · {caseDetail?.ir_template?.name || 'Built-in blank'}
         </summary>
-        <div className="mt-2">
+        <div className="mt-1.5">
           <IrTemplatePicker
             caseId={caseId ?? null}
             caseDetail={caseDetail}
@@ -1203,47 +1219,51 @@ export function InvestigationReportEditor({
       </details>
 
       {exportError && (
-        <div className="border-l-2 border-rose-600 bg-rose-50 px-3 py-2.5 text-sm text-rose-950 dark:bg-rose-950/40 dark:text-rose-100">
+        <div className="border-l-2 border-rose-600 bg-rose-50 px-2.5 py-1.5 text-xs text-rose-950 dark:bg-rose-950/40 dark:text-rose-100">
           {exportError}
         </div>
       )}
       {info && (
-        <div className="border-l-2 border-tide-600 bg-tide-500/8 px-3 py-2.5 text-sm text-tide-900 dark:text-tide-100">
+        <div className="border-l-2 border-tide-600 bg-tide-500/8 px-2.5 py-1.5 text-xs text-tide-900 dark:text-tide-100">
           {info}
         </div>
       )}
 
       {hasRemovalHighlights && (
-        <div className="border-l-2 border-amber-500 bg-amber-50/80 px-3 py-2 text-sm text-amber-950 dark:border-amber-600 dark:bg-amber-950/20 dark:text-amber-100">
-          Highlighted text still needs your review. Replace those passages with investigation findings
-          before treating this report as final.
-        </div>
+        <details className="border-l-2 border-amber-500 bg-amber-50/80 px-2.5 py-1 text-xs text-amber-950 dark:border-amber-600 dark:bg-amber-950/20 dark:text-amber-100">
+          <summary className="cursor-pointer font-medium">
+            Highlighted text still needs your review
+          </summary>
+          <p className="mt-1 leading-snug opacity-90">
+            Replace those passages with investigation findings before treating this report as final.
+          </p>
+        </details>
       )}
 
       {exportWarn && canExport && (
-        <div className="flex gap-3 border-l-2 border-cedar-500 bg-ink-50/80 px-3 py-2.5 text-sm text-ink-700 dark:bg-ink-900/50 dark:text-ink-200">
-          <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-sm bg-amber-500" aria-hidden />
-          <div className="min-w-0 space-y-1">
-            <p className="font-medium text-ink-900 dark:text-ink-50">
-              {report.quote_integrity?.ok === false
-                ? `Statute wording needs a check (${report.quote_integrity.failures.length})`
-                : hasRemovalHighlights
-                  ? 'Highlighted text still needs your review before submission.'
-                  : defensibility?.summary || 'A few review notes remain'}
-            </p>
-            <p className="text-xs text-ink-500 dark:text-ink-400">
+        <details className="border-l-2 border-cedar-500 bg-ink-50/80 px-2.5 py-1.5 text-xs text-ink-700 open:pb-2 dark:bg-ink-900/50 dark:text-ink-200">
+          <summary className="cursor-pointer font-medium text-ink-900 dark:text-ink-50">
+            {report.quote_integrity?.ok === false
+              ? `Statute wording needs a check (${report.quote_integrity.failures.length})`
+              : hasRemovalHighlights
+                ? 'Highlighted text still needs your review before submission'
+                : defensibility?.summary || 'A few review notes remain'}
+            <span className="ml-1.5 font-normal text-ink-500">· expand for details</span>
+          </summary>
+          <div className="mt-1.5 min-w-0 space-y-1">
+            <p className="text-[11px] text-ink-500 dark:text-ink-400">
               You can still download a working draft. Finish wording before treating the report as
               final.
             </p>
             {report.quote_integrity?.ok === false && topQuoteFailures.length > 0 && (
-              <ul className="mt-1.5 space-y-1 border-t border-ink-200/70 pt-1.5 dark:border-ink-700">
+              <ul className="mt-1 space-y-1 border-t border-ink-200/70 pt-1.5 dark:border-ink-700">
                 {topQuoteFailures.map((f, i) => {
                   const code = wacCodeFromFailure(f)
                   const label = f.cite || code || 'Issue'
                   const jumpable =
                     !!code && report.allegations.some((a) => a.wac_code === code)
                   return (
-                    <li key={`${f.field}-${f.reason}-${i}`} className="text-xs leading-snug">
+                    <li key={`${f.field}-${f.reason}-${i}`} className="text-[11px] leading-snug">
                       {jumpable ? (
                         <button
                           type="button"
@@ -1267,10 +1287,10 @@ export function InvestigationReportEditor({
               </ul>
             )}
           </div>
-        </div>
+        </details>
       )}
 
-      <div className="mx-auto grid max-w-6xl gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="mx-auto grid max-w-6xl gap-3 xl:grid-cols-[minmax(0,1fr)_220px]">
       <article
         className={clsx(
           'overflow-hidden',
@@ -1281,16 +1301,18 @@ export function InvestigationReportEditor({
           <DocumentPreview
             report={report}
             canEdit={canEdit}
+            caseId={caseId ?? null}
+            evidence={caseDetail?.evidence || []}
             onChange={(next) => setReport(normalizeReportAllegations({ ...next }))}
           />
         ) : (
         <>
-        <div className="border-b border-ink-200 px-6 py-7 text-center dark:border-ink-700">
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink-900 dark:text-ink-50 sm:text-3xl">
+        <div className="border-b border-ink-200 px-4 py-4 text-center dark:border-ink-700 sm:px-6 sm:py-5">
+          <h1 className="font-display text-xl font-semibold tracking-tight text-ink-900 dark:text-ink-50 sm:text-2xl">
             Investigative Report
           </h1>
-          <div className="mx-auto mt-3 h-0.5 w-16 bg-tide-600/60 dark:bg-tide-400/50" />
-          <p className="mt-3 font-sans text-xs text-ink-400">
+          <div className="mx-auto mt-2 h-0.5 w-14 bg-tide-600/60 dark:bg-tide-400/50" />
+          <p className="mt-2 font-sans text-[11px] text-ink-400">
             {report.selected_count} authorized codes · DOH facility IR structure ·{" "}
             {Math.round(report.duration_ms)} ms · switch to Document preview to see export layout
           </p>
@@ -1690,6 +1712,8 @@ export function InvestigationReportEditor({
             <SummaryFindingsView
               text={naIfEmpty(cleanSummaryForDocument(report.summary_of_findings))}
               report={report}
+              caseId={caseId ?? null}
+              evidence={caseDetail?.evidence || []}
               editable={canEdit}
               onChange={
                 canEdit
@@ -1706,14 +1730,14 @@ export function InvestigationReportEditor({
             />
           </section>
 
-          {/* Conclusions: DOH sentence with inline finding dropdown */}
+          {/* Conclusions: blank DOCX voice — investigator found the facility … with WAC */}
           <section>
             <h3 className="mb-1 flex items-center gap-2 font-display text-lg">
               <FileCheck className="h-4 w-4 text-tide-600" /> Conclusion / Results of Investigation
             </h3>
             <p className="mb-4 font-sans text-xs text-ink-400">
-              IR Guidance outcomes: substantiated with / without deficient practice cited, or not
-              substantiated. Statute cites belong in the sister SOD.
+              Blank IR voice: in compliance or not in compliance. Statute cite language belongs in the
+              sister SOD.
             </p>
             <div className="space-y-4">
               {Object.entries(grouped).map(([category, items]) => (
@@ -1729,21 +1753,18 @@ export function InvestigationReportEditor({
                       const conclusion = idx >= 0 ? report.conclusions[idx] : null
                       const result = conclusion?.result || 'Pending Investigation'
                       const finding = resultToFindingPhrase(result)
-                      const instrument = a.wac_code.startsWith('71.') ? 'RCW' : 'WAC'
-                      const topic =
-                        (a.wac_title || a.wac_code).split(/[—–-]/)[0].trim() || a.wac_code
+                      const { before, after } = formatConclusionSentence(
+                        a.wac_code,
+                        a.wac_title || '',
+                        finding,
+                      )
                       return (
                         <div
                           key={`conc-${a.wac_code}`}
                           className="rounded-lg border border-ink-200/80 bg-card/40 px-3 py-3 dark:border-ink-700"
                         >
                           <p className="font-serif text-sm leading-relaxed text-ink-900 dark:text-ink-50">
-                            <span className="font-semibold">
-                              {report.allegations.findIndex((item) => item.wac_code === a.wac_code) +
-                                1}
-                              . Allegation:
-                            </span>{' '}
-                            Concerning {topic} ({instrument} {a.wac_code}):{' '}
+                            {before}
                             <select
                               className={clsx(
                                 'mx-0.5 inline-block max-w-full rounded border px-1.5 py-0.5 font-serif text-sm font-semibold',
@@ -1769,7 +1790,7 @@ export function InvestigationReportEditor({
                                 </option>
                               ))}
                             </select>
-                            .
+                            {after}
                           </p>
                           {conclusionDeficiencyCited(result) && idx >= 0 && (
                             <div className="mt-3">
@@ -1882,7 +1903,7 @@ export function InvestigationReportEditor({
       </article>
 
       {caseDetail && onCaseRefresh ? (
-        <div className="xl:sticky xl:top-4 xl:self-start">
+        <div className="xl:sticky xl:top-2 xl:self-start">
           <CaseAssistPanel
             caseDetail={caseDetail}
             report={report}
@@ -1894,7 +1915,7 @@ export function InvestigationReportEditor({
           />
         </div>
       ) : (
-        <div className="border border-dashed border-ink-300 p-4 text-sm text-ink-500 dark:border-ink-600">
+        <div className="border border-dashed border-ink-300 p-3 text-xs text-ink-500 dark:border-ink-600">
           Open or save a case to unlock evidence links, process builder, export checks, and review
           workflow.
         </div>

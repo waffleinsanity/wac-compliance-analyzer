@@ -292,7 +292,7 @@
     @apply flex items-center gap-2 border-b border-ink-200/80 bg-card px-3 py-2 dark:border-ink-700;
   }
   .ir-doc-scroll {
-    @apply min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6;
+    @apply min-h-0 flex-1 overflow-y-auto px-2.5 py-3 sm:px-5 sm:py-4;
   }
   .ir-doc-page {
     @apply mx-auto w-full max-w-[8.5in] rounded-sm px-[0.85in] py-[0.75in] text-black;
@@ -507,7 +507,7 @@
 
   /* Main nav — underline tabs, not segmented control pills */
   .nav-pill {
-    @apply inline-flex items-center justify-center gap-2 rounded-none border-b-2 border-transparent px-3 py-2.5 text-sm font-medium transition;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-none border-b-2 border-transparent px-2.5 py-1.5 text-xs font-medium transition sm:text-sm;
   }
   .nav-pill-active {
     @apply border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50;
@@ -530,13 +530,39 @@
     background: hsl(var(--card));
   }
 
+  .rail-edge-strip {
+    width: 1.75rem;
+  }
+
+  .rail-edge-toggle {
+    @apply flex items-center justify-center border border-ink-200 bg-card text-ink-600 shadow-sm transition;
+    @apply hover:bg-ink-50 hover:text-ink-900 dark:border-ink-600 dark:text-ink-300 dark:hover:bg-ink-800/60 dark:hover:text-ink-50;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tide-500/50;
+  }
+
+  .rail-edge-toggle--strip {
+    @apply h-full w-full rounded-none border-0 shadow-none;
+  }
+
+  .rail-edge-toggle--floating {
+    @apply absolute top-1/2 z-40 h-7 w-7 -translate-y-1/2 rounded-full;
+  }
+
+  .rail-edge-toggle--left {
+    right: -0.875rem;
+  }
+
+  .rail-edge-toggle--right {
+    left: -0.875rem;
+  }
+
   /* App shell wordmark */
   .brand-mark {
     font-family: Newsreader, Georgia, serif;
-    @apply text-[1.35rem] font-semibold leading-none tracking-[-0.02em] text-ink-900 dark:text-ink-50;
+    @apply text-[1.2rem] font-semibold leading-none tracking-[-0.02em] text-ink-900 dark:text-ink-50;
   }
   .brand-rule {
-    @apply mt-1 h-0.5 w-8 origin-left bg-tide-600 dark:bg-tide-400;
+    @apply mt-0.5 h-0.5 w-7 origin-left bg-tide-600 dark:bg-tide-400;
   }
 }
 
@@ -547,8 +573,8 @@
 .app-update-banner {
   position: fixed !important;
   inset-inline: 0 !important;
-  /* Sit below the sticky app header (h-14) so Bug / Feedback stay clickable. */
-  top: 3.5rem !important;
+  /* Sit below the sticky app header (h-11) so Bug / Feedback stay clickable. */
+  top: 2.75rem !important;
   z-index: 55 !important;
   border-bottom: 1px solid #0a2e2b !important;
   background: #18433b !important;

@@ -1,24 +1,30 @@
 /**
- * Summary of Findings helpers: peer IR evidence narrative from duty-matched exhibit hits.
- * One paragraph per evidence document (all related WAC cites merged). Allegation lines stay out.
+ * Summary of Findings: peer IR evidence paragraphs only (after intake opener).
+ * Canonical line: Review of a document titled "…", dated …, showed …
  */
 import type { EvidenceReviewHit, InvestigationReport } from './api'
 import { stripCollaboratorFromSummary } from './contentReview'
-import { displayEvidenceTitle, formatDocumentDate } from './documentReviewFormat'
-
-const DOC_PENDING =
-  '[pending: how this record supports or does not support the authorized WAC duties]'
-
-const COMPLETE_HINT =
-  'Add interview and observation findings as developed. Refine document-review paragraphs after further evidentiary work when needed.'
+import { displayEvidenceTitle, formatDocumentDate, MISSING_DOCUMENT_DATE } from './documentReviewFormat'
 
 const MAX_SUMMARY_FINDINGS = 12
+const WA_CITE = /\b(?:WAC|RCW)\s*(246-(?:341|337)-\d{3,4}|71\.(?:05|24|34)\.\d{3,4})/i
+
+/** Peer examples: Review of a document titled "Title", dated …, showed … */
+export const SUMMARY_EVIDENCE_PARA_RE =
+  /^Review of (?:a |the )?document titled\s+"[^"]+"\s*,\s*dated\s+.+?\s*,\s*showed\b/i
+
+export const TITLE_IN_SUMMARY_EVIDENCE_RE =
+  /Review of (?:a |the )?document titled\s+"([^"]+)"\s*,\s*dated\s+/i
 
 const ALLEGATION_COPY_RE =
   /(?:^|\n\n)[^\n]*is authorized for this investigation because[^\n]*(?:\n\nThe corresponding allegation asserts:[^\n]*)?/gi
 
 const SCOPE_BRIDGE_RE =
   /(?:^|\n\n)This summary outlines how authorized WAC\/RCW selections relate to the drafted allegations;[^\n]*/gi
+
+export function isSummaryEvidenceParagraph(text: string): boolean {
+  return SUMMARY_EVIDENCE_PARA_RE.test((text || '').trim())
+}
 
 export function stripAllegationCopiesFromSummary(text: string): string {
   return (text || '')
@@ -33,9 +39,74 @@ export function cleanSummaryForDocument(text: string | null | undefined): string
   return stripAllegationCopiesFromSummary(stripCollaboratorFromSummary(text))
 }
 
+function stripStatuteSentences(text: string): string {
+  const parts = (text || '')
+    .split(/(?<=[.!;:])\s+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+  const kept = parts.filter((part) => !WA_CITE.test(part) || part.replace(WA_CITE, '').trim().length >= 40)
+  return kept.join(' ').trim()
+}
+
+const RELATED_TAIL = /\s*Related to\s+(?:WAC|RCW)\b.*$/i
+const LIST_MARKER_SPLIT =
+  /(?:^|[\n;:])\s*(?:[•●▪◦‣∙·]|\*\s+|-+\s+)?(?:[a-z]\.|\d{1,2}\.|\([a-z]\))\s+|(?<=[a-z0-9"”'])\s+(?:[•●▪◦‣∙·]|[a-z]\.|\d{1,2}\.)\s+(?=[A-Z("“'])|(?:^|[\n;:\s])[•●▪◦‣∙·]\s*/gi
+
+function joinListPartsAsProse(parts: string[]): string {
+  const cleaned = parts
+    .map((raw) => (raw || '').replace(/\s+/g, ' ').replace(/^[\s\-–—*•●]+|[\s.;:]+$/g, '').trim())
+    .filter(Boolean)
+  if (!cleaned.length) return ''
+  if (cleaned.length === 1) return cleaned[0]
+  const longish = cleaned.filter((p) => p.length >= 55).length
+  if (longish >= Math.max(2, Math.floor(cleaned.length / 2))) {
+    return cleaned.join('. ')
+  }
+  const phraseCase = (item: string, first: boolean) => {
+    if (first || !item) return item
+    if (/^[A-Z][a-z]/.test(item)) return item[0].toLowerCase() + item.slice(1)
+    return item
+  }
+  const phrased = cleaned.map((p, i) => phraseCase(p, i === 0))
+  if (phrased.length >= 2 && /\b(?:to|including|include|includes|follows|following)$/i.test(phrased[0])) {
+    const rest = phrased.slice(1)
+    if (rest.length === 1) return `${phrased[0]} ${rest[0]}`
+    if (rest.length === 2) return `${phrased[0]} ${rest[0]}, and ${rest[1]}`
+    return `${phrased[0]} ${rest.slice(0, -1).join(', ')}, and ${rest[rest.length - 1]}`
+  }
+  if (phrased.length === 2) return `${phrased[0]}, and ${phrased[1]}`
+  return `${phrased.slice(0, -1).join(', ')}, and ${phrased[phrased.length - 1]}`
+}
+
+/** Strip a./b./9./bullet outline markers into seamless sentences (peer IR style). */
+function toNarrativeProse(text: string): string {
+  let body = (text || '').replace(RELATED_TAIL, '').trim()
+  if (!body) return ''
+  body = body.replace(/[•●▪◦‣∙·]/g, ' • ')
+  let parts = body.split(LIST_MARKER_SPLIT).filter((p) => (p || '').trim())
+  if (
+    parts.length <= 1 &&
+    !body.includes(' • ') &&
+    !/\b[a-z]\.\s+[A-Z]/.test(body)
+  ) {
+    return body.replace(/\s+/g, ' ').trim()
+  }
+  if (parts.length <= 1) {
+    parts = body
+      .split(/(?:^|\s+)(?:[a-z]\.|\d{1,2}\.|[•●▪◦‣∙·])\s+(?=[A-Z("“'])/i)
+      .filter((p) => (p || '').trim())
+  }
+  let prose = joinListPartsAsProse(parts).replace(/\s+/g, ' ').trim()
+  if (prose && /^[A-Z][a-z]/.test(prose)) {
+    prose = prose[0].toLowerCase() + prose.slice(1)
+  }
+  return prose
+}
+
 function cleanExcerpt(excerpt: string, maxChars = 800): string {
-  let body = (excerpt || '').replace(/\s+/g, ' ').trim()
-  body = body.replace(/["“”]/g, '')
+  let body = toNarrativeProse(stripStatuteSentences(excerpt))
+  body = body.replace(/\s+/g, ' ').trim()
+  if (!body) return ''
   if (body.length > maxChars) {
     const cut = body.slice(0, maxChars).replace(/\s+\S*$/, '')
     body = cut || body.slice(0, maxChars)
@@ -43,77 +114,42 @@ function cleanExcerpt(excerpt: string, maxChars = 800): string {
   return body.replace(/\.\s*$/, '')
 }
 
-function mergeExcerptParts(parts: string[], maxChars = 800): string {
-  const cleaned: string[] = []
+function pickBestExcerpt(parts: string[], maxChars = 800): string {
+  let best = ''
   for (const raw of parts) {
     const body = cleanExcerpt(raw, maxChars)
-    if (!body) continue
-    const low = body.toLowerCase()
-    let superseded = false
-    for (let i = 0; i < cleaned.length; i++) {
-      const kl = cleaned[i].toLowerCase()
-      if (low.includes(kl) && low.length >= kl.length) {
-        cleaned[i] = body
-        superseded = true
-        break
-      }
-      if (kl.includes(low)) {
-        superseded = true
-        break
-      }
-    }
-    if (!superseded) cleaned.push(body)
+    if (body.length > best.length) best = body
   }
-  return cleanExcerpt(cleaned.join('. '), maxChars)
+  return best
 }
 
-function uniqueCites(cites: string[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const c of cites) {
-    const t = (c || '').trim()
-    if (!t) continue
-    const key = t.toLowerCase().replace(/\s+/g, '')
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(t)
-  }
-  return out
+function summaryDisplayDate(raw?: string | null): string {
+  const text = (raw || '').trim()
+  if (!text || text === MISSING_DOCUMENT_DATE) return MISSING_DOCUMENT_DATE
+  const parsed = formatDocumentDate(text)
+  if (parsed !== MISSING_DOCUMENT_DATE) return parsed
+  return text
 }
 
+/** Canonical Summary finding line (peer IR DOCX examples). */
 export function summaryDocumentReviewParagraph(
   title: string,
   documentDate?: string,
   excerpt?: string,
-  cites?: string[],
 ): string {
   const shown = displayEvidenceTitle(title).replace(/["“”]/g, '') || 'document'
-  const dated = formatDocumentDate(documentDate) || '[document date]'
+  const dated = summaryDisplayDate(documentDate)
   const body = cleanExcerpt(excerpt || '')
-  if (!body) {
-    return `A review of the document titled "${shown}", dated ${dated}, showed ${DOC_PENDING}.`
-  }
-  let para = `A review of the document titled "${shown}", dated ${dated}, showed ${body}.`
-  const related = uniqueCites(cites || [])
-  if (related.length) {
-    para = `${para.replace(/\.\s*$/, '')} Related to ${related.join('; ')}.`
-  }
-  return para
+  if (!body) return ''
+  return `Review of a document titled "${shown}", dated ${dated}, showed ${body}.`
 }
 
 /** SOD Writing: document review uses showed; titles after titled, in quotes. */
-export function sodDocumentFinding(title: string, excerpt?: string, cites?: string[]): string {
+export function sodDocumentFinding(title: string, excerpt?: string): string {
   const shown = displayEvidenceTitle(title).replace(/["“”]/g, '') || 'document'
   const body = cleanExcerpt(excerpt || '', 900)
-  if (!body) {
-    return `Review of the document titled, "${shown}", showed the record was reviewed.`
-  }
-  let para = `Review of the document titled, "${shown}", showed ${body}.`
-  const related = uniqueCites(cites || [])
-  if (related.length) {
-    para = `${para.replace(/\.\s*$/, '')} Related to ${related.join('; ')}.`
-  }
-  return para
+  if (!body) return ''
+  return `Review of the document titled, "${shown}", showed ${body}.`
 }
 
 type ConsolidatedExhibit = {
@@ -121,11 +157,10 @@ type ConsolidatedExhibit = {
   evidence_title: string
   document_date?: string
   excerpt: string
-  cites: string[]
   score: number
 }
 
-/** One row per exhibit: merge all duty-hit excerpts and cites. */
+/** One row per exhibit: pick the best verbatim excerpt span. */
 export function consolidateHitsByEvidence(hits: EvidenceReviewHit[] | undefined): ConsolidatedExhibit[] {
   const selected = (hits || [])
     .filter((h) => h.included_by_default !== false && (h.excerpt || '').trim())
@@ -146,7 +181,6 @@ export function consolidateHitsByEvidence(hits: EvidenceReviewHit[] | undefined)
         evidence_title: h.evidence_title,
         document_date: h.document_date,
         excerpt: '',
-        cites: [],
         score: h.score || 0,
         excerptParts: [],
       }
@@ -156,12 +190,6 @@ export function consolidateHitsByEvidence(hits: EvidenceReviewHit[] | undefined)
     if (h.document_date && !row.document_date) row.document_date = h.document_date
     row.score = Math.max(row.score, h.score || 0)
     if (h.excerpt?.trim()) row.excerptParts.push(h.excerpt)
-    if (h.cite?.trim()) {
-      const ck = h.cite.toLowerCase().replace(/\s+/g, '')
-      if (!row.cites.some((c) => c.toLowerCase().replace(/\s+/g, '') === ck)) {
-        row.cites.push(h.cite)
-      }
-    }
   }
 
   return order
@@ -171,11 +199,11 @@ export function consolidateHitsByEvidence(hits: EvidenceReviewHit[] | undefined)
         evidence_id: row.evidence_id,
         evidence_title: row.evidence_title,
         document_date: row.document_date,
-        excerpt: mergeExcerptParts(row.excerptParts),
-        cites: row.cites,
+        excerpt: pickBestExcerpt(row.excerptParts),
         score: row.score,
       }
     })
+    .filter((row) => row.excerpt.trim())
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_SUMMARY_FINDINGS)
 }
@@ -185,7 +213,6 @@ export function mergeEvidenceIntoSummary(
   documents: { title: string; documentDate?: string; excerpt?: string }[],
   evidenceHits?: EvidenceReviewHit[],
 ): string {
-  // Collaborator notes are in-app only; never re-merge them into the document body.
   let body = cleanSummaryForDocument(report.summary_of_findings || '')
   const parts = body.split(/\n\n+/).map((p) => p.trim()).filter(Boolean)
   let opener = parts[0] || ''
@@ -193,47 +220,22 @@ export function mergeEvidenceIntoSummary(
   if (!(low.includes('received a complaint') || low.startsWith('the department of health'))) {
     opener = ''
   }
-  const remainder = parts
-    .slice(opener ? 1 : 0)
-    .filter((p) => {
-      const pl = p.toLowerCase()
-      if (pl.startsWith('a review of the document titled')) return false
-      if (pl.startsWith('this section summarizes how document review')) return false
-      if (pl.startsWith('investigative findings (to be completed)')) return false
-      if (pl.startsWith('complete each document-review paragraph')) return false
-      if (pl.startsWith('add interview and observation findings')) return false
-      if (pl.includes('is authorized for this investigation because')) return false
-      if (pl.includes('the corresponding allegation asserts')) return false
-      if (pl.includes('investigator collaborator')) return false
-      if (pl.startsWith('areas of concern:')) return false
-      if (pl.startsWith('suggested methods to begin')) return false
-      return true
-    })
-    .join('\n\n')
 
   const consolidated = consolidateHitsByEvidence(evidenceHits)
   const reviewParas =
     consolidated.length > 0
       ? consolidated.map((h) =>
-          summaryDocumentReviewParagraph(h.evidence_title, h.document_date, h.excerpt, h.cites),
+          summaryDocumentReviewParagraph(h.evidence_title, h.document_date, h.excerpt),
         )
-      : documents.map((d) => summaryDocumentReviewParagraph(d.title, d.documentDate, d.excerpt))
+      : documents
+          .map((d) => summaryDocumentReviewParagraph(d.title, d.documentDate, d.excerpt))
+          .filter(Boolean)
 
   const sections = [
     opener ||
       'The Department of Health (DOH) received a complaint alleging concerns within the scope of the authorized WAC/RCW selections.',
     ...reviewParas,
   ]
-  if (consolidated.length > 0 || documents.some((d) => (d.excerpt || '').trim())) {
-    sections.push(COMPLETE_HINT)
-  } else if (documents.length) {
-    sections.push(
-      'Complete each document-review paragraph with how the record supports or does not support the authorized allegations under the selected WAC/RCW. Add interview and observation findings as developed.',
-    )
-  }
-  if (remainder && !remainder.includes(DOC_PENDING)) {
-    sections.push(remainder)
-  }
   return sections.filter(Boolean).join('\n\n')
 }
 
@@ -256,11 +258,13 @@ export function linkEvidenceHitsToSod(
       return Boolean(ck && (ck.includes(regK) || regK.includes(ck)))
     })
     for (const row of consolidateHitsByEvidence(matching)) {
+      const text = sodDocumentFinding(row.evidence_title, row.excerpt)
+      if (!text) continue
       const eid = String(row.evidence_id)
       if (findings.some((f) => (f.evidence_ids || []).includes(eid))) continue
       findings.push({
         method: 'document review',
-        text: sodDocumentFinding(row.evidence_title, row.excerpt, row.cites).slice(0, 900),
+        text: text.slice(0, 900),
         evidence_ids: [eid],
       })
     }
@@ -304,31 +308,19 @@ export function splitSummaryParagraphs(text: string): string[] {
     .filter(Boolean)
 }
 
-/**
- * True when a Summary paragraph is a document-review finding with a direct
- * Evidence ↔ allegation duty link (included evidence_review hit and/or Related to cite).
- */
+/** True when a Summary paragraph matches the peer evidence finding format. */
 export function summaryParagraphIsEvidenceLinked(
   paragraph: string,
   report: InvestigationReport,
 ): boolean {
-  const pl = (paragraph || '').trim()
-  if (!/^A review of the document titled/i.test(pl)) return false
-  if (/\[pending:/i.test(pl)) return false
+  if (!isSummaryEvidenceParagraph(paragraph)) return false
+  if (/\[pending:/i.test(paragraph)) return false
 
-  const allegationKeys = allegationCiteKeys(report)
-  if (!allegationKeys.size) return false
-
-  const related = pl.match(/\bRelated to\s+(.+?)\.?\s*$/i)
-  if (related) {
-    const cites = related[1].split(/;|,(?=\s*(?:WAC|RCW)\b)/i).map((s) => s.trim())
-    if (cites.some((c) => citesOverlapAllegation(c, allegationKeys))) return true
-  }
-
-  const titleM = pl.match(/titled\s+"([^"]+)"/i)
+  const titleM = TITLE_IN_SUMMARY_EVIDENCE_RE.exec(paragraph || '')
   const title = (titleM?.[1] || '').toLowerCase().trim()
   if (!title) return false
 
+  const allegationKeys = allegationCiteKeys(report)
   const hits = (report.evidence_review || []).filter(
     (h) => h.included_by_default !== false && (h.excerpt || '').trim(),
   )
@@ -338,7 +330,83 @@ export function summaryParagraphIsEvidenceLinked(
       .trim()
     if (!ht) continue
     if (!(ht === title || ht.includes(title) || title.includes(ht))) continue
-    if (citesOverlapAllegation(h.cite || '', allegationKeys)) return true
+    if (!allegationKeys.size || citesOverlapAllegation(h.cite || '', allegationKeys)) return true
   }
   return false
+}
+
+const SUPER_DIGITS = '⁰¹²³⁴⁵⁶⁷⁸⁹'
+
+export type SummaryEvidenceCite = {
+  evidenceId: number
+  exhibitNo: number
+  title: string
+  excerpt: string
+  pageLabel: string
+  tooltip: string
+}
+
+/** Match Summary paragraph to case exhibit + duty-review excerpt for superscript / tooltip. */
+export function resolveSummaryEvidenceCite(
+  paragraph: string,
+  report: InvestigationReport,
+  evidence: { id: number; title?: string; original_filename?: string; exhibit_number?: number | null }[],
+): SummaryEvidenceCite | null {
+  const m = TITLE_IN_SUMMARY_EVIDENCE_RE.exec(paragraph || '')
+  if (!m) return null
+  const title = displayEvidenceTitle(m[1]).toLowerCase()
+  const sorted = [...(evidence || [])].sort(
+    (a, b) => (a.exhibit_number || 0) - (b.exhibit_number || 0) || a.id - b.id,
+  )
+  let match:
+    | { id: number; title?: string; original_filename?: string; exhibit_number?: number | null }
+    | undefined
+  for (const ev of sorted) {
+    const t = displayEvidenceTitle(ev.title || ev.original_filename || '').toLowerCase()
+    const stem = (ev.original_filename || '').replace(/\.[^.]+$/, '').toLowerCase()
+    if (t === title || stem === title || t.includes(title) || title.includes(t)) {
+      match = ev
+      break
+    }
+  }
+  if (!match) return null
+  const exhibitNo =
+    match.exhibit_number && match.exhibit_number > 0
+      ? match.exhibit_number
+      : sorted.findIndex((e) => e.id === match!.id) + 1
+  const hits = (report.evidence_review || []).filter(
+    (h) => h.evidence_id === match!.id && h.included_by_default !== false && (h.excerpt || '').trim(),
+  )
+  hits.sort((a, b) => (b.score || 0) - (a.score || 0))
+  const excerpt = hits[0]?.excerpt || ''
+  const shown = displayEvidenceTitle(match.title || match.original_filename || `document ${match.id}`)
+  const sample =
+    excerpt.length > 280 ? `${excerpt.slice(0, 277).replace(/\s+\S*$/, '')}…` : excerpt
+  const tooltip = [`Exhibit #${exhibitNo}: ${shown}`, sample].filter(Boolean).join(' · ')
+  return {
+    evidenceId: match.id,
+    exhibitNo,
+    title: shown,
+    excerpt,
+    pageLabel: '',
+    tooltip,
+  }
+}
+
+export function stripTrailingSuperscripts(text: string): { body: string; marks: string } {
+  let body = text || ''
+  let marks = ''
+  while (body && SUPER_DIGITS.includes(body[body.length - 1]!)) {
+    marks = body[body.length - 1]! + marks
+    body = body.slice(0, -1)
+  }
+  return { body: body.trimEnd(), marks }
+}
+
+export function toSuperscriptDigits(n: number): string {
+  if (n <= 0) return ''
+  return String(n)
+    .split('')
+    .map((d) => SUPER_DIGITS[Number(d)] || d)
+    .join('')
 }

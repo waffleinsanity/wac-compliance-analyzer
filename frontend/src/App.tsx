@@ -38,6 +38,7 @@ import { FeedbackDialog } from './components/FeedbackDialog'
 import { InvestigationReportEditor } from './components/InvestigationReportEditor'
 import { PrivacyGate } from './components/PrivacyGate'
 import { RelatedStatutesPanel } from './components/RelatedStatutesPanel'
+import { RailEdgeToggle } from './components/RailEdgeToggle'
 import { ResizeHandle } from './components/ResizeHandle'
 import { SodEditor } from './components/SodEditor'
 import { EvidenceLogEditor } from './components/EvidenceLogEditor'
@@ -50,6 +51,7 @@ import { WorkflowStepper } from './components/WorkflowStepper'
 import { DraftRecallMenu } from './components/DraftRecallMenu'
 import { formatSavedClock } from './draftBackup'
 import { PrivacyScreenBanner } from './components/PrivacyScreenBanner'
+import { usePersistedBoolean } from './hooks/usePersistedBoolean'
 import { useResizableWidth } from './hooks/useResizableWidth'
 import { useInvestigationWorkspace } from './hooks/useInvestigationWorkspace'
 import { canAccessAdmin, canEdit, canExport, roleLabel } from './permissions'
@@ -157,10 +159,12 @@ export default function App() {
   })
   const casesRail = useResizableWidth({
     storageKey: 'wacmakr.sidebar.casesWidth',
-    defaultWidth: 280,
-    minWidth: 220,
-    maxWidth: 520,
+    defaultWidth: 168,
+    minWidth: 152,
+    maxWidth: 360,
   })
+  const [wacRailOpen, setWacRailOpen] = usePersistedBoolean('wacmakr.sidebar.wacOpen', true)
+  const [casesRailOpen, setCasesRailOpen] = usePersistedBoolean('wacmakr.sidebar.casesOpen', true)
 
   useEffect(() => {
     if (!user || !canAccessAdmin(user.role, user.is_admin)) {
@@ -255,8 +259,8 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-[70] border-b border-ink-200 bg-card dark:border-ink-700">
-        <div className="mx-auto flex h-14 max-w-none items-center justify-between gap-3 px-4 lg:px-5">
-          <div className="flex min-w-0 items-center gap-3">
+        <div className="mx-auto flex h-11 max-w-none items-center justify-between gap-2 px-3 lg:px-4">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               className="btn-ghost btn-sm md:hidden"
@@ -268,7 +272,7 @@ export default function App() {
             <div className="min-w-0">
               <h1 className="brand-mark truncate">WACMAKR</h1>
               <div className="brand-rule" aria-hidden />
-              <p className="mt-1 hidden truncate text-[11px] text-ink-500 sm:block">
+              <p className="mt-0.5 hidden truncate text-[10px] text-ink-500 lg:block">
                 Investigation reports · approved WACs only
                 {health ? ` · ${health}` : ''}
               </p>
@@ -408,15 +412,15 @@ export default function App() {
         </div>
       </header>
 
-      <div className="flex h-[calc(100vh-3.5rem)]">
+      <div className="flex h-[calc(100vh-2.75rem)]">
         {showMobileMenu && (
           <div className="fixed inset-0 z-50 md:hidden">
             <div className="fixed inset-0 bg-ink-950/40" onClick={() => setShowMobileMenu(false)} />
             <div className="fixed left-0 top-0 flex h-full w-[22rem] max-w-[90vw] flex-col border-r bg-card">
-              <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="flex items-center justify-between border-b px-3 py-2">
                 <div>
-                  <h2 className="font-display text-base">Approved WACs</h2>
-                  <p className="text-xs text-muted-foreground">Required for every case report</p>
+                  <h2 className="font-display text-sm">Approved WACs</h2>
+                  <p className="text-[11px] text-muted-foreground">Required for every case report</p>
                 </div>
                 <button
                   type="button"
@@ -432,29 +436,46 @@ export default function App() {
           </div>
         )}
 
-        <aside
-          className="sidebar-rail relative hidden h-full shrink-0 border-r border-ink-200 dark:border-ink-700 md:flex md:flex-col"
-          style={{ width: wacRail.width }}
-        >
-          <div className="border-b border-ink-200 px-3 py-3 dark:border-ink-700">
-            <h2 className="font-display text-[15px] tracking-tight text-ink-900 dark:text-ink-50">
-              Approved WACs
-            </h2>
-            <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
-              Required. Only selected codes enter the report.
-            </p>
-          </div>
-          <div className="min-h-0 flex-1">{wacPanel}</div>
-          <ResizeHandle
-            edge="right"
-            label="Resize Approved WACs panel"
-            onPointerDown={wacRail.onResizePointerDown('right')}
-            onNudge={wacRail.nudge}
+        {wacRailOpen ? (
+          <aside
+            className="sidebar-rail relative hidden h-full shrink-0 border-r border-ink-200 dark:border-ink-700 md:flex md:flex-col"
+            style={{ width: wacRail.width }}
+          >
+            <div className="border-b border-ink-200 px-3 py-1.5 dark:border-ink-700">
+              <h2 className="font-display text-[14px] tracking-tight text-ink-900 dark:text-ink-50">
+                Approved WACs
+              </h2>
+              <p className="mt-0.5 text-[10px] leading-snug text-ink-500">
+                Required. Only selected codes enter the report.
+              </p>
+            </div>
+            <div className="min-h-0 flex-1">{wacPanel}</div>
+            <ResizeHandle
+              edge="right"
+              label="Resize Approved WACs panel"
+              onPointerDown={wacRail.onResizePointerDown('right')}
+              onNudge={wacRail.nudge}
+            />
+            <RailEdgeToggle
+              edge="left"
+              panelLabel="Approved WACs"
+              open
+              onToggle={() => setWacRailOpen(false)}
+            />
+          </aside>
+        ) : (
+          <RailEdgeToggle
+            edge="left"
+            panelLabel="Approved WACs"
+            open={false}
+            collapsedStrip
+            onToggle={() => setWacRailOpen(true)}
+            className="hidden h-full md:flex"
           />
-        </aside>
+        )}
 
         <main className="flex min-w-0 flex-1 flex-col bg-transparent">
-          <div className="border-b border-ink-200 px-4 dark:border-ink-700">
+          <div className="border-b border-ink-200 px-3 dark:border-ink-700">
             <div
               className={clsx(
                 'grid w-full',
@@ -536,7 +557,7 @@ export default function App() {
           <div className="min-h-0 flex-1 overflow-hidden">
             {tab === 'analysis' && (
               <div className="flex h-full flex-col overflow-hidden">
-                <div className="border-b border-ink-200 bg-card/80 px-3 py-2 dark:border-ink-700 lg:px-4">
+                <div className="border-b border-ink-200 bg-card/80 px-3 py-1 dark:border-ink-700 lg:px-4">
                   <WorkflowStepper
                     step={step}
                     onStepChange={setStep}
@@ -554,7 +575,7 @@ export default function App() {
                   className={
                     step === 'report'
                       ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
-                      : 'min-h-0 flex-1 overflow-y-auto p-3 pb-20 sm:p-4 lg:p-5 lg:pb-5'
+                      : 'min-h-0 flex-1 overflow-y-auto p-2.5 pb-16 sm:p-3 lg:p-4 lg:pb-4'
                   }
                 >
                   {step === 'workspace' && (
@@ -676,7 +697,7 @@ export default function App() {
                       onReset={() => setStep('review')}
                     >
                     <div className="flex h-full min-h-0 flex-col">
-                      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-ink-200 bg-card/95 px-3 pt-2 backdrop-blur-sm dark:border-ink-700 sm:px-4 lg:px-5">
+                      <div className="flex shrink-0 flex-wrap items-center justify-between gap-1.5 border-b border-ink-200 bg-card/95 px-2.5 pt-1 backdrop-blur-sm dark:border-ink-700 sm:px-3 lg:px-4">
                         <div className="flex flex-wrap gap-0">
                           {(
                             [
@@ -689,7 +710,7 @@ export default function App() {
                               key={id}
                               type="button"
                               className={clsx(
-                                'nav-pill',
+                                'nav-pill !px-2 !py-1.5 !text-[11px] sm:!text-xs',
                                 docSurface === id ? 'nav-pill-active' : 'nav-pill-idle',
                               )}
                               onClick={() => setDocSurface(id)}
@@ -838,19 +859,36 @@ export default function App() {
           </div>
         </main>
 
-        <aside
-          className="relative hidden h-full shrink-0 border-l border-ink-200 bg-card dark:border-ink-700 lg:flex lg:flex-col"
-          style={{ width: casesRail.width }}
-        >
-          <ResizeHandle
-            edge="left"
-            label="Resize Cases panel"
-            onPointerDown={casesRail.onResizePointerDown('left')}
-            onNudge={casesRail.nudge}
-            className="!hidden lg:!block"
+        {casesRailOpen ? (
+          <aside
+            className="relative hidden h-full shrink-0 border-l border-ink-200 bg-card dark:border-ink-700 lg:flex lg:flex-col"
+            style={{ width: casesRail.width }}
+          >
+            <ResizeHandle
+              edge="left"
+              label="Resize Cases panel"
+              onPointerDown={casesRail.onResizePointerDown('left')}
+              onNudge={casesRail.nudge}
+              className="!hidden lg:!block"
+            />
+            {casesPanel}
+            <RailEdgeToggle
+              edge="right"
+              panelLabel="Cases"
+              open
+              onToggle={() => setCasesRailOpen(false)}
+            />
+          </aside>
+        ) : (
+          <RailEdgeToggle
+            edge="right"
+            panelLabel="Cases"
+            open={false}
+            collapsedStrip
+            onToggle={() => setCasesRailOpen(true)}
+            className="hidden h-full lg:flex"
           />
-          {casesPanel}
-        </aside>
+        )}
 
         <div className="fixed bottom-4 right-4 lg:hidden">
           <button

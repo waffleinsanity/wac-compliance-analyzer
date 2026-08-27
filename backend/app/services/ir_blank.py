@@ -105,44 +105,36 @@ def blank_docx_path() -> Path:
 
 
 def conclusion_finding_phrase(result: str) -> str:
-    """Legacy blank-IR finding phrase (kept for older drafts). Prefer normalize_ir_conclusion."""
-    r = (result or "").strip().lower()
-    if r in {"substantiated", "out of compliance", "not in compliance"}:
-        return "not in compliance"
-    if r in {"unsubstantiated", "in compliance"}:
-        return "in compliance"
-    return ""
+    """Map a stored result onto blank-IR compliance phrases."""
+    return normalize_ir_conclusion(result)
 
 
 def normalize_ir_conclusion(result: str) -> str:
-    """Map editor / legacy results onto IR Guidance conclusion options."""
-    from app.services.guidance_corpus import (
-        IR_CONCLUSION_NOT_SUBSTANTIATED,
-        IR_CONCLUSION_OPTIONS,
-        IR_CONCLUSION_SUBSTANTIATED_DEFICIENT,
-        IR_CONCLUSION_SUBSTANTIATED_NO_DEFICIENT,
-    )
+    """Map editor / legacy results onto blank DOCX choices: in compliance | not in compliance.
 
+    Empty / pending → \"\" (UI shows Choose an item.). Legacy Substantiated / Not Substantiated
+    strings from older drafts map onto the blank compliance phrases.
+    """
     r = (result or "").strip()
-    if r in IR_CONCLUSION_OPTIONS:
-        return r
     low = r.lower()
-    if "no current deficient" in low:
-        return IR_CONCLUSION_SUBSTANTIATED_NO_DEFICIENT
-    if "deficient practice or condition cited" in low:
-        return IR_CONCLUSION_SUBSTANTIATED_DEFICIENT
-    if low in {"not substantiated", "unsubstantiated", "in compliance"}:
-        return IR_CONCLUSION_NOT_SUBSTANTIATED
-    if low in {"substantiated", "out of compliance", "not in compliance"}:
-        return IR_CONCLUSION_SUBSTANTIATED_DEFICIENT
+    if low in {"in compliance", "not in compliance"}:
+        return low
     if low in {"", "pending", "pending investigation", "choose an item."}:
-        return "Pending Investigation"
-    return r or "Pending Investigation"
+        return ""
+    # Legacy IR Guidance outcomes → blank compliance voice (peer completed IRs).
+    if "no current deficient" in low:
+        return "in compliance"
+    if "deficient practice or condition cited" in low:
+        return "not in compliance"
+    if low in {"not substantiated", "unsubstantiated"}:
+        return "in compliance"
+    if low in {"substantiated", "out of compliance"}:
+        return "not in compliance"
+    return r
 
 
 def conclusion_deficiency_cited(result: str) -> bool:
-    outcome = normalize_ir_conclusion(result).lower()
-    return "deficient practice or condition cited" in outcome and "no current" not in outcome
+    return normalize_ir_conclusion(result) == "not in compliance"
 
 
 def format_conclusion_line(
@@ -153,17 +145,20 @@ def format_conclusion_line(
     deficiency_details: str = "",
     instrument: str = "WAC",
 ) -> str:
-    """IR Guidance outcome line; WAC/RCW label is jurisdictional context (cites live in SOD)."""
+    """Blank DOCX + peer IR voice.
+
+    Allegation: The investigator found the facility {in compliance|not in compliance|Choose an item.}
+    with WAC {code} {title}.
+    """
     code = (wac_code or "").replace("WAC ", "").replace("RCW ", "").strip()
     prefix = "RCW" if code.startswith("71.") else instrument
     title = (wac_title or "").strip()
-    topic = title.replace("—", " - ").replace("–", " - ").split(" - ")[0].strip() if title else code
-    if len(topic) > 90:
-        topic = topic[:87].rstrip() + "…"
+    title_bit = f" {title}" if title else ""
     outcome = normalize_ir_conclusion(result)
-    line = f"Allegation: Concerning {topic} ({prefix} {code}): {outcome}."
+    mid = outcome if outcome in CONCLUSION_FINDING_CHOICES else CHOOSE_ITEM
+    line = f"Allegation: The investigator found the facility {mid} with {prefix} {code}{title_bit}."
     extra = (deficiency_details or "").strip()
-    if extra and conclusion_deficiency_cited(outcome):
+    if extra and conclusion_deficiency_cited(outcome or mid):
         line += f" {extra}"
     return line
 

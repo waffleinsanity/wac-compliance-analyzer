@@ -522,26 +522,23 @@ export function ReviewStep({
   }
 
   return (
-    <div className="animate-rise space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-ink-200 pb-4 dark:border-ink-700">
-        <div>
-          <p className="compare-meta">Step 2 · Compare</p>
-          <h2 className="mt-1 font-display text-[1.75rem] tracking-tight text-ink-900 dark:text-ink-50 lg:text-3xl">
-            Working allegations
-          </h2>
-          <p className="mt-2 max-w-2xl font-sans text-sm leading-relaxed text-ink-500">
-            One allegation line per approved code ({total} total). Confirm each cite (or confirm all)
-            before opening the report editor. Application strength shows how clearly each code fits the
-            complaint.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-secondary" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" /> Back
+    <div className="animate-rise space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-200 pb-2.5 dark:border-ink-700">
+        <h2
+          className="font-display flex min-w-0 flex-wrap items-baseline gap-x-2 text-lg text-ink-900 dark:text-ink-50"
+          title="One allegation line per approved code. Confirm each cite before opening Documents."
+        >
+          <span className="compare-meta !normal-case tracking-wide">Step 2 · Compare</span>
+          <span>Working allegations</span>
+          <span className="font-sans text-[11px] font-normal text-ink-500">({total})</span>
+        </h2>
+        <div className="flex flex-wrap gap-1.5">
+          <button type="button" className="btn-secondary !h-8 !px-2.5 text-xs" onClick={onBack}>
+            <ArrowLeft className="h-3.5 w-3.5" /> Back
           </button>
           <button
             type="button"
-            className="btn-secondary"
+            className="btn-secondary !h-8 !px-2.5 text-xs"
             disabled={busy || allConfirmed}
             onClick={confirmAll}
             title={
@@ -554,37 +551,39 @@ export function ReviewStep({
           </button>
           <button
             type="button"
-            className="btn-primary"
+            className="btn-primary !h-8 !px-2.5 text-xs"
             disabled={busy || !allConfirmed}
             title={allConfirmed ? undefined : 'Confirm each allegation cite before continuing'}
             onClick={() => onContinue(comparisons.map(codeKey))}
           >
-            Open Documents <ArrowRight className="h-4 w-4" />
+            Open Documents <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
       {!allConfirmed && (
-        <div
+        <details
           role="status"
-          className="border-l-2 border-amber-600 bg-amber-50/90 px-3 py-2.5 font-sans text-sm text-amber-950 dark:bg-amber-950/35 dark:text-amber-100"
+          className="border-l-2 border-amber-600 bg-amber-50/90 px-2.5 py-1.5 font-sans text-xs text-amber-950 dark:bg-amber-950/35 dark:text-amber-100"
         >
-          <p>
-            Confirm each allegation cite before continuing ({confirmed.size}/{total} confirmed).
-          </p>
-          {unconfirmedManualCount > 0 && (
-            <p className="mt-1 text-xs opacity-90">
-              {unconfirmedManualCount === 1
-                ? '1 code has no clear application'
-                : `${unconfirmedManualCount} codes have no clear application`}{' '}
-              — open it, review the allegation line, then check the confirm box. Confirm all matched
-              cites skips these.
+          <summary className="cursor-pointer font-medium">
+            Confirm each allegation cite before continuing ({confirmed.size}/{total} confirmed)
+          </summary>
+          <div className="mt-1 space-y-1 text-[11px] opacity-90">
+            {unconfirmedManualCount > 0 && (
+              <p>
+                {unconfirmedManualCount === 1
+                  ? '1 code has no clear application'
+                  : `${unconfirmedManualCount} codes have no clear application`}{' '}
+                — open it, review the allegation line, then check the confirm box. Confirm all matched
+                cites skips these.
+              </p>
+            )}
+            <p className="opacity-80">
+              Rebuilding the draft clears confirmation so dropped cites are reviewed again.
             </p>
-          )}
-          <p className="mt-1 text-xs opacity-80">
-            Rebuilding the draft clears confirmation so dropped cites are reviewed again.
-          </p>
-        </div>
+          </div>
+        </details>
       )}
 
       <IrTemplatePicker
@@ -595,11 +594,13 @@ export function ReviewStep({
       />
 
       {quoteFailures.length > 0 && (
-        <div className="border-l-2 border-amber-600 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950/35 dark:text-amber-100">
-          <p className="font-medium leading-snug">
-            Statute wording issues ({quoteFailures.length}). Jump to the allegation and check it
-            against the approved code text before exporting. If this draft was built before a recent
-            update, go back to Intake and rebuild the report.
+        <details className="border-l-2 border-amber-600 bg-amber-50/80 px-3 py-2 text-xs text-amber-950 dark:bg-amber-950/35 dark:text-amber-100">
+          <summary className="cursor-pointer font-medium leading-snug">
+            Statute wording issues ({quoteFailures.length}) · expand to jump
+          </summary>
+          <p className="mt-1.5 text-[11px] opacity-90">
+            Jump to the allegation and check it against the approved code text before exporting. If
+            this draft was built before a recent update, go back to Intake and rebuild the report.
           </p>
           <ul className="mt-2 space-y-1.5">
             {quoteFailures.map((f, i) => {
@@ -614,7 +615,7 @@ export function ReviewStep({
                     disabled={!canNav}
                     onClick={() => canNav && goTo(idx, { openPdf: true })}
                     className={clsx(
-                      'w-full border-b border-amber-200/60 px-1 py-2 text-left transition last:border-0 dark:border-amber-800/40',
+                      'w-full border-b border-amber-200/60 px-1 py-1.5 text-left transition last:border-0 dark:border-amber-800/40',
                       canNav
                         ? 'hover:bg-amber-100/50 dark:hover:bg-amber-900/30'
                         : 'cursor-default opacity-70',
@@ -622,12 +623,12 @@ export function ReviewStep({
                   >
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                       <span className="compare-cite font-semibold">{label}</span>
-                      <span className="font-sans text-xs text-amber-800 dark:text-amber-200">
+                      <span className="font-sans text-[11px] text-amber-800 dark:text-amber-200">
                         {quoteFailureLabel(f.reason)}
                       </span>
                     </div>
                     {preview && (
-                      <p className="mt-1 line-clamp-2 font-serif text-xs leading-snug text-ink-600 dark:text-ink-300">
+                      <p className="mt-1 line-clamp-2 font-serif text-[11px] leading-snug text-ink-600 dark:text-ink-300">
                         {preview}
                       </p>
                     )}
@@ -641,7 +642,7 @@ export function ReviewStep({
               )
             })}
           </ul>
-        </div>
+        </details>
       )}
 
       <div className="grid gap-5 lg:grid-cols-[11.5rem_minmax(0,1fr)]">

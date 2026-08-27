@@ -146,17 +146,15 @@ export function ComplaintStep({
       )}
 
       <div className="doc-surface flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ink-200 px-5 py-4 dark:border-ink-700">
-          <div className="min-w-0 flex-1">
-            <p className="compare-meta">Step 1 · Intake</p>
-            <h2 className="font-display mt-1 text-2xl text-ink-900 dark:text-ink-50">
-              Complaint / allegation
-            </h2>
-            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink-500">
-              Paste the intake narrative. Approved WACs in the left rail define what enters the report.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-200 px-4 py-2.5 dark:border-ink-700">
+          <h2
+            className="font-display flex min-w-0 flex-wrap items-baseline gap-x-2 text-lg text-ink-900 dark:text-ink-50"
+            title="Paste the intake narrative. Approved WACs in the left rail define what enters the report."
+          >
+            <span className="compare-meta !normal-case tracking-wide">Step 1 · Intake</span>
+            <span>Complaint</span>
+          </h2>
+          <div className="flex flex-wrap items-center gap-1">
             {showLocalDemo && canEdit && (
               <>
                 <label className="sr-only" htmlFor="local-demo-pick">
@@ -167,7 +165,7 @@ export function ComplaintStep({
                   className="input !h-8 !min-h-0 !w-auto max-w-[220px] !py-1 !text-xs"
                   value={localDemoId}
                   disabled={busy}
-                  title="Admin only — pick a local RAG/generator test scenario"
+                  title="Admin only: pick a local demo scenario"
                   onChange={(e) => onLocalDemoIdChange?.(e.target.value)}
                 >
                   <option value="">Choose a demo…</option>
@@ -181,7 +179,7 @@ export function ComplaintStep({
                   type="button"
                   className="btn-ghost !px-2.5 !py-1 text-xs text-tide-700 dark:text-tide-300"
                   disabled={busy || !localDemoId}
-                  title="Admin only — fill complaint, metadata, and approved WACs (evidence attaches when you draft)"
+                  title="Admin only: fill complaint, metadata, and approved WACs"
                   onClick={onLoadLocalDemo}
                 >
                   <FlaskConical className="h-3.5 w-3.5" /> Load demo
@@ -190,7 +188,7 @@ export function ComplaintStep({
                   type="button"
                   className="btn-ghost !px-2.5 !py-1 text-xs text-tide-700 dark:text-tide-300"
                   disabled={busy || !localDemoId}
-                  title="Admin only — load demo, draft into Compare, and attach demo evidence exhibits"
+                  title="Admin only: load demo, draft into Compare, attach demo evidence"
                   onClick={onLoadLocalDemoAndDraft}
                 >
                   <Play className="h-3.5 w-3.5" /> Load & draft
@@ -285,13 +283,8 @@ export function ComplaintStep({
           />
         </div>
 
-        <div className="space-y-3 border-t border-ink-200 bg-ink-50/40 px-5 py-4 dark:border-ink-700 dark:bg-ink-900/20">
-          <div>
-            <p className="compare-meta">Case metadata</p>
-            <p className="mt-1 text-xs text-ink-500">
-              Fill these before drafting so the report shell has the right case context.
-            </p>
-          </div>
+        <div className="space-y-2 border-t border-ink-200 bg-ink-50/40 px-4 py-3 dark:border-ink-700 dark:bg-ink-900/20">
+          <p className="compare-meta">Case metadata</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
               <label className="label" htmlFor="case-id">

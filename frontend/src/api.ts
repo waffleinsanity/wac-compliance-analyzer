@@ -190,13 +190,8 @@ export type InvestigationConclusion = {
   deficiency_details: string
 }
 
-/** IR Guidance conclusion options (normalize desk-manual typo citied → cited). */
-export const IR_CONCLUSION_OPTIONS = [
-  'Substantiated with deficient practice or condition cited',
-  'Substantiated with no current deficient practice or condition cited',
-  'Not Substantiated',
-  'Pending Investigation',
-] as const
+/** Blank DOCX conclusion choices (peer completed IRs use the same voice). */
+export const IR_CONCLUSION_OPTIONS = ['not in compliance', 'in compliance'] as const
 
 export type SodFinding = {
   method?: string
@@ -1091,6 +1086,23 @@ export const api = {
     const token = getToken()
     const res = await fetch(`/api/cases/${id}/export/evidence-log`, {
       method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      let detail: unknown = res.statusText
+      try {
+        const data = await res.json()
+        detail = data.detail ?? data
+      } catch {
+        /* ignore */
+      }
+      throw new Error(formatApiErrorDetail(detail, res.statusText))
+    }
+    return res.blob()
+  },
+  downloadEvidenceFile: async (caseId: number, evidenceId: number) => {
+    const token = getToken()
+    const res = await fetch(`/api/cases/${caseId}/evidence/${evidenceId}/file`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
     if (!res.ok) {

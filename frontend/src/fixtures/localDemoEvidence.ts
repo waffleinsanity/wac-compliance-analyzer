@@ -511,7 +511,7 @@ export function demoEvidenceNeedsWire(
   const hasReviewLines = process.some((line) => isExhibitProcessLine(line))
   if (!hasReviewLines) return true
   const summary = report.summary_of_findings || ''
-  if (/A review of the document titled/i.test(summary)) return false
+  if (/Review of (?:a |the )?document titled/i.test(summary)) return false
   // Duty RAG already attempted for this draft.
   return !Array.isArray(report.evidence_review)
 }

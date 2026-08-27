@@ -595,7 +595,7 @@ def review_case_evidence(
                 continue
             if lex < 0.18 and rag < 0.28:
                 continue
-            excerpt = _duty_focused_excerpt(raw, query) or complete_sentence_excerpt(match_text)
+            excerpt = _duty_focused_excerpt(raw, query) or complete_sentence_excerpt(raw)
             if not excerpt or is_citation_catalog(excerpt):
                 continue
             hit = EvidenceReviewHit(
@@ -651,39 +651,153 @@ def _exhibit_title_for_finding(title: str) -> str:
     return shown.replace('"', "").replace("“", "").replace("”", "").strip() or "document"
 
 
+def _strip_statute_sentences(text: str) -> str:
+    """Drop sentences that are mostly WAC/RCW cite language; keep exhibit facts."""
+    parts = [p.strip() for p in _SENT_SPLIT.split(text or "") if p.strip()]
+    if not parts:
+        return ""
+    kept: list[str] = []
+    for part in parts:
+        if is_citation_catalog(part):
+            continue
+        if _WA_CITE.search(part) and len(_content_tokens(_prose_only(part))) < 8:
+            continue
+        kept.append(part)
+    return " ".join(kept).strip()
+
+
+_RELATED_TAIL = re.compile(r"\s*Related to\s+(?:WAC|RCW)\b.*$", re.IGNORECASE)
+# Policy outline markers: a. / b. / 9. / (a) / bullets. Not WAC cites like (1)(c)(ii).
+_LIST_MARKER_SPLIT = re.compile(
+    r"(?:^|[\n;:])\s*(?:[•●▪◦‣∙·]|\*\s+|-+\s+)?(?:[a-z]\.|\d{1,2}\.|\([a-z]\))\s+"
+    r"|(?<=[a-z0-9\"”'])\s+(?:[•●▪◦‣∙·]|[a-z]\.|\d{1,2}\.)\s+(?=[A-Z(\"“'])"
+    r"|(?:^|[\n;:\s])[•●▪◦‣∙·]\s*",
+    re.IGNORECASE,
+)
+
+
+def _join_list_parts_as_prose(parts: list[str]) -> str:
+    """Turn outline fragments into peer-style flowing clauses."""
+    cleaned: list[str] = []
+    for raw in parts:
+        item = re.sub(r"\s+", " ", (raw or "").strip(" \t-–—*•●"))
+        item = item.strip().rstrip(".;:")
+        if not item:
+            continue
+        cleaned.append(item)
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    # Longer sentence-like items: keep as consecutive sentences.
+    longish = sum(1 for p in cleaned if len(p) >= 55)
+    if longish >= max(2, len(cleaned) // 2):
+        return ". ".join(cleaned)
+
+    def _phrase_case(item: str, *, first: bool) -> str:
+        if first or not item:
+            return item
+        # Lowercase sentence-case fragments so the list reads as one clause.
+        if item[0].isupper() and (len(item) == 1 or item[1].islower()):
+            return item[0].lower() + item[1:]
+        return item
+
+    phrased = [_phrase_case(p, first=(i == 0)) for i, p in enumerate(cleaned)]
+    # "…not limited to: X, Y" → "…not limited to X, Y, and Z" (no orphan comma).
+    if len(phrased) >= 2 and re.search(
+        r"\b(?:to|including|include|includes|follows|following)$",
+        phrased[0],
+        flags=re.IGNORECASE,
+    ):
+        rest = phrased[1:]
+        if len(rest) == 1:
+            return f"{phrased[0]} {rest[0]}"
+        if len(rest) == 2:
+            return f"{phrased[0]} {rest[0]}, and {rest[1]}"
+        return f"{phrased[0]} {', '.join(rest[:-1])}, and {rest[-1]}"
+    if len(phrased) == 2:
+        return f"{phrased[0]}, and {phrased[1]}"
+    return ", ".join(phrased[:-1]) + f", and {phrased[-1]}"
+
+
+def _to_narrative_prose(text: str) -> str:
+    """Strip a./b./9./bullet outline markers into seamless sentences (peer IR style)."""
+    body = _RELATED_TAIL.sub("", text or "").strip()
+    if not body:
+        return ""
+    # Normalize unicode bullets before splitting.
+    body = re.sub(r"[•●▪◦‣∙·]", " • ", body)
+    parts = [p for p in _LIST_MARKER_SPLIT.split(body) if (p or "").strip()]
+    if len(parts) <= 1 and " • " not in body and not re.search(r"\b[a-z]\.\s+[A-Z]", body):
+        return re.sub(r"\s+", " ", body).strip()
+    # If the splitter did not fire but lettered markers remain mid-string, force-split.
+    if len(parts) <= 1:
+        parts = re.split(
+            r"(?:^|\s+)(?:[a-z]\.|\d{1,2}\.|[•●▪◦‣∙·])\s+(?=[A-Z(\"“'])",
+            body,
+            flags=re.IGNORECASE,
+        )
+        parts = [p for p in parts if (p or "").strip()]
+    prose = _join_list_parts_as_prose(parts)
+    prose = re.sub(r"\s+", " ", prose).strip()
+    # After "showed", peer examples usually continue in sentence case.
+    if prose and prose[0].isupper() and (len(prose) == 1 or prose[1].islower()):
+        prose = prose[0].lower() + prose[1:]
+    return prose
+
+
 def _finding_excerpt(excerpt: str, *, max_chars: int = DISPLAY_EXCERPT_CHARS) -> str:
-    body = re.sub(r"\s+", " ", (excerpt or "").strip())
-    body = body.replace('"', "").replace("“", "").replace("”", "")
+    body = _strip_statute_sentences(excerpt)
+    body = _to_narrative_prose(body)
+    body = re.sub(r"\s+", " ", body).strip()
+    if not body:
+        return ""
     if len(body) > max_chars:
         body = complete_sentence_excerpt(body, max_chars=max_chars) or body[:max_chars].rsplit(" ", 1)[0]
     return body.strip().rstrip(".")
 
 
 def _merge_excerpt_parts(parts: list[str], *, max_chars: int) -> str:
-    """Join unique exhibit excerpts into one showed-clause (longest-first dedupe)."""
-    cleaned: list[str] = []
+    """Pick one verbatim exhibit span; do not synthesize merged sentences."""
+    best = ""
     for raw in parts:
         body = _finding_excerpt(raw, max_chars=max_chars)
-        if not body:
-            continue
-        low = body.lower()
-        # Drop if already covered by a kept excerpt (or covers a shorter one).
-        superseded = False
-        for i, kept in enumerate(cleaned):
-            kl = kept.lower()
-            if low in kl:
-                superseded = True
-                break
-            if kl in low:
-                cleaned[i] = body
-                superseded = True
-                break
-        if not superseded:
-            cleaned.append(body)
-    if not cleaned:
-        return ""
-    joined = ". ".join(cleaned)
-    return _finding_excerpt(joined, max_chars=max_chars)
+        if len(body) > len(best):
+            best = body
+    return best
+
+
+def summary_display_date(raw: str | None) -> str:
+    """Date label for Summary findings — parsed when possible, else exhibit text as-is."""
+    text = (raw or "").strip()
+    if not text or text == MISSING_DOCUMENT_DATE:
+        return MISSING_DOCUMENT_DATE
+    parsed = format_document_date(text)
+    if parsed != MISSING_DOCUMENT_DATE:
+        return parsed
+    return text
+
+
+def _ir_review_opener(title: str, document_date: str) -> str:
+    """Peer IR opener: Review of a document titled \"…\", dated …, showed"""
+    shown = _exhibit_title_for_finding(title)
+    dated = summary_display_date(document_date)
+    return shown, dated
+
+
+SUMMARY_EVIDENCE_PARA_RE = re.compile(
+    r'^Review of (?:a |the )?document titled\s+"[^"]+"\s*,\s*dated\s+.+?\s*,\s*showed\b',
+    re.IGNORECASE,
+)
+
+TITLE_IN_SUMMARY_EVIDENCE_RE = re.compile(
+    r'Review of (?:a |the )?document titled\s+"([^"]+)"\s*,\s*dated\s+',
+    re.IGNORECASE,
+)
+
+
+def is_summary_evidence_paragraph(text: str) -> bool:
+    return bool(SUMMARY_EVIDENCE_PARA_RE.match((text or "").strip()))
 
 
 def format_ir_summary_finding(
@@ -692,29 +806,13 @@ def format_ir_summary_finding(
     excerpt: str = "",
     cites: list[str] | None = None,
 ) -> str:
-    """Peer IR Summary of Findings: one paragraph per exhibit (all related duties)."""
-    shown = _exhibit_title_for_finding(title)
-    dated = format_document_date(document_date) if document_date else MISSING_DOCUMENT_DATE
+    """Peer IR Summary of Findings — one evidence paragraph per exhibit."""
+    del cites
+    shown, dated = _ir_review_opener(title, document_date)
     body = _finding_excerpt(excerpt)
     if not body:
-        return (
-            f'A review of the document titled "{shown}", dated {dated}, showed '
-            "[pending: how this record supports or does not support the authorized WAC duties]."
-        )
-    para = f'A review of the document titled "{shown}", dated {dated}, showed {body}.'
-    cite_list = [c.strip() for c in (cites or []) if (c or "").strip()]
-    # Preserve order, drop duplicates.
-    seen: set[str] = set()
-    uniq: list[str] = []
-    for c in cite_list:
-        key = re.sub(r"\s+", "", c.lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        uniq.append(c)
-    if uniq:
-        para = f"{para.rstrip('.')} Related to {'; '.join(uniq)}."
-    return para
+        return ""
+    return f'Review of a document titled "{shown}", dated {dated}, showed {body}.'
 
 
 def format_sod_document_finding(
@@ -723,23 +821,12 @@ def format_sod_document_finding(
     cites: list[str] | None = None,
 ) -> str:
     """SOD Findings included row: one paragraph per exhibit for the matched deficiency."""
+    del cites
     shown = _exhibit_title_for_finding(title)
     body = _finding_excerpt(excerpt, max_chars=MAX_SOD_FINDING_CHARS)
     if not body:
-        return f'Review of the document titled, "{shown}", showed the record was reviewed.'
-    para = f'Review of the document titled, "{shown}", showed {body}.'
-    cite_list = [c.strip() for c in (cites or []) if (c or "").strip()]
-    seen: set[str] = set()
-    uniq: list[str] = []
-    for c in cite_list:
-        key = re.sub(r"\s+", "", c.lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        uniq.append(c)
-    if uniq:
-        para = f"{para.rstrip('.')} Related to {'; '.join(uniq)}."
-    return para
+        return ""
+    return f'Review of the document titled, "{shown}", showed {body}.'
 
 
 def selected_evidence_hits(
@@ -842,6 +929,7 @@ def consolidate_hits_by_evidence(
                 "score": float(row["score"]),
             }
         )
+    out = [row for row in out if (row.get("excerpt") or "").strip()]
     out.sort(key=lambda r: (-r["score"], str(r["evidence_id"])))
     return out[:MAX_SUMMARY_FINDINGS]
 

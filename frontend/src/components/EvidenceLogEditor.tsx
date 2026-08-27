@@ -187,21 +187,28 @@ export function EvidenceLogEditor({
   ]
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 sm:px-4 lg:px-5">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 px-2.5 sm:px-3 lg:px-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-            <h2 className="font-display text-xl tracking-tight text-ink-900 dark:text-ink-50 sm:text-2xl">
-              Evidence Log
-            </h2>
-            <p className="font-sans text-[11px] text-ink-500 dark:text-ink-400">
+          <h2
+            className="font-display flex min-w-0 flex-wrap items-baseline gap-x-2 text-lg text-ink-900 dark:text-ink-50"
+            title="Editable Investigation Evidence Log. Exhibit numbers match Document Review and SOD superscripts."
+          >
+            <span className="compare-meta !normal-case tracking-wide">Step 3 · Documents</span>
+            <span>Evidence Log</span>
+            <span className="font-sans text-[11px] font-normal text-ink-500">
               {(log.rows || []).length} exhibit{(log.rows || []).length === 1 ? '' : 's'}
+            </span>
+          </h2>
+          <details className="mt-0.5 max-w-2xl">
+            <summary className="cursor-pointer font-sans text-[11px] font-medium text-ink-500 hover:text-ink-700 dark:text-ink-400 dark:hover:text-ink-200">
+              How this works
+            </summary>
+            <p className="mt-1.5 font-sans text-[11px] leading-snug text-ink-600 dark:text-ink-300">
+              Editable Investigation Evidence Log. Exhibit numbers match Document Review and SOD
+              superscripts. Download opens the same sheet as Excel.
             </p>
-          </div>
-          <p className="mt-1 max-w-2xl font-sans text-[11px] leading-snug text-ink-500 dark:text-ink-400">
-            Editable Investigation Evidence Log. Exhibit numbers match Document Review and SOD
-            superscripts. Download opens the same sheet as Excel.
-          </p>
+          </details>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -213,7 +220,7 @@ export function EvidenceLogEditor({
             <button
               type="button"
               className={clsx(
-                'inline-flex items-center gap-1.5 border-b-2 px-2.5 py-1.5 font-medium transition',
+                'inline-flex items-center gap-1.5 border-b-2 px-2 py-1 font-medium transition',
                 viewMode === 'preview'
                   ? 'border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
                   : 'border-transparent text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
@@ -226,7 +233,7 @@ export function EvidenceLogEditor({
             <button
               type="button"
               className={clsx(
-                'inline-flex items-center gap-1.5 border-b-2 px-2.5 py-1.5 font-medium transition',
+                'inline-flex items-center gap-1.5 border-b-2 px-2 py-1 font-medium transition',
                 viewMode === 'edit'
                   ? 'border-tide-600 text-ink-900 dark:border-tide-400 dark:text-ink-50'
                   : 'border-transparent text-ink-500 hover:text-ink-800 dark:hover:text-ink-200',
@@ -241,7 +248,7 @@ export function EvidenceLogEditor({
           {canEdit && (
             <button
               type="button"
-              className="btn-secondary !h-8 !px-3 text-xs"
+              className="btn-secondary !h-7 !px-2.5 text-xs"
               disabled={busy || saving}
               onClick={() => void saveDraft()}
             >
@@ -251,7 +258,7 @@ export function EvidenceLogEditor({
           {canExport && (
             <button
               type="button"
-              className="btn-primary !h-8 !px-3 text-xs"
+              className="btn-primary !h-7 !px-2.5 text-xs"
               disabled={busy || exporting}
               onClick={() => void downloadLog()}
             >
@@ -263,12 +270,12 @@ export function EvidenceLogEditor({
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">
+        <p role="alert" className="text-xs text-rose-600 dark:text-rose-300">
           {error}
         </p>
       )}
       {info && (
-        <p className="border-l-2 border-tide-600 bg-tide-500/8 px-3 py-2 text-sm text-tide-900 dark:text-tide-100">
+        <p className="border-l-2 border-tide-600 bg-tide-500/8 px-2.5 py-1.5 text-xs text-tide-900 dark:text-tide-100">
           {info}
         </p>
       )}

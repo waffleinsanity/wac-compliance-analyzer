@@ -208,35 +208,40 @@ export function EvidenceStep({
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="compare-meta">Step 4 · Evidence</p>
-          <h2 className="font-display text-xl text-ink-900 dark:text-ink-50">
-            Review exhibits against allegation duties
-          </h2>
-          <p className="mt-1 max-w-2xl font-sans text-sm text-ink-500">
-            Suggested excerpts are exhibit language matched to the cited Washington WAC/RCW
-            duty using the same local statute store as Compare. Select what applies; Save to
-            Documents drafts those excerpts into Summary of Findings and SOD Findings
-            included. Statute quotes stay PDF-backed; this is assistive record review, not a
-            final compliance determination.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-secondary" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" /> Documents
+    <div className="mx-auto flex max-w-5xl flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-200 pb-2.5 dark:border-ink-700">
+        <h2
+          className="font-display flex min-w-0 flex-wrap items-baseline gap-x-2 text-lg text-ink-900 dark:text-ink-50"
+          title="Suggested excerpts match exhibit language to cited WAC/RCW duties from the local statute store. Select what applies; Save to Documents drafts them into Summary of Findings and SOD Findings included."
+        >
+          <span className="compare-meta !normal-case tracking-wide">Step 4 · Evidence</span>
+          <span>Exhibits vs duties</span>
+        </h2>
+        <div className="flex flex-wrap gap-1.5">
+          <button type="button" className="btn-secondary !h-8 !px-2.5 text-xs" onClick={onBack}>
+            <ArrowLeft className="h-3.5 w-3.5" /> Documents
           </button>
           <button
             type="button"
-            className="btn-primary"
+            className="btn-primary !h-8 !px-2.5 text-xs"
             disabled={busy || loading}
             onClick={continueWithSelection}
           >
-            Save to Documents <ArrowRight className="h-4 w-4" />
+            Save to Documents <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
+      <details className="max-w-2xl">
+        <summary className="cursor-pointer font-sans text-[11px] font-medium text-ink-500 hover:text-ink-700 dark:text-ink-400 dark:hover:text-ink-200">
+          How this works
+        </summary>
+        <p className="mt-1.5 font-sans text-[11px] leading-snug text-ink-600 dark:text-ink-300">
+          Suggested excerpts are exhibit language matched to the cited Washington WAC/RCW duty using
+          the same local statute store as Compare. Select what applies; Save to Documents drafts those
+          excerpts into Summary of Findings and SOD Findings included. Statute quotes stay PDF-backed;
+          this is assistive record review, not a final compliance determination.
+        </p>
+      </details>
 
       {error && (
         <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">
