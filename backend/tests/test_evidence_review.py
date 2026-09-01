@@ -311,3 +311,139 @@ def test_ranking_query_keeps_washington_cites_drops_foreign():
     assert "12VAC" not in compact
     assert "37.106" not in cleaned
     assert "246-341-0420" in cleaned
+
+
+def _two_duty_report(
+    *,
+    matched: list[str] | None = None,
+    include_first: bool = True,
+    include_second: bool = False,
+    with_rf: bool = False,
+) -> InvestigationReport:
+    from app.schemas import RegulatoryFrameworkEntry
+
+    opts = [
+        AllegationDutyOption(
+            cite="WAC 246-341-0410(1)",
+            label="(1)",
+            duty_phrase=(
+                "be responsible for the day-to-day operation of the agency's "
+                "provision of certified behavioral health treatment services"
+            ),
+            included_by_default=include_first,
+        ),
+        AllegationDutyOption(
+            cite="WAC 246-341-0410(2)",
+            label="(2)",
+            duty_phrase=(
+                "ensure the agency complies with all applicable federal, state, "
+                "tribal, and local laws and rules"
+            ),
+            included_by_default=include_second,
+        ),
+    ]
+    report = InvestigationReport(
+        investigation_date="2026-08-19",
+        facility_info=FacilityInfo(),
+        intake_details="DOH received a complaint.",
+        allegation_preamble="",
+        allegations=[
+            InvestigationAllegation(
+                wac_code="246-341-0410",
+                wac_title="Administrator",
+                allegation_text="Potential violation of WAC 246-341-0410.",
+            )
+        ],
+        comparisons=[
+            WACComparison(
+                wac_id="WAC 246-341-0410",
+                code="246-341-0410",
+                title="Administrator key responsibilities",
+                chapter="246-341",
+                hierarchy_path="246-341-0410",
+                wac_text="must",
+                wac_summary="must",
+                allegation_draft="Potential violation of WAC 246-341-0410.",
+                duty_options=opts,
+                matched_subsections=list(matched) if matched is not None else [],
+                matched_subsection_texts=(
+                    [
+                        o.duty_phrase
+                        for o in opts
+                        if matched is not None and o.cite in matched
+                    ]
+                    if matched
+                    else []
+                ),
+            )
+        ],
+        findings=[],
+        report_text="",
+        selected_count=1,
+        duration_ms=0,
+        document_preview="",
+    )
+    if with_rf:
+        report.regulatory_framework = [
+            RegulatoryFrameworkEntry(
+                instrument="WAC",
+                code="246-341-0410",
+                title="Administrator",
+                subsections=[
+                    {
+                        "cite": "WAC 246-341-0410(3)",
+                        "label": "(3)",
+                        "text": (
+                            "implement policies and procedures that address "
+                            "the agency's provision of services"
+                        ),
+                    }
+                ],
+            )
+        ]
+    return report
+
+
+def test_duty_targets_only_matched_subsection_cite():
+    report = _two_duty_report(
+        matched=["WAC 246-341-0410(1)"],
+        include_first=True,
+        include_second=True,
+    )
+    cites = [c for c, _p, _q in _duty_targets(report)]
+    assert cites == ["WAC 246-341-0410(1)"]
+
+
+def test_duty_targets_ignore_rf_when_matched_set():
+    report = _two_duty_report(
+        matched=["WAC 246-341-0410(1)"],
+        include_first=True,
+        include_second=False,
+        with_rf=True,
+    )
+    cites = [c for c, _p, _q in _duty_targets(report)]
+    assert cites == ["WAC 246-341-0410(1)"]
+    assert not any("(3)" in c for c in cites)
+    # Explicit opt-in still allows RF expansion for callers that need it.
+    rf_cites = [
+        c for c, _p, _q in _duty_targets(report, include_regulatory_framework=True)
+    ]
+    assert "WAC 246-341-0410(3)" in rf_cites
+
+
+def test_duty_targets_skips_deselected_starter():
+    report = _two_duty_report(
+        matched=[],
+        include_first=False,
+        include_second=False,
+    )
+    assert _duty_targets(report) == []
+
+    report_one = _two_duty_report(
+        matched=[],
+        include_first=True,
+        include_second=False,
+    )
+    cites = [c for c, _p, _q in _duty_targets(report_one)]
+    assert cites == ["WAC 246-341-0410(1)"]
+    assert "WAC 246-341-0410(2)" not in cites

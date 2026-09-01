@@ -63,9 +63,10 @@ Conflict priority (Master merge): sole-source PDF → IR-primary framing → Pri
 | Privacy & PII Gate | `worker-privacy-pii.mdc` | Cat 3/4 warn → redact before persist/LLM | `pii_gate.py`, privacy router, PrivacyGate UI |
 | Identity, Roles & Admin | `worker-identity-admin.mdc` | Auth/roles that enable the IR workspace | auth/OAuth/permissions, admin users/inbox/audit |
 | Local DevEx & Launch | `worker-local-devex.mdc` | Healthy local stack for the IR workflow | Launch/setup bats, `.vscode` launch/tasks |
+| Evidence & Allegation RAG | `worker-evidence.mdc` | Compare-scoped duty↔exhibit matching for Documents | `evidence_review.py`, `evidence_cite.py`, `evidence_log.py`, EvidenceStep/Log UI, evidence tests |
 | Accuracy & Eval | `worker-accuracy-eval.mdc` | Gatekeeper for quote/ranking/IR goldens | `backend/tests/` accuracy suites, `scripts/run_accuracy_tests.bat` |
 
-Deep skills (high blast radius): `wacmakr-ir-drafting`, `wacmakr-statute-corpus`, `wacmakr-privacy-pii`.
+Deep skills (high blast radius): `wacmakr-ir-drafting`, `wacmakr-statute-corpus`, `wacmakr-privacy-pii`, `wacmakr-evidence`.
 
 ## Routing table
 
@@ -76,6 +77,7 @@ Deep skills (high blast radius): `wacmakr-ir-drafting`, `wacmakr-statute-corpus`
 | Groq, Ollama, prompts, model 403/404 | Investigator LLM |
 | cases save/resume, review status, export pack | Case Review |
 | stepper, WAC select, Compare UI, rails | Intake UX |
+| evidence upload, exhibit review, Evidence Log, duty↔evidence RAG | Evidence (+ Eval) |
 | PII, redact, Category 3/4 | Privacy |
 | login, Google OAuth, roles, admin | Identity Admin |
 | Launch.bat, ports, debug launch.json | DevEx |

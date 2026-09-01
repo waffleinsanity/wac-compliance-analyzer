@@ -231,14 +231,30 @@ export function ReviewStep({
       if (!stale) continue
       changed = true
       const matched = chosen.map((o) => o.cite)
+      const matchedTexts = chosen.map((o) => o.duty_phrase)
+      const syncedOpts = opts.map((o) => ({
+        ...o,
+        included_by_default: starters.includes(o.cite),
+      }))
       nextComparisons = nextComparisons.map((row) =>
         (row.wac_id || row.code) === key
-          ? { ...row, allegation_draft: line, matched_subsections: matched }
+          ? {
+              ...row,
+              allegation_draft: line,
+              matched_subsections: matched,
+              matched_subsection_texts: matchedTexts,
+              duty_options: syncedOpts.length ? syncedOpts : row.duty_options,
+            }
           : row,
       )
       nextAllegations = nextAllegations.map((a) =>
         a.wac_code === c.code
-          ? { ...a, allegation_text: line, matched_subsections: matched }
+          ? {
+              ...a,
+              allegation_text: line,
+              matched_subsections: matched,
+              duty_options: syncedOpts.length ? syncedOpts : a.duty_options,
+            }
           : a,
       )
       nextConclusions = nextConclusions.map((row) =>
@@ -273,6 +289,17 @@ export function ReviewStep({
       chosen.map((o) => ({ label: o.label, duty_phrase: o.duty_phrase })),
     )
     const matched = chosen.map((o) => o.cite)
+    const prevMatched = comparison.matched_subsections || []
+    const prevTexts = comparison.matched_subsection_texts || []
+    const matchedTexts = chosen.map((o) => {
+      const prevIdx = prevMatched.indexOf(o.cite)
+      if (prevIdx >= 0 && (prevTexts[prevIdx] || '').trim()) {
+        return prevTexts[prevIdx]
+      }
+      return o.duty_phrase
+    })
+    // Keep included_by_default as investigate "starting" markers; evidence RAG
+    // scopes via matched_subsections (updated below), not by rewriting starters.
     const key = comparison.wac_id || comparison.code
     const nextComparisons = report.comparisons.map((c) =>
       (c.wac_id || c.code) === key
@@ -280,6 +307,9 @@ export function ReviewStep({
             ...c,
             allegation_draft: line,
             matched_subsections: matched.length ? matched : c.matched_subsections,
+            matched_subsection_texts: matched.length
+              ? matchedTexts
+              : c.matched_subsection_texts,
             duty_options: dutyOpts.length ? dutyOpts : c.duty_options,
           }
         : c,

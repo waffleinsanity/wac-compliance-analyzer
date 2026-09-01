@@ -1,7 +1,8 @@
-"""Rank case exhibit text against allegation / Regulatory Framework duties.
+"""Rank case exhibit text against Compare-selected duty cites.
 
 Evidence excerpts are exhibit language only. They are not statute authority
-and must never replace PDF-backed WAC/RCW quotes.
+and must never replace PDF-backed WAC/RCW quotes. Regulatory Framework
+expansion is opt-in only (``include_regulatory_framework``).
 """
 
 from __future__ import annotations
@@ -370,21 +371,36 @@ def _duty_focused_excerpt(raw: str, statute_query: str) -> str:
     return complete_sentence_excerpt(" ".join(parts[start:]), DISPLAY_EXCERPT_CHARS)
 
 
-def _store_label_scores(chunk: str, code: str) -> dict[str, float]:
-    """Retrieve WAC/RCW leaves for this exhibit chunk, scoped to one approved code."""
+def _store_label_scores(
+    chunk: str,
+    code: str,
+    allowed_labels: set[str] | None = None,
+) -> dict[str, float]:
+    """Retrieve WAC/RCW leaves for this exhibit chunk, scoped to one approved code.
+
+    When ``allowed_labels`` is set, only return scores for those subsection labels
+    (Compare-selected cites). Prevents Chroma/TF-IDF boost from promoting
+    unselected leaves under the parent code.
+    """
     if not wac_store.ready or not code or len(chunk) < MIN_CHUNK_CHARS:
         return {}
     query = strip_foreign_jurisdiction_cites(chunk)[:4000]
     if len(query) < MIN_CHUNK_CHARS:
         return {}
+    allowed: set[str] | None = None
+    if allowed_labels is not None:
+        allowed = {(lab or "").strip().lower() for lab in allowed_labels if (lab or "").strip()}
     out: dict[str, float] = {}
     try:
         for node, score in wac_store.search(
             query, selected_codes={code}, top_k=8, min_score=0.02
         ):
             lab = subsection_label(node).lower()
-            if lab:
-                out[lab] = max(out.get(lab, 0.0), float(score))
+            if not lab:
+                continue
+            if allowed is not None and lab not in allowed:
+                continue
+            out[lab] = max(out.get(lab, 0.0), float(score))
     except Exception:
         pass
     try:
@@ -392,11 +408,36 @@ def _store_label_scores(chunk: str, code: str) -> dict[str, float]:
             query[:2000], top_k=6, selected_codes={code}
         ):
             lab = subsection_label(node).lower()
-            if lab:
-                out[lab] = max(out.get(lab, 0.0), float(score) * 0.85)
+            if not lab:
+                continue
+            if allowed is not None and lab not in allowed:
+                continue
+            out[lab] = max(out.get(lab, 0.0), float(score) * 0.85)
     except Exception:
         pass
     return out
+
+
+def _normalize_parent_code(raw: str) -> str:
+    """Bare parent WAC/RCW code for linked_wac_ids matching (e.g. 246-341-0410)."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"^(?:WAC|RCW)\s+", "", text, flags=re.IGNORECASE).strip()
+    code, _ = _parse_cite(text)
+    return (code or text).strip().lower()
+
+
+def _exhibit_linked_codes(ev: CaseEvidence) -> set[str] | None:
+    """Parent codes this exhibit is linked to. None = no restriction (all Compare targets)."""
+    from app.services.evidence_log import _parse_linked_wacs
+
+    links = _parse_linked_wacs(getattr(ev, "linked_wac_ids", None))
+    if not links:
+        return None
+    codes = {_normalize_parent_code(x) for x in links}
+    codes.discard("")
+    return codes or None
 
 
 def chunk_evidence_text(text: str) -> list[str]:
@@ -487,43 +528,105 @@ def _title_for_cite(cite: str, title_map: dict[str, str]) -> str:
     return ""
 
 
-def _duty_targets(report: InvestigationReport) -> list[tuple[str, str, str]]:
-    """(cite, duty_phrase, query_blob) from Compare duties + RF subsections."""
+def _duty_targets(
+    report: InvestigationReport,
+    *,
+    include_regulatory_framework: bool = False,
+) -> list[tuple[str, str, str]]:
+    """(cite, duty_phrase, query_blob) from Compare-selected cites only.
+
+    Selection order per comparison:
+    1. ``matched_subsections`` when non-empty
+    2. else ``duty_options`` with ``included_by_default``
+    3. else empty (no fallback to all options)
+
+    Regulatory Framework subsections are omitted unless
+    ``include_regulatory_framework`` is True.
+    """
     seen: set[str] = set()
     out: list[tuple[str, str, str]] = []
 
     def add(cite: str, phrase: str) -> None:
         cite = (cite or "").strip()
+        if not cite:
+            return
+        cite_key = cite.lower()
+        if cite_key in seen:
+            return
         phrase = normalize_statute_text(phrase)
-        if not cite or len(phrase) < 12:
-            return
-        key = f"{cite}|{phrase[:80].lower()}"
-        if key in seen:
-            return
-        seen.add(key)
         query = _store_duty_query(cite, phrase)
+        if len(phrase) < 12:
+            phrase = normalize_statute_text(query)
+        if len(phrase) < 12:
+            return
+        if len(query) < 12:
+            query = phrase
+        seen.add(cite_key)
         out.append((cite, phrase, query))
 
-    for comp in report.comparisons or []:
-        opts = [o for o in (comp.duty_options or []) if o.included_by_default] or list(
-            comp.duty_options or []
-        )
-        for opt in opts:
-            add(opt.cite, opt.duty_phrase)
-        texts = comp.matched_subsection_texts or []
-        for i, cite in enumerate(comp.matched_subsections or []):
-            if i < len(texts):
-                add(cite, texts[i])
+    def phrase_for_cite(
+        cite: str,
+        *,
+        opts_by_cite: dict[str, Any],
+        texts: list[str],
+        index: int,
+        from_matched: bool,
+    ) -> str:
+        opt = opts_by_cite.get(cite) or opts_by_cite.get(cite.lower())
+        if opt is not None:
+            dp = getattr(opt, "duty_phrase", None) or (
+                opt.get("duty_phrase") if isinstance(opt, dict) else ""
+            )
+            if (dp or "").strip():
+                return str(dp)
+        if from_matched and 0 <= index < len(texts) and (texts[index] or "").strip():
+            return texts[index]
+        return ""
 
-    for entry in report.regulatory_framework or []:
-        code = entry.code
-        prefix = entry.instrument or "WAC"
-        for sub in entry.subsections or []:
-            cite = str(sub.get("cite") or "")
-            if not cite:
-                label = str(sub.get("label") or "")
-                cite = f"{prefix} {code}{label}" if label else f"{prefix} {code}"
-            add(cite, str(sub.get("text") or ""))
+    for comp in report.comparisons or []:
+        opts = list(comp.duty_options or [])
+        opts_by_cite: dict[str, Any] = {}
+        for o in opts:
+            c = (getattr(o, "cite", None) or "").strip()
+            if c:
+                opts_by_cite[c] = o
+                opts_by_cite.setdefault(c.lower(), o)
+        texts = list(comp.matched_subsection_texts or [])
+        matched = [
+            str(c).strip() for c in (comp.matched_subsections or []) if str(c).strip()
+        ]
+        if matched:
+            selected = matched
+            from_matched = True
+        else:
+            selected = [
+                (o.cite or "").strip()
+                for o in opts
+                if o.included_by_default and (o.cite or "").strip()
+            ]
+            from_matched = False
+        for i, cite in enumerate(selected):
+            add(
+                cite,
+                phrase_for_cite(
+                    cite,
+                    opts_by_cite=opts_by_cite,
+                    texts=texts,
+                    index=i,
+                    from_matched=from_matched,
+                ),
+            )
+
+    if include_regulatory_framework:
+        for entry in report.regulatory_framework or []:
+            code = entry.code
+            prefix = entry.instrument or "WAC"
+            for sub in entry.subsections or []:
+                cite = str(sub.get("cite") or "")
+                if not cite:
+                    label = str(sub.get("label") or "")
+                    cite = f"{prefix} {code}{label}" if label else f"{prefix} {code}"
+                add(cite, str(sub.get("text") or ""))
 
     return out
 
@@ -554,6 +657,13 @@ def review_case_evidence(
     if not files:
         return []
 
+    # Per-parent-code labels from Compare-selected cites only (RAG boost scope).
+    allowed_by_code: dict[str, set[str]] = {}
+    for cite, _phrase, _query in targets:
+        code, label = _parse_cite(cite)
+        if code and label:
+            allowed_by_code.setdefault(code, set()).add(label.lower())
+
     file_chunks: list[tuple[CaseEvidence, str, str]] = []
     file_dates: dict[int, str] = {}
     for ev in files:
@@ -572,17 +682,24 @@ def review_case_evidence(
         match_text = _prose_only(raw) or strip_foreign_jurisdiction_cites(chunk)
         if len(match_text) < MIN_CHUNK_CHARS:
             continue
+        linked = _exhibit_linked_codes(ev)
         for cite, phrase, query in targets:
+            code, label = _parse_cite(cite)
+            if linked is not None and code:
+                if _normalize_parent_code(code) not in linked:
+                    continue
             lex = max(
                 _overlap_score(phrase, match_text),
                 _overlap_score(query, match_text),
             )
             if lex < 0.12:
                 continue
-            code, label = _parse_cite(cite)
             cache_key = (id(match_text), code)
             if cache_key not in rag_cache:
-                rag_cache[cache_key] = _store_label_scores(match_text, code)
+                allowed = allowed_by_code.get(code) if code else None
+                rag_cache[cache_key] = _store_label_scores(
+                    match_text, code, allowed_labels=allowed
+                )
             label_key = (label or "").lower()
             rag_map = {k.lower(): v for k, v in rag_cache[cache_key].items()}
             rag = rag_map.get(label_key, 0.0) if label_key else 0.0

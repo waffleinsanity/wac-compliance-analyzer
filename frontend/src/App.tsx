@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   FileText,
   BookOpen,
@@ -17,6 +17,7 @@ import {
   ScrollText,
   KeyRound,
   NotebookPen,
+  FileSearch,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useNavigate } from 'react-router-dom'
@@ -165,6 +166,17 @@ export default function App() {
   })
   const [wacRailOpen, setWacRailOpen] = usePersistedBoolean('wacmakr.sidebar.wacOpen', true)
   const [casesRailOpen, setCasesRailOpen] = usePersistedBoolean('wacmakr.sidebar.casesOpen', true)
+  const evidenceNeedsReview =
+    !!report && !(report.evidence_review || []).some((h) => h.included_by_default)
+  const prevWorkflowStep = useRef(step)
+
+  useEffect(() => {
+    if (prevWorkflowStep.current === 'workspace' && step !== 'workspace') {
+      setWacRailOpen(false)
+      setShowMobileMenu(false)
+    }
+    prevWorkflowStep.current = step
+  }, [step, setWacRailOpen])
 
   useEffect(() => {
     if (!user || !canAccessAdmin(user.role, user.is_admin)) {
@@ -730,14 +742,31 @@ export default function App() {
                             </button>
                           ))}
                         </div>
-                        <div className="flex flex-wrap items-center gap-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
                         <button
                           type="button"
-                          className="btn-ghost !h-8 !px-2.5 text-xs"
+                          className={clsx(
+                            'inline-flex items-center justify-center gap-1.5 rounded-md border-l-2 font-semibold tracking-tight transition',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40',
+                            evidenceNeedsReview
+                              ? 'h-10 border-amber-500 bg-amber-50/90 px-3.5 text-sm text-amber-950 shadow-sm hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50'
+                              : 'h-9 border-amber-500/60 bg-amber-50/60 px-3 text-xs font-medium text-amber-950 hover:bg-amber-50 dark:border-amber-700 dark:bg-amber-950/20 dark:text-amber-100',
+                          )}
                           onClick={() => setStep('evidence')}
-                          title="Review exhibits against allegation duties (optional)"
+                          title={
+                            evidenceNeedsReview
+                              ? 'Review exhibits against allegation duties'
+                              : 'Open Evidence (exhibits already linked)'
+                          }
                         >
-                          Evidence
+                          <FileSearch
+                            className={clsx(
+                              'shrink-0',
+                              evidenceNeedsReview ? 'h-4 w-4' : 'h-3.5 w-3.5',
+                            )}
+                            aria-hidden
+                          />
+                          {evidenceNeedsReview ? 'Review evidence' : 'Evidence'}
                         </button>
                         {userCanEdit && (
                           <DraftRecallMenu

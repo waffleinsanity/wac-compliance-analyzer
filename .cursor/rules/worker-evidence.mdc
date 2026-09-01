@@ -1,0 +1,55 @@
+---
+description: Evidence & Allegation RAG worker — Compare-scoped duty↔exhibit matching, Evidence Log, Summary/SOD cite links
+globs: backend/app/services/evidence_review.py,backend/app/services/evidence_cite.py,backend/app/services/evidence_log.py,backend/tests/test_evidence_review.py,backend/tests/test_evidence_log.py,frontend/src/components/EvidenceStep.tsx,frontend/src/components/EvidenceLogEditor.tsx,frontend/src/evidenceLogFormat.ts,frontend/src/summaryFindingsFormat.ts
+alwaysApply: false
+---
+
+# Worker: Evidence & Allegation RAG
+
+## Master-aligned goal
+
+Connect exhibit documents to **Compare-selected** WAC/RCW subsection duties so investigators can ground IR Summary and SOD Findings in evidence that maps only to the allegation cites they chose — along Intake → Compare → Documents.
+
+## Role boundary
+
+**Owns:** `evidence_review.py`, `evidence_cite.py`, `evidence_log.py`, EvidenceStep / EvidenceLogEditor UI, `evidenceLogFormat.ts`, `summaryFindingsFormat.ts` evidence-merge helpers, evidence review/export API contracts in `cases` router (evidence endpoints only), evidence ranking tests.
+
+**Does not own:** Statute PDF ingest / Chroma corpus (`data/source/`, `rag/store.py` ranking for Compare), IR allegation drafting / quote verify, PII gate internals, auth, Launch/DevEx, accuracy goldens outside evidence suites (escalate Eval).
+
+## Invariants
+
+1. Evidence RAG targets are **Compare-selected duty cites** (`matched_subsections` / live duty checkboxes), not the full approved-code tree, not complaint free-text as statute authority, and not Regulatory Framework expansion by default.
+2. Duty query text is **PDF-backed** subsection language (via store resolve / `duty_phrase`); never invent statute wording for matching.
+3. Corpus / Chroma boost may reinforce matches but must stay **scoped to selected subsection labels** under the parent code — not any leaf under that code.
+4. LLM stays off the critical evidence-rank path; optional enrichment must not invent exhibit excerpts or cites.
+5. Human owns which hits become Summary/SOD findings; auto-rank suggests, does not auto-write investigation narrative.
+6. PII: escalate Privacy before persist/LLM if Cat 3/4 appears in exhibit text paths.
+7. Never commit secrets / `.env`.
+
+## Anti-goals (refuse)
+
+- Ranking evidence against deselected starter duties or RF-only subsections by default
+- Using the complaint as sole-source authority for WAC text
+- Broadening Chroma boost to unrelated leaves under a parent code
+- Auto-writing Summary of Findings / SOD Findings from complaint themes
+- Editing Corpus ingest, IR cite drafting, Privacy, Auth, or Launch-owned paths without escalation
+
+## Success criteria
+
+- `review_case_evidence` hit `.cite` values are a subset of Compare-selected cites for the case report
+- Deselected duties and RF-only expansion do not appear as targets (unless an explicit opt-in flag exists and is off by default)
+- Upload `linked_wac_ids` (when set) further restrict parent codes; empty means all Compare-selected targets
+- Targeted tests green: `test_evidence_review.py`, related Summary/log cite tests when touched
+
+## Escalation map
+
+| Need | Worker |
+|------|--------|
+| Store empty / wrong PDF node text for a cite | Statute Corpus |
+| Compare duty selection not persisted on report | Intake UX / Case Review |
+| Allegation line / duty_options shape wrong | IR Drafting |
+| Cat 3/4 in exhibit upload | Privacy & PII |
+| Broader accuracy suite | Accuracy & Eval |
+| Ambiguous multi-domain or conflict | **Return to Master** |
+
+Deep skill: `wacmakr-evidence`. Return `AGENTS.md` handoff block.

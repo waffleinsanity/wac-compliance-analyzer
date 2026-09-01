@@ -3,8 +3,8 @@ name: wacmakr-swarm
 description: >-
   Orchestrates the WACMAKR master/worker agent swarm via Task subagents.
   Use when the user asks to run the swarm, when a request spans multiple
-  domains (IR drafting, corpus, LLM, cases, intake UX, privacy, auth, DevEx,
-  eval), or when routing work across WACMAKR specialists per AGENTS.md.
+  domains (IR drafting, corpus, LLM, cases, intake UX, evidence, privacy, auth,
+  DevEx, eval), or when routing work across WACMAKR specialists per AGENTS.md.
 ---
 
 # WACMAKR Swarm Orchestration
@@ -87,6 +87,9 @@ Workers: Corpus → Eval. Deep skill: `wacmakr-statute-corpus`.
 
 **“PII gate blocks draft then Groq still sees raw text”**  
 Workers: Privacy (+ Investigator LLM if prompt path). Deep skill: `wacmakr-privacy-pii`.
+
+**“Evidence hits wrong WACs / not Compare selection”**  
+Workers: Evidence (+ Eval). Deep skill: `wacmakr-evidence`.
 
 **“Full stack won’t start / debugpy error”**  
 Worker: DevEx only (usually no swarm).

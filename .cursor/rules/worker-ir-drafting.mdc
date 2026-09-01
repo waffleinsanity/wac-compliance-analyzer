@@ -14,7 +14,7 @@ Produce PDF-backed Compare duties, categorical IR allegations, and sister SOD sk
 
 **Owns:** `investigation.py`, `sod_draft.py`, `sod_validate.py`, `guidance_corpus.py`, `wac_scope.py`, `quote_verify.py`, `ir_blank.py`, `template_corpus.py`, `defensibility.py`, `docx_export.py` — Compare cite drafts, IR categorical allegations / conclusions, SOD Based on / Failure to seeds, quote integrity, guidance structure, DOCX emit (IR + SOD pack).
 
-**Does not own:** PDF parse / Chroma / ingest (`data/source/` store), investigator LLM prompts, Cases/Review UI, Intake stepper UI, PII gate, auth, Launch/DevEx, accuracy goldens (consume/escalate only).
+**Does not own:** PDF parse / Chroma / ingest (`data/source/` store), investigator LLM prompts, Cases/Review UI, Intake stepper UI, PII gate, auth, Launch/DevEx, evidence exhibit ranking (`evidence_review` / EvidenceStep — Evidence worker), accuracy goldens (consume/escalate only).
 
 ## Invariants
 
